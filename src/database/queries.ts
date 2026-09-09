@@ -497,7 +497,89 @@ export async function getCategories(
   );
 }
 
-// ==================== FINANCIAL SUMMARY & STATS ====================
+export async function createCategory(
+  db: SQLite.SQLiteDatabase,
+  category: Category
+): Promise<void> {
+  await db.runAsync(
+    `INSERT INTO categories (id, name, type, icon, color)
+     VALUES (?, ?, ?, ?, ?)`,
+    [category.id, category.name, category.type, category.icon, category.color]
+  );
+}
+
+export async function updateCategory(
+  db: SQLite.SQLiteDatabase,
+  category: Partial<Category> & { id: string }
+): Promise<void> {
+  await db.runAsync(
+    `UPDATE categories
+     SET name = COALESCE(?, name),
+         type = COALESCE(?, type),
+         icon = COALESCE(?, icon),
+         color = COALESCE(?, color)
+     WHERE id = ?`,
+    [
+      category.name ?? null,
+      category.type ?? null,
+      category.icon ?? null,
+      category.color ?? null,
+      category.id,
+    ]
+  );
+}
+
+export async function deleteCategory(
+  db: SQLite.SQLiteDatabase,
+  id: string
+): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    // Gỡ liên kết trong transactions trước
+    await db.runAsync('UPDATE transactions SET category_id = NULL WHERE category_id = ?', [id]);
+    await db.runAsync('DELETE FROM categories WHERE id = ?', [id]);
+  });
+}
+
+// ==================== APP SETTINGS QUERIES ====================
+
+export async function getAppSetting(
+  db: SQLite.SQLiteDatabase,
+  key: string,
+  defaultValue = ''
+): Promise<string> {
+  const row = await db.getFirstAsync<{ value: string }>(
+    'SELECT value FROM app_settings WHERE key = ?',
+    [key]
+  );
+  return row ? row.value : defaultValue;
+}
+
+export async function setAppSetting(
+  db: SQLite.SQLiteDatabase,
+  key: string,
+  value: string
+): Promise<void> {
+  await db.runAsync(
+    `INSERT INTO app_settings (key, value)
+     VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    [key, value]
+  );
+}
+
+export async function getAllAppSettings(
+  db: SQLite.SQLiteDatabase
+): Promise<Record<string, string>> {
+  const rows = await db.getAllAsync<{ key: string; value: string }>(
+    'SELECT key, value FROM app_settings'
+  );
+  const result: Record<string, string> = {};
+  for (const r of rows) {
+    result[r.key] = r.value;
+  }
+  return result;
+}
+
 
 export async function getFinancialSummary(
   db: SQLite.SQLiteDatabase
@@ -614,3 +696,89 @@ export async function getCategorySpending(
     percentage: total > 0 ? Math.round((r.total_amount / total) * 100) : 0,
   }));
 }
+
+export interface RangeAnalytics {
+  income: number;
+  expense: number;
+  net: number;
+  savingsRate: number; // %
+  categorySpendings: CategorySpending[];
+}
+
+export async function getAnalyticsByRange(
+  db: SQLite.SQLiteDatabase,
+  startDateIso?: string | null,
+  endDateIso?: string | null
+): Promise<RangeAnalytics> {
+  let whereIncome = "WHERE type = 'income'";
+  let whereExpense = "WHERE type = 'expense'";
+  let whereCatExpense = "WHERE t.type = 'expense'";
+  const paramsIncome: any[] = [];
+  const paramsExpense: any[] = [];
+
+  if (startDateIso) {
+    whereIncome += " AND transacted_at >= ?";
+    whereExpense += " AND transacted_at >= ?";
+    whereCatExpense += " AND t.transacted_at >= ?";
+    paramsIncome.push(startDateIso);
+    paramsExpense.push(startDateIso);
+  }
+  if (endDateIso) {
+    whereIncome += " AND transacted_at <= ?";
+    whereExpense += " AND transacted_at <= ?";
+    whereCatExpense += " AND t.transacted_at <= ?";
+    paramsIncome.push(endDateIso);
+    paramsExpense.push(endDateIso);
+  }
+
+  const incRes = await db.getFirstAsync<{ total: number | null }>(
+    `SELECT SUM(amount) as total FROM transactions ${whereIncome}`,
+    paramsIncome
+  );
+  const income = incRes?.total || 0;
+
+  const expRes = await db.getFirstAsync<{ total: number | null }>(
+    `SELECT SUM(amount) as total FROM transactions ${whereExpense}`,
+    paramsExpense
+  );
+  const expense = expRes?.total || 0;
+
+  const catRows = await db.getAllAsync<{
+    category_id: string;
+    category_name: string;
+    category_icon: string;
+    category_color: string;
+    total_amount: number;
+  }>(
+    `SELECT 
+       c.id as category_id,
+       c.name as category_name,
+       c.icon as category_icon,
+       c.color as category_color,
+       SUM(t.amount) as total_amount
+     FROM transactions t
+     INNER JOIN categories c ON t.category_id = c.id
+     ${whereCatExpense}
+     GROUP BY c.id
+     ORDER BY total_amount DESC`,
+    paramsExpense
+  );
+
+  const totalCatExp = catRows.reduce((sum, r) => sum + r.total_amount, 0);
+  const categorySpendings: CategorySpending[] = catRows.map(r => ({
+    ...r,
+    percentage: totalCatExp > 0 ? Math.round((r.total_amount / totalCatExp) * 100) : 0,
+  }));
+
+  const net = income - expense;
+  const savingsRate = income > 0 ? Math.max(0, Math.round((net / income) * 100)) : 0;
+
+  return {
+    income,
+    expense,
+    net,
+    savingsRate,
+    categorySpendings,
+  };
+}
+

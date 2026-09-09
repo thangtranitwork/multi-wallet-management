@@ -14,6 +14,7 @@ import dayjs from 'dayjs';
 import { useWallet } from '../context/WalletContext';
 import { NeoDropdown } from './NeoDropdown';
 import { THEME, formatVND } from '../constants';
+import { hapticLight, hapticMedium, hapticSuccess, hapticError } from '../utils/haptics';
 
 interface QuickAddModalProps {
   visible: boolean;
@@ -81,6 +82,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
 
   // Keypad actions
   const handleDigitPress = (digit: string) => {
+    hapticLight();
     if (digit === '000') {
       if (amountStr === '0') return;
       if (amountStr.length + 3 > 12) return;
@@ -96,6 +98,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
   };
 
   const handleBackspace = () => {
+    hapticLight();
     if (amountStr.length <= 1) {
       setAmountStr('0');
     } else {
@@ -218,19 +221,23 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
 
   const handleSave = async () => {
     if (amountNumber <= 0) {
+      hapticError();
       Alert.alert('Số tiền không hợp lệ', 'Vui lòng nhập số tiền lớn hơn 0');
       return;
     }
     if (!selectedWalletId) {
+      hapticError();
       Alert.alert('Chưa chọn ví', 'Vui lòng chọn nguồn tiền');
       return;
     }
     if (type === 'transfer') {
       if (!selectedToWalletId) {
+        hapticError();
         Alert.alert('Chưa chọn ví đích', 'Vui lòng chọn ví nhận tiền');
         return;
       }
       if (selectedWalletId === selectedToWalletId) {
+        hapticError();
         Alert.alert('Ví trùng nhau', 'Ví nguồn và ví đích không được trùng nhau');
         return;
       }
@@ -246,8 +253,10 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
         note: note.trim(),
         transacted_at: selectedDate.toISOString(),
       });
+      hapticSuccess();
       onClose();
     } catch (error: any) {
+      hapticError();
       Alert.alert('Lỗi lưu giao dịch', error?.message || 'Đã có lỗi xảy ra');
     }
   };

@@ -39,16 +39,38 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
   - Interactive Neo-Brutalist calendar grid and hour/minute steppers for precise transaction backdating.
 - Tactile mobile number keypad with `000` triple-zero button for effortless entry.
 
-### 4. Financial Analytics & Net Worth
+### 4. Financial Analytics, Cash Flow & Spending Ratio
 - Standard financial formula for **Net Worth**:
   $$\text{Net Worth} = (\text{Total Available Wallet Balances} + \text{Receivables}) - (\text{Credit Card Debt} + \text{Payables})$$
-- Monthly cash flow breakdown: Total Income, Total Expenses, and Net Savings.
-- Category spending distribution with interactive percentage badges.
+- **Flexible Time Period Filter**: This Week, This Month, Last Month, This Year, All Time.
+- Cash flow breakdown: Total Income, Total Expenses, Net Savings, **Savings Rate %**, and **Average Daily Spending**.
+- Ratio meter comparing Income vs Expense percentages.
+- Category spending distribution with interactive percentage badges and progress tracks.
+- Asset allocation breakdown across multiple wallets.
 - Privacy eye toggle (`👁️`) to mask sensitive figures (`••••••`) in public spaces.
 
-### 5. Settings & Complete Data Backup (Import / Export)
+### 5. Custom Category Management
+- Manage Expense & Income categories with personalized naming.
+- Pick from 24+ curated financial and lifestyle icons.
+- Choose from 12+ vibrant Neo-Brutalist color palettes.
+- Safely delete categories with automatic transaction unlinking.
+
+### 6. Tactile Haptic Feedback (Cảm ứng xúc giác cơ học)
+- Powered by `expo-haptics` with fine-tuned vibration pulses.
+- Mechanical keypress feedback on the Neo-Brutalist numeric keypad (`0-9`, `000`, `⌫`).
+- Distinct haptic feedback patterns for tab switching, saving transactions, and alert warnings.
+- User-configurable on/off switch in Settings.
+
+### 7. Biometric (Fingerprint) & PIN App Lock (Bảo mật sinh trắc học & Mã PIN)
+- Powered by `expo-local-authentication` and SQLite local encrypted settings.
+- **Fingerprint Scanner (Cảm biến vân tay)**: Fast and seamless biometric unlock.
+- **4-Digit Neo-Brutalist PIN Pad**: Tactile passcode fallback with wrong-PIN shake animations.
+- Auto-locks whenever the app is sent to the background or reopened.
+- Configurable toggle and PIN change options in Settings.
+
+### 8. Settings & Complete Data Backup (Import / Export)
 - **Export Backup**:
-  - Export all 5 SQLite tables (`wallets`, `categories`, `debts`, `transactions`, `debt_payments`) into a standardized JSON file.
+  - Export all SQLite tables into a standardized JSON file.
   - Native system share sheet (AirDrop, Google Drive, Telegram, Zalo, Save to Files, etc.).
   - View & copy raw JSON directly to your clipboard.
 - **Import Backup**:

@@ -10,6 +10,7 @@ import { AnalyticsScreen } from '../screens/AnalyticsScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { QuickAddModal } from '../components/QuickAddModal';
 import { THEME } from '../constants';
+import { hapticMedium } from '../utils/haptics';
 
 const Tab = createBottomTabNavigator();
 const NullComponent = () => null;
@@ -21,6 +22,11 @@ export const RootNavigator: React.FC = () => {
   return (
     <>
       <Tab.Navigator
+        screenListeners={{
+          tabPress: () => {
+            hapticMedium();
+          },
+        }}
         screenOptions={{
           headerShown: false,
           tabBarStyle: styles.neoTabBar,
@@ -63,7 +69,7 @@ export const RootNavigator: React.FC = () => {
           }}
         />
 
-        {/* Center Tactile Neo-Brutalist Add Button (+) y hệt nút vàng trong ảnh của Ngài */}
+        {/* Center Tactile Neo-Brutalist Add Button (+) */}
         <Tab.Screen
           name="QuickAddTab"
           component={NullComponent}
@@ -76,7 +82,10 @@ export const RootNavigator: React.FC = () => {
                   <Pressable
                     onPressIn={() => setCenterPressed(true)}
                     onPressOut={() => setCenterPressed(false)}
-                    onPress={() => setQuickAddVisible(true)}
+                    onPress={() => {
+                      hapticMedium();
+                      setQuickAddVisible(true);
+                    }}
                     style={styles.centerShadowBox}
                   >
                     <View
@@ -130,6 +139,15 @@ export const RootNavigator: React.FC = () => {
                 />
               </View>
             ),
+          }}
+        />
+
+        <Tab.Screen
+          name="Analytics"
+          component={AnalyticsScreen}
+          options={{
+            tabBarItemStyle: { display: 'none' },
+            tabBarButton: () => null,
           }}
         />
 

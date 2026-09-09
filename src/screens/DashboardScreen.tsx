@@ -18,6 +18,7 @@ import { QuickAddModal } from '../components/QuickAddModal';
 import { WalletModal } from '../components/WalletModal';
 import { Wallet } from '../types';
 import { THEME, formatVND } from '../constants';
+import { hapticMedium, hapticLight } from '../utils/haptics';
 
 const { width } = Dimensions.get('window');
 
@@ -83,7 +84,22 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
         <View style={styles.headerRightActions}>
           <Pressable
             style={styles.headerIconBtnShadow}
-            onPress={() => setWalletModalVisible(true)}
+            onPress={() => {
+              hapticMedium();
+              navigation.navigate('Analytics');
+            }}
+          >
+            <View style={[styles.headerIconBtnInner, { backgroundColor: THEME.popYellow }]}>
+              <Ionicons name="pie-chart-outline" size={19} color="#000000" />
+            </View>
+          </Pressable>
+
+          <Pressable
+            style={styles.headerIconBtnShadow}
+            onPress={() => {
+              hapticMedium();
+              setWalletModalVisible(true);
+            }}
           >
             <View style={styles.headerIconBtnInner}>
               <Ionicons name="folder-outline" size={19} color="#000000" />
@@ -92,7 +108,10 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
 
           <Pressable
             style={styles.headerIconBtnShadow}
-            onPress={() => navigation.navigate('Transactions')}
+            onPress={() => {
+              hapticMedium();
+              navigation.navigate('Transactions');
+            }}
           >
             <View style={styles.headerIconBtnInner}>
               <Ionicons name="search-outline" size={20} color="#000000" />
@@ -101,7 +120,10 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
 
           <Pressable
             style={styles.headerIconBtnShadow}
-            onPress={() => navigation.navigate('Settings')}
+            onPress={() => {
+              hapticMedium();
+              navigation.navigate('Settings');
+            }}
           >
             <View style={styles.headerIconBtnInner}>
               <Ionicons name="settings-outline" size={20} color="#000000" />
@@ -246,6 +268,36 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
             </View>
           </View>
         </View>
+
+        {/* Quick Analytics & Cash Flow Banner */}
+        <Pressable
+          style={styles.analyticsBannerShadow}
+          onPress={() => {
+            hapticMedium();
+            navigation.navigate('Analytics');
+          }}
+        >
+          <View style={styles.analyticsBannerInner}>
+            <View style={styles.analyticsBannerLeft}>
+              <View style={styles.analyticsIconBox}>
+                <Ionicons name="pie-chart" size={20} color="#000000" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.analyticsBannerTitle}>Báo Cáo & Phân Tích Dòng Tiền</Text>
+                <Text style={styles.analyticsBannerSub} numberOfLines={1}>
+                  {summary
+                    ? isBalanceHidden
+                      ? 'Thu & Chi kỳ này • Xem chi tiết'
+                      : `Thu: ${formatVND(summary.monthIncome)} • Chi: ${formatVND(summary.monthExpense)}`
+                    : 'Xem biểu đồ & cơ cấu tài sản'}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.analyticsArrowBox}>
+              <Ionicons name="chevron-forward" size={16} color="#000000" />
+            </View>
+          </View>
+        </Pressable>
 
         {/* Section: My Collections / Nguồn Tiền Của Tôi (Lưới 2 cột các thẻ Folder Tab y như ảnh của Ngài) */}
         <View style={styles.sectionContainer}>
@@ -982,5 +1034,60 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     textAlign: 'center',
     fontWeight: '600',
+  },
+  analyticsBannerShadow: {
+    backgroundColor: '#000000',
+    borderRadius: 16,
+    marginHorizontal: 16,
+    marginBottom: 16,
+  },
+  analyticsBannerInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#000000',
+    transform: [{ translateX: -2.5 }, { translateY: -2.5 }],
+  },
+  analyticsBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+    marginRight: 8,
+  },
+  analyticsIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: THEME.popYellow,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  analyticsBannerTitle: {
+    fontSize: 13.5,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  analyticsBannerSub: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  analyticsArrowBox: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

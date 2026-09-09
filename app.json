@@ -30,7 +30,8 @@
     },
     "plugins": [
       "expo-sqlite",
-      "expo-sharing"
+      "expo-sharing",
+      "expo-local-authentication"
     ],
     "extra": {
       "eas": {

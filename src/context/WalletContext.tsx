@@ -54,6 +54,9 @@ interface WalletContextType {
     note?: string;
   }) => Promise<void>;
   removeDebt: (id: string) => Promise<void>;
+  addCategory: (category: Omit<Category, 'id'> & { id?: string }) => Promise<void>;
+  editCategory: (category: Partial<Category> & { id: string }) => Promise<void>;
+  removeCategory: (id: string) => Promise<void>;
   exportDataToJsonString: () => Promise<string>;
   importDataFromJsonString: (
     jsonStr: string,
@@ -201,6 +204,28 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     await refreshData();
   };
 
+  const addCategory = async (category: Omit<Category, 'id'> & { id?: string }) => {
+    const newCat: Category = {
+      id: category.id || `cat_${Date.now()}`,
+      name: category.name,
+      type: category.type,
+      icon: category.icon,
+      color: category.color,
+    };
+    await queries.createCategory(db, newCat);
+    await refreshData();
+  };
+
+  const editCategory = async (category: Partial<Category> & { id: string }) => {
+    await queries.updateCategory(db, category);
+    await refreshData();
+  };
+
+  const removeCategory = async (id: string) => {
+    await queries.deleteCategory(db, id);
+    await refreshData();
+  };
+
   const exportDataToJsonString = async (): Promise<string> => {
     const data = await backup.exportAllData(db);
     return JSON.stringify(data, null, 2);
@@ -245,6 +270,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         addDebt,
         payOrCollectDebt,
         removeDebt,
+        addCategory,
+        editCategory,
+        removeCategory,
         exportDataToJsonString,
         importDataFromJsonString,
         resetAllData,

@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useWallet } from '../context/WalletContext';
 import { Debt } from '../types';
 import { THEME, formatVND } from '../constants';
+import { hapticLight, hapticSuccess, hapticError } from '../utils/haptics';
 
 interface DebtModalProps {
   visible: boolean;
@@ -69,6 +70,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({
   }, [visible, effectiveDebt, defaultType, wallets]);
 
   const handleDigitPress = (digit: string, isPayment: boolean) => {
+    hapticLight();
     const setter = isPayment ? setPayAmountStr : setAmountStr;
     setter(prev => {
       if (digit === '000') {
@@ -81,6 +83,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({
   };
 
   const handleBackspace = (isPayment: boolean) => {
+    hapticLight();
     const setter = isPayment ? setPayAmountStr : setAmountStr;
     setter(prev => (prev.length <= 1 ? '0' : prev.slice(0, -1)));
   };
@@ -88,10 +91,12 @@ export const DebtModal: React.FC<DebtModalProps> = ({
   const handleSaveCreate = async () => {
     const amount = parseInt(amountStr, 10) || 0;
     if (!personName.trim()) {
+      hapticError();
       Alert.alert('Thiếu thông tin', 'Vui lòng nhập tên người');
       return;
     }
     if (amount <= 0) {
+      hapticError();
       Alert.alert('Số tiền không hợp lệ', 'Vui lòng nhập số tiền lớn hơn 0');
       return;
     }
@@ -109,8 +114,10 @@ export const DebtModal: React.FC<DebtModalProps> = ({
         due_date: dueDate,
         note: note.trim(),
       });
+      hapticSuccess();
       onClose();
     } catch (err: any) {
+      hapticError();
       Alert.alert('Lỗi', err?.message || 'Không thể tạo khoản nợ');
     }
   };
@@ -119,10 +126,12 @@ export const DebtModal: React.FC<DebtModalProps> = ({
     if (!targetDebt) return;
     const payAmount = parseInt(payAmountStr, 10) || 0;
     if (payAmount <= 0) {
+      hapticError();
       Alert.alert('Số tiền không hợp lệ', 'Vui lòng nhập số tiền lớn hơn 0');
       return;
     }
     if (!selectedWalletId) {
+      hapticError();
       Alert.alert('Chưa chọn ví', 'Vui lòng chọn ví biến động');
       return;
     }
@@ -134,8 +143,10 @@ export const DebtModal: React.FC<DebtModalProps> = ({
         walletId: selectedWalletId,
         note: note.trim(),
       });
+      hapticSuccess();
       onClose();
     } catch (err: any) {
+      hapticError();
       Alert.alert('Lỗi thanh toán', err?.message || 'Đã có lỗi xảy ra');
     }
   };

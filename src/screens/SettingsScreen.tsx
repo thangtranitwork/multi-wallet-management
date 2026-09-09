@@ -10,6 +10,7 @@ import {
   TextInput,
   Share,
   ActivityIndicator,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,7 +19,10 @@ import { File, Paths } from 'expo-file-system';
 import * as DocumentPicker from 'expo-document-picker';
 import dayjs from 'dayjs';
 import { useWallet } from '../context/WalletContext';
+import { useSecurity } from '../context/SecurityContext';
+import { CategoryManagementModal } from '../components/CategoryManagementModal';
 import { THEME } from '../constants';
+import { hapticLight, hapticMedium, hapticSuccess, hapticError } from '../utils/haptics';
 
 interface SettingsScreenProps {
   navigation: any;
@@ -36,6 +40,23 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
     importDataFromJsonString,
     resetAllData,
   } = useWallet();
+
+  const {
+    isAppLockEnabled,
+    useFingerprint,
+    hasPinCode,
+    isHardwareSupported,
+    hapticsEnabled,
+    toggleAppLock,
+    toggleFingerprint,
+    toggleHaptics,
+    updatePinCode,
+  } = useSecurity();
+
+  const [categoryModalVisible, setCategoryModalVisible] = useState<boolean>(false);
+  const [pinModalVisible, setPinModalVisible] = useState<boolean>(false);
+  const [pinInput, setPinInput] = useState<string>('');
+  const [confirmPinInput, setConfirmPinInput] = useState<string>('');
 
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [importMode, setImportMode] = useState<'replace' | 'merge'>('replace');
@@ -186,6 +207,42 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
     }
   };
 
+  const handleToggleAppLock = async (val: boolean) => {
+    hapticMedium();
+    if (val && !hasPinCode) {
+      setPinInput('');
+      setConfirmPinInput('');
+      setPinModalVisible(true);
+      return;
+    }
+    await toggleAppLock(val);
+  };
+
+  const handleOpenSetPin = () => {
+    hapticMedium();
+    setPinInput('');
+    setConfirmPinInput('');
+    setPinModalVisible(true);
+  };
+
+  const handleSavePin = async () => {
+    if (pinInput.length !== 4) {
+      hapticError();
+      Alert.alert('Mã PIN không hợp lệ', 'Vui lòng nhập đúng 4 chữ số.');
+      return;
+    }
+    if (pinInput !== confirmPinInput) {
+      hapticError();
+      Alert.alert('Xác nhận không khớp', 'Mã PIN xác nhận không trùng khớp.');
+      return;
+    }
+    await updatePinCode(pinInput);
+    await toggleAppLock(true);
+    hapticSuccess();
+    setPinModalVisible(false);
+    Alert.alert('Thành công 🎉', 'Đã thiết lập mã PIN và kích hoạt khóa bảo mật.');
+  };
+
   // 5. Xử lý Đặt lại dữ liệu gốc (Reset)
   const handleResetApp = () => {
     Alert.alert(
@@ -268,6 +325,123 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                   <Text style={styles.statVal}>{categories.length}</Text>
                   <Text style={styles.statLabel}>Danh mục</Text>
                 </View>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* Security & App Lock Section */}
+        <View style={styles.cardShadow}>
+          <View style={styles.cardInner}>
+            <View style={[styles.folderTab, { backgroundColor: '#EF4444' }]}>
+              <Text style={[styles.folderTabText, { color: '#FFFFFF' }]}>BẢO MẬT & KHÓA ỨNG DỤNG</Text>
+            </View>
+
+            <View style={styles.cardBody}>
+              {/* App Lock Switch */}
+              <View style={styles.settingRow}>
+                <View style={styles.settingRowLeft}>
+                  <View style={[styles.settingRowIconBox, { backgroundColor: '#FEE2E2' }]}>
+                    <Ionicons name="lock-closed" size={18} color="#EF4444" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.settingRowTitle}>Khóa ứng dụng khi mở</Text>
+                    <Text style={styles.settingRowDesc}>
+                      {isAppLockEnabled
+                        ? 'Đang bật • Yêu cầu xác thực khi mở app'
+                        : 'Đang tắt • Không yêu cầu mã khóa'}
+                    </Text>
+                  </View>
+                </View>
+                <Switch
+                  value={isAppLockEnabled}
+                  onValueChange={handleToggleAppLock}
+                  trackColor={{ false: '#D1D5DB', true: '#10B981' }}
+                  thumbColor="#FFFFFF"
+                />
+              </View>
+
+              <View style={styles.divider} />
+
+              {/* Fingerprint Lock Switch */}
+              <View style={styles.settingRow}>
+                <View style={styles.settingRowLeft}>
+                  <View style={[styles.settingRowIconBox, { backgroundColor: THEME.primaryLight }]}>
+                    <Ionicons name="finger-print" size={18} color="#000000" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.settingRowTitle}>Mở khóa bằng Vân tay</Text>
+                    <Text style={styles.settingRowDesc}>
+                      {isHardwareSupported
+                        ? useFingerprint
+                          ? 'Đang bật • Tự động quét vân tay khi mở'
+                          : 'Đang tắt • Chỉ sử dụng mã PIN 4 số'
+                        : 'Thiết bị không hỗ trợ cảm biến vân tay'}
+                    </Text>
+                  </View>
+                </View>
+                <Switch
+                  value={useFingerprint}
+                  disabled={!isHardwareSupported}
+                  onValueChange={(val) => {
+                    hapticMedium();
+                    toggleFingerprint(val);
+                  }}
+                  trackColor={{ false: '#D1D5DB', true: '#10B981' }}
+                  thumbColor="#FFFFFF"
+                />
+              </View>
+
+              <View style={styles.divider} />
+
+              {/* Set / Change PIN Button */}
+              <Pressable
+                style={styles.actionBtnSecondary}
+                onPress={handleOpenSetPin}
+              >
+                <Ionicons name="keypad-outline" size={18} color="#000000" />
+                <Text style={styles.actionBtnTextSecondary}>
+                  {hasPinCode ? 'Đổi mã PIN 4 số' : 'Thiết lập mã PIN 4 số'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+
+        {/* Categories & Analytics Section */}
+        <View style={styles.cardShadow}>
+          <View style={styles.cardInner}>
+            <View style={[styles.folderTab, { backgroundColor: THEME.popYellow }]}>
+              <Text style={styles.folderTabText}>DANH MỤC & BÁO CÁO</Text>
+            </View>
+
+            <View style={styles.cardBody}>
+              <Text style={styles.cardDescText}>
+                Quản lý các nhóm chi tiêu, nguồn thu nhập hoặc xem các báo cáo phân tích dòng tiền chuyên sâu.
+              </Text>
+
+              <View style={styles.actionButtonsCol}>
+                <Pressable
+                  style={styles.actionBtnPrimary}
+                  onPress={() => {
+                    hapticMedium();
+                    setCategoryModalVisible(true);
+                  }}
+                >
+                  <Ionicons name="pricetags-outline" size={18} color="#000000" />
+                  <Text style={styles.actionBtnText}>Quản lý danh mục thu & chi tiêu</Text>
+                </Pressable>
+
+                <Pressable
+                  style={styles.actionBtnSecondary}
+                  onPress={() => {
+                    hapticMedium();
+                    navigation.navigate('Analytics');
+                  }}
+                >
+                  <Ionicons name="pie-chart-outline" size={18} color="#000000" />
+                  <Text style={styles.actionBtnTextSecondary}>Xem báo cáo & phân tích dòng tiền</Text>
+                </Pressable>
               </View>
             </View>
           </View>
@@ -408,6 +582,34 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
             </View>
 
             <View style={styles.cardBody}>
+              {/* Toggle Haptic Feedback */}
+              <View style={styles.settingRow}>
+                <View style={styles.settingRowLeft}>
+                  <View style={[styles.settingRowIconBox, { backgroundColor: THEME.popYellow }]}>
+                    <Ionicons name="hardware-chip-outline" size={18} color="#000000" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.settingRowTitle}>Rung phản hồi (Haptic)</Text>
+                    <Text style={styles.settingRowDesc}>
+                      {hapticsEnabled
+                        ? 'Đang bật • Rung nhẹ khi bấm phím & thao tác'
+                        : 'Đang tắt • Không rung'}
+                    </Text>
+                  </View>
+                </View>
+                <Switch
+                  value={hapticsEnabled}
+                  onValueChange={(val) => {
+                    hapticLight();
+                    toggleHaptics(val);
+                  }}
+                  trackColor={{ false: '#D1D5DB', true: '#10B981' }}
+                  thumbColor="#FFFFFF"
+                />
+              </View>
+
+              <View style={styles.divider} />
+
               {/* Toggle Balance Visibility */}
               <Pressable
                 style={styles.settingRow}
@@ -570,6 +772,80 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
               <Ionicons name="download-outline" size={18} color="#000000" />
               <Text style={styles.modalConfirmBtnText}>Xác nhận khôi phục dữ liệu</Text>
             </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Category Management Modal */}
+      <CategoryManagementModal
+        visible={categoryModalVisible}
+        onClose={() => setCategoryModalVisible(false)}
+      />
+
+      {/* Modal Thiết lập / Đổi mã PIN 4 số */}
+      <Modal
+        visible={pinModalVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setPinModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.pinModalBox}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Thiết Lập Mã PIN</Text>
+              <Pressable
+                style={styles.modalCloseBtn}
+                onPress={() => setPinModalVisible(false)}
+              >
+                <Ionicons name="close" size={20} color="#000000" />
+              </Pressable>
+            </View>
+
+            <Text style={styles.pinNotice}>
+              Nhập mã PIN gồm đúng 4 chữ số để khóa bảo vệ ứng dụng.
+            </Text>
+
+            <Text style={styles.pinInputLabel}>MÃ PIN MỚI (4 SỐ)</Text>
+            <TextInput
+              style={styles.pinInputField}
+              value={pinInput}
+              onChangeText={setPinInput}
+              keyboardType="number-pad"
+              maxLength={4}
+              secureTextEntry
+              placeholder="••••"
+              placeholderTextColor="#9CA3AF"
+            />
+
+            <Text style={[styles.pinInputLabel, { marginTop: 14 }]}>XÁC NHẬN LẠI MÃ PIN</Text>
+            <TextInput
+              style={styles.pinInputField}
+              value={confirmPinInput}
+              onChangeText={setConfirmPinInput}
+              keyboardType="number-pad"
+              maxLength={4}
+              secureTextEntry
+              placeholder="••••"
+              placeholderTextColor="#9CA3AF"
+            />
+
+            <View style={styles.pinBtnRow}>
+              <Pressable
+                style={styles.cancelBtn}
+                onPress={() => setPinModalVisible(false)}
+              >
+                <Text style={styles.cancelBtnText}>Hủy</Text>
+              </Pressable>
+
+              <Pressable
+                style={styles.savePinBtnShadow}
+                onPress={handleSavePin}
+              >
+                <View style={styles.savePinBtnInner}>
+                  <Text style={styles.savePinBtnText}>Lưu mã PIN</Text>
+                </View>
+              </Pressable>
+            </View>
           </View>
         </View>
       </Modal>
@@ -994,6 +1270,81 @@ const styles = StyleSheet.create({
     borderColor: '#000000',
   },
   modalConfirmBtnText: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  pinModalBox: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    borderWidth: 2.5,
+    borderColor: '#000000',
+    padding: 20,
+  },
+  pinNotice: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginBottom: 16,
+    lineHeight: 18,
+  },
+  pinInputLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#374151',
+    marginBottom: 6,
+  },
+  pinInputField: {
+    borderWidth: 2,
+    borderColor: '#000000',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#000000',
+    backgroundColor: '#F9FAFB',
+    textAlign: 'center',
+    letterSpacing: 8,
+  },
+  pinBtnRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+  cancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+  },
+  cancelBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  savePinBtnShadow: {
+    flex: 2,
+    backgroundColor: '#000000',
+    borderRadius: 12,
+  },
+  savePinBtnInner: {
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: THEME.primary,
+    borderWidth: 2,
+    borderColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    transform: [{ translateX: -2 }, { translateY: -2 }],
+  },
+  savePinBtnText: {
     fontSize: 14,
     fontWeight: '900',
     color: '#000000',

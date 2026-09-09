@@ -70,6 +70,11 @@ export async function initDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
       FOREIGN KEY (wallet_id) REFERENCES wallets(id)
     );
 
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY NOT NULL,
+      value TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_transactions_transacted_at ON transactions(transacted_at DESC);
     CREATE INDEX IF NOT EXISTS idx_transactions_wallet ON transactions(wallet_id);
     CREATE INDEX IF NOT EXISTS idx_debts_status ON debts(status);

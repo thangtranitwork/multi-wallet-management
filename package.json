@@ -10,6 +10,8 @@
     "expo": "~57.0.20",
     "expo-document-picker": "~57.0.1",
     "expo-file-system": "~57.0.6",
+    "expo-haptics": "~57.0.2",
+    "expo-local-authentication": "~57.0.2",
     "expo-sharing": "~57.0.18",
     "expo-sqlite": "~57.0.2",
     "expo-status-bar": "~57.0.1",
