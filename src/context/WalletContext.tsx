@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { useSQLiteContext } from 'expo-sqlite';
 import {
   Wallet,
@@ -7,6 +7,7 @@ import {
   Category,
   FinancialSummary,
   CategorySpending,
+  PlannedExpense,
 } from '../types';
 import * as queries from '../database/queries';
 import * as backup from '../database/backup';
@@ -16,8 +17,11 @@ interface WalletContextType {
   transactions: Transaction[];
   debts: Debt[];
   categories: Category[];
+  plannedExpenses: PlannedExpense[];
   summary: FinancialSummary | null;
   categorySpendings: CategorySpending[];
+  totalPendingPlanned: number;
+  safeToSpendBalance: number;
   isLoading: boolean;
   isBalanceHidden: boolean;
   toggleHideBalance: () => void;
@@ -57,6 +61,19 @@ interface WalletContextType {
   addCategory: (category: Omit<Category, 'id'> & { id?: string }) => Promise<void>;
   editCategory: (category: Partial<Category> & { id: string }) => Promise<void>;
   removeCategory: (id: string) => Promise<void>;
+  addPlannedExpense: (
+    planned: Omit<PlannedExpense, 'id' | 'created_at' | 'status'>
+  ) => Promise<void>;
+  editPlannedExpense: (
+    planned: Partial<PlannedExpense> & { id: string }
+  ) => Promise<void>;
+  executePlannedExpense: (params: {
+    id: string;
+    walletId: string;
+    actualAmount?: number;
+    note?: string;
+  }) => Promise<void>;
+  removePlannedExpense: (id: string) => Promise<void>;
   exportDataToJsonString: () => Promise<string>;
   importDataFromJsonString: (
     jsonStr: string,
@@ -79,6 +96,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [debts, setDebts] = useState<Debt[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [plannedExpenses, setPlannedExpenses] = useState<PlannedExpense[]>([]);
   const [summary, setSummary] = useState<FinancialSummary | null>(null);
   const [categorySpendings, setCategorySpendings] = useState<CategorySpending[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -97,6 +115,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         fetchedTxs,
         fetchedDebts,
         fetchedCategories,
+        fetchedPlanned,
         fetchedSummary,
         fetchedSpendings,
       ] = await Promise.all([
@@ -104,6 +123,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         queries.getTransactions(db, { limit: 100 }),
         queries.getDebts(db),
         queries.getCategories(db),
+        queries.getPlannedExpenses(db),
         queries.getFinancialSummary(db),
         queries.getCategorySpending(db),
       ]);
@@ -112,6 +132,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setTransactions(fetchedTxs);
       setDebts(fetchedDebts);
       setCategories(fetchedCategories);
+      setPlannedExpenses(fetchedPlanned);
       setSummary(fetchedSummary);
       setCategorySpendings(fetchedSpendings);
     } catch (error) {
@@ -120,6 +141,17 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setIsLoading(false);
     }
   }, [db]);
+
+  const totalPendingPlanned = useMemo(() => {
+    return plannedExpenses
+      .filter(p => p.status === 'pending')
+      .reduce((sum, p) => sum + p.amount, 0);
+  }, [plannedExpenses]);
+
+  const safeToSpendBalance = useMemo(() => {
+    const totalWalletBalance = wallets.reduce((sum, w) => sum + w.balance, 0);
+    return Math.max(0, totalWalletBalance - totalPendingPlanned);
+  }, [wallets, totalPendingPlanned]);
 
   useEffect(() => {
     refreshData();
@@ -226,6 +258,48 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     await refreshData();
   };
 
+  const addPlannedExpense = async (
+    planned: Omit<PlannedExpense, 'id' | 'created_at' | 'status'>
+  ) => {
+    const id = 'pe_' + Date.now();
+    await queries.createPlannedExpense(db, {
+      id,
+      ...planned,
+    });
+    await refreshData();
+  };
+
+  const editPlannedExpense = async (
+    planned: Partial<PlannedExpense> & { id: string }
+  ) => {
+    await queries.updatePlannedExpense(db, planned);
+    await refreshData();
+  };
+
+  const executePlannedExpense = async (params: {
+    id: string;
+    walletId: string;
+    actualAmount?: number;
+    transactedAt?: string;
+    note?: string;
+  }) => {
+    const planned = plannedExpenses.find(p => p.id === params.id);
+    const actualAmount = params.actualAmount ?? (planned ? planned.amount : 0);
+    await queries.executePlannedExpense(db, {
+      id: params.id,
+      walletId: params.walletId,
+      actualAmount,
+      transactedAt: params.transactedAt,
+      note: params.note,
+    });
+    await refreshData();
+  };
+
+  const removePlannedExpense = async (id: string) => {
+    await queries.deletePlannedExpense(db, id);
+    await refreshData();
+  };
+
   const exportDataToJsonString = async (): Promise<string> => {
     const data = await backup.exportAllData(db);
     return JSON.stringify(data, null, 2);
@@ -253,8 +327,11 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         transactions,
         debts,
         categories,
+        plannedExpenses,
         summary,
         categorySpendings,
+        totalPendingPlanned,
+        safeToSpendBalance,
         isLoading,
         isBalanceHidden,
         toggleHideBalance,
@@ -273,6 +350,10 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         addCategory,
         editCategory,
         removeCategory,
+        addPlannedExpense,
+        editPlannedExpense,
+        executePlannedExpense,
+        removePlannedExpense,
         exportDataToJsonString,
         importDataFromJsonString,
         resetAllData,

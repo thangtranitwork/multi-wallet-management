@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   Share,
   ActivityIndicator,
   Switch,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -55,8 +56,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
 
   const [categoryModalVisible, setCategoryModalVisible] = useState<boolean>(false);
   const [pinModalVisible, setPinModalVisible] = useState<boolean>(false);
+  const [pinStep, setPinStep] = useState<'enter' | 'confirm'>('enter');
   const [pinInput, setPinInput] = useState<string>('');
   const [confirmPinInput, setConfirmPinInput] = useState<string>('');
+  const [pinError, setPinError] = useState<string>('');
+  const pinShakeAnim = useRef(new Animated.Value(0)).current;
 
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [importMode, setImportMode] = useState<'replace' | 'merge'>('replace');
@@ -207,40 +211,96 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
     }
   };
 
+  const triggerPinShake = () => {
+    Animated.sequence([
+      Animated.timing(pinShakeAnim, { toValue: 8, duration: 45, useNativeDriver: true }),
+      Animated.timing(pinShakeAnim, { toValue: -8, duration: 45, useNativeDriver: true }),
+      Animated.timing(pinShakeAnim, { toValue: 6, duration: 45, useNativeDriver: true }),
+      Animated.timing(pinShakeAnim, { toValue: -6, duration: 45, useNativeDriver: true }),
+      Animated.timing(pinShakeAnim, { toValue: 0, duration: 45, useNativeDriver: true }),
+    ]).start();
+  };
+
+  const handleOpenSetPin = () => {
+    hapticMedium();
+    setPinStep('enter');
+    setPinInput('');
+    setConfirmPinInput('');
+    setPinError('');
+    setPinModalVisible(true);
+  };
+
   const handleToggleAppLock = async (val: boolean) => {
     hapticMedium();
     if (val && !hasPinCode) {
-      setPinInput('');
-      setConfirmPinInput('');
-      setPinModalVisible(true);
+      handleOpenSetPin();
       return;
     }
     await toggleAppLock(val);
   };
 
-  const handleOpenSetPin = () => {
-    hapticMedium();
-    setPinInput('');
-    setConfirmPinInput('');
-    setPinModalVisible(true);
+  const handlePinDigitPress = async (digit: string) => {
+    hapticLight();
+    setPinError('');
+
+    if (pinStep === 'enter') {
+      if (pinInput.length >= 4) return;
+      const next = pinInput + digit;
+      setPinInput(next);
+      if (next.length === 4) {
+        hapticSuccess();
+        setTimeout(() => {
+          setPinStep('confirm');
+        }, 220);
+      }
+    } else {
+      if (confirmPinInput.length >= 4) return;
+      const next = confirmPinInput + digit;
+      setConfirmPinInput(next);
+      if (next.length === 4) {
+        if (next === pinInput) {
+          hapticSuccess();
+          await updatePinCode(next);
+          await toggleAppLock(true);
+          setPinModalVisible(false);
+          Alert.alert('Thành công 🎉', 'Đã lưu mã PIN và kích hoạt khóa bảo mật.');
+        } else {
+          hapticError();
+          triggerPinShake();
+          setPinError('Mã xác nhận không khớp! Vui lòng nhập lại.');
+          setTimeout(() => {
+            setConfirmPinInput('');
+          }, 500);
+        }
+      }
+    }
   };
 
-  const handleSavePin = async () => {
-    if (pinInput.length !== 4) {
-      hapticError();
-      Alert.alert('Mã PIN không hợp lệ', 'Vui lòng nhập đúng 4 chữ số.');
-      return;
+  const handlePinBackspace = () => {
+    hapticLight();
+    setPinError('');
+    if (pinStep === 'enter') {
+      if (pinInput.length > 0) {
+        setPinInput(prev => prev.slice(0, -1));
+      }
+    } else {
+      if (confirmPinInput.length > 0) {
+        setConfirmPinInput(prev => prev.slice(0, -1));
+      } else {
+        setPinStep('enter');
+      }
     }
-    if (pinInput !== confirmPinInput) {
-      hapticError();
-      Alert.alert('Xác nhận không khớp', 'Mã PIN xác nhận không trùng khớp.');
-      return;
+  };
+
+  const handlePinResetOrBack = () => {
+    hapticLight();
+    setPinError('');
+    if (pinStep === 'confirm') {
+      setPinStep('enter');
+      setConfirmPinInput('');
+    } else {
+      setPinInput('');
     }
-    await updatePinCode(pinInput);
-    await toggleAppLock(true);
-    hapticSuccess();
-    setPinModalVisible(false);
-    Alert.alert('Thành công 🎉', 'Đã thiết lập mã PIN và kích hoạt khóa bảo mật.');
   };
 
   // 5. Xử lý Đặt lại dữ liệu gốc (Reset)
@@ -789,63 +849,136 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
         transparent={true}
         onRequestClose={() => setPinModalVisible(false)}
       >
-        <View style={styles.modalBackdrop}>
+        <View style={styles.pinModalBackdrop}>
           <View style={styles.pinModalBox}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Thiết Lập Mã PIN</Text>
+            {/* Modal Header */}
+            <View style={styles.pinModalHeader}>
+              <View style={styles.pinBadge}>
+                <Text style={styles.pinBadgeText}>
+                  {pinStep === 'enter' ? 'BƯỚC 1/2' : 'BƯỚC 2/2'}
+                </Text>
+              </View>
+              <Text style={styles.pinModalTitle}>
+                {hasPinCode ? 'Đổi Mã PIN' : 'Thiết Lập PIN'}
+              </Text>
               <Pressable
-                style={styles.modalCloseBtn}
+                style={styles.pinModalCloseBtn}
                 onPress={() => setPinModalVisible(false)}
               >
                 <Ionicons name="close" size={20} color="#000000" />
               </Pressable>
             </View>
 
-            <Text style={styles.pinNotice}>
-              Nhập mã PIN gồm đúng 4 chữ số để khóa bảo vệ ứng dụng.
+            <Text style={styles.pinModalNotice}>
+              {pinStep === 'enter'
+                ? 'Nhập 4 chữ số để tạo mã PIN bảo mật'
+                : 'Nhập lại đúng 4 số vừa tạo để xác nhận'}
             </Text>
 
-            <Text style={styles.pinInputLabel}>MÃ PIN MỚI (4 SỐ)</Text>
-            <TextInput
-              style={styles.pinInputField}
-              value={pinInput}
-              onChangeText={setPinInput}
-              keyboardType="number-pad"
-              maxLength={4}
-              secureTextEntry
-              placeholder="••••"
-              placeholderTextColor="#9CA3AF"
-            />
+            {/* PIN Indicator Dots */}
+            <Animated.View
+              style={[
+                styles.pinDotsRow,
+                { transform: [{ translateX: pinShakeAnim }] },
+              ]}
+            >
+              {[0, 1, 2, 3].map(idx => {
+                const currentVal = pinStep === 'enter' ? pinInput : confirmPinInput;
+                const isFilled = currentVal.length > idx;
+                return (
+                  <View
+                    key={idx}
+                    style={[
+                      styles.pinDotShadow,
+                      isFilled && styles.pinDotShadowFilled,
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.pinDotInner,
+                        isFilled && styles.pinDotInnerFilled,
+                      ]}
+                    />
+                  </View>
+                );
+              })}
+            </Animated.View>
 
-            <Text style={[styles.pinInputLabel, { marginTop: 14 }]}>XÁC NHẬN LẠI MÃ PIN</Text>
-            <TextInput
-              style={styles.pinInputField}
-              value={confirmPinInput}
-              onChangeText={setConfirmPinInput}
-              keyboardType="number-pad"
-              maxLength={4}
-              secureTextEntry
-              placeholder="••••"
-              placeholderTextColor="#9CA3AF"
-            />
-
-            <View style={styles.pinBtnRow}>
-              <Pressable
-                style={styles.cancelBtn}
-                onPress={() => setPinModalVisible(false)}
-              >
-                <Text style={styles.cancelBtnText}>Hủy</Text>
-              </Pressable>
-
-              <Pressable
-                style={styles.savePinBtnShadow}
-                onPress={handleSavePin}
-              >
-                <View style={styles.savePinBtnInner}>
-                  <Text style={styles.savePinBtnText}>Lưu mã PIN</Text>
-                </View>
-              </Pressable>
+            {/* Error or Step hint message */}
+            <View style={styles.pinStatusContainer}>
+              {pinError ? (
+                <Text style={styles.pinErrorText}>{pinError}</Text>
+              ) : (
+                <Text style={styles.pinStepHintText}>
+                  {pinStep === 'enter' ? 'Tạo mã PIN cá nhân' : 'Khớp với mã PIN ban đầu'}
+                </Text>
+              )}
             </View>
+
+            {/* Keypad */}
+            <View style={styles.pinKeypadGrid}>
+              {[
+                ['1', '2', '3'],
+                ['4', '5', '6'],
+                ['7', '8', '9'],
+              ].map((row, rIdx) => (
+                <View key={rIdx} style={styles.pinKeypadRow}>
+                  {row.map(digit => (
+                    <Pressable
+                      key={digit}
+                      style={styles.pinKeyShadow}
+                      onPress={() => handlePinDigitPress(digit)}
+                    >
+                      <View style={styles.pinKeyInner}>
+                        <Text style={styles.pinKeyText}>{digit}</Text>
+                      </View>
+                    </Pressable>
+                  ))}
+                </View>
+              ))}
+
+              {/* Bottom row: Reset/Back, 0, Backspace */}
+              <View style={styles.pinKeypadRow}>
+                <Pressable
+                  style={styles.pinKeyShadow}
+                  onPress={handlePinResetOrBack}
+                >
+                  <View style={[styles.pinKeyInner, { backgroundColor: '#F3F4F6' }]}>
+                    {pinStep === 'confirm' ? (
+                      <Ionicons name="arrow-back" size={20} color="#000000" />
+                    ) : (
+                      <Text style={styles.pinKeySubText}>Xóa</Text>
+                    )}
+                  </View>
+                </Pressable>
+
+                <Pressable
+                  style={styles.pinKeyShadow}
+                  onPress={() => handlePinDigitPress('0')}
+                >
+                  <View style={styles.pinKeyInner}>
+                    <Text style={styles.pinKeyText}>0</Text>
+                  </View>
+                </Pressable>
+
+                <Pressable
+                  style={styles.pinKeyShadow}
+                  onPress={handlePinBackspace}
+                >
+                  <View style={[styles.pinKeyInner, { backgroundColor: '#FEE2E2' }]}>
+                    <Ionicons name="backspace-outline" size={22} color="#000000" />
+                  </View>
+                </Pressable>
+              </View>
+            </View>
+
+            {/* Cancel Button */}
+            <Pressable
+              style={styles.pinCancelBtn}
+              onPress={() => setPinModalVisible(false)}
+            >
+              <Text style={styles.pinCancelBtnText}>Đóng</Text>
+            </Pressable>
           </View>
         </View>
       </Modal>
@@ -1274,79 +1407,168 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#000000',
   },
+  pinModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
   pinModalBox: {
     width: '100%',
     maxWidth: 340,
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    borderWidth: 2.5,
+    borderRadius: 22,
+    borderWidth: 3,
     borderColor: '#000000',
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 16,
+    alignItems: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 5, height: 5 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 8,
   },
-  pinNotice: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#6B7280',
-    marginBottom: 16,
-    lineHeight: 18,
+  pinModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 8,
   },
-  pinInputLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#374151',
-    marginBottom: 6,
-  },
-  pinInputField: {
-    borderWidth: 2,
+  pinBadge: {
+    backgroundColor: THEME.popYellow,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1.5,
     borderColor: '#000000',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 22,
+  },
+  pinBadgeText: {
+    fontSize: 10,
     fontWeight: '900',
     color: '#000000',
-    backgroundColor: '#F9FAFB',
-    textAlign: 'center',
-    letterSpacing: 8,
   },
-  pinBtnRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 20,
+  pinModalTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#000000',
   },
-  cancelBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 2,
+  pinModalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1.5,
     borderColor: '#000000',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F3F4F6',
   },
-  cancelBtnText: {
-    fontSize: 14,
+  pinModalNotice: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#4B5563',
+    textAlign: 'center',
+    marginTop: 2,
+    marginBottom: 10,
+  },
+  pinDotsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+    marginVertical: 10,
+  },
+  pinDotShadow: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#000000',
+    paddingBottom: 2,
+    paddingRight: 2,
+  },
+  pinDotShadowFilled: {
+    paddingBottom: 0,
+    paddingRight: 0,
+    transform: [{ translateX: 1 }, { translateY: 1 }],
+  },
+  pinDotInner: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#000000',
+  },
+  pinDotInnerFilled: {
+    backgroundColor: THEME.popPink,
+  },
+  pinStatusContainer: {
+    height: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  pinErrorText: {
+    fontSize: 12,
     fontWeight: '800',
-    color: '#000000',
+    color: '#DC2626',
   },
-  savePinBtnShadow: {
-    flex: 2,
+  pinStepHintText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#9CA3AF',
+  },
+  pinKeypadGrid: {
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  pinKeypadRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 12,
+    marginBottom: 10,
+  },
+  pinKeyShadow: {
+    width: 72,
+    height: 50,
     backgroundColor: '#000000',
     borderRadius: 12,
   },
-  savePinBtnInner: {
-    paddingVertical: 12,
+  pinKeyInner: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    backgroundColor: THEME.primary,
     borderWidth: 2,
     borderColor: '#000000',
     justifyContent: 'center',
     alignItems: 'center',
     transform: [{ translateX: -2 }, { translateY: -2 }],
   },
-  savePinBtnText: {
-    fontSize: 14,
+  pinKeyText: {
+    fontSize: 22,
     fontWeight: '900',
     color: '#000000',
+  },
+  pinKeySubText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#4B5563',
+  },
+  pinCancelBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#D1D5DB',
+  },
+  pinCancelBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#6B7280',
   },
 });

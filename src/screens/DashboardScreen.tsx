@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,11 +11,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import dayjs from 'dayjs';
 import { useWallet } from '../context/WalletContext';
 import { WalletCard } from '../components/WalletCard';
 import { TransactionItem } from '../components/TransactionItem';
 import { QuickAddModal } from '../components/QuickAddModal';
 import { WalletModal } from '../components/WalletModal';
+import { PlannedExpensesModal } from '../components/PlannedExpensesModal';
 import { Wallet } from '../types';
 import { THEME, formatVND } from '../constants';
 import { hapticMedium, hapticLight } from '../utils/haptics';
@@ -37,11 +39,26 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
     refreshData,
     removeTransaction,
     addWallet,
+    plannedExpenses,
+    totalPendingPlanned,
+    safeToSpendBalance,
   } = useWallet();
 
   const [quickAddVisible, setQuickAddVisible] = useState(false);
   const [walletModalVisible, setWalletModalVisible] = useState(false);
   const [adjustingWallet, setAdjustingWallet] = useState<Wallet | null>(null);
+  const [plannedModalVisible, setPlannedModalVisible] = useState(false);
+
+  const upcomingPlanned = useMemo(() => {
+    const pending = plannedExpenses.filter(p => p.status === 'pending');
+    if (pending.length === 0) return null;
+    return pending.sort((a, b) => a.target_date.localeCompare(b.target_date))[0];
+  }, [plannedExpenses]);
+
+  const daysUntil = useMemo(() => {
+    if (!upcomingPlanned) return 0;
+    return dayjs(upcomingPlanned.target_date).startOf('day').diff(dayjs().startOf('day'), 'day');
+  }, [upcomingPlanned]);
 
   const recentTransactions = transactions.slice(0, 5);
 
@@ -299,6 +316,67 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
           </View>
         </Pressable>
 
+        {/* Planned Expenses & Safe-to-Spend Card */}
+        <Pressable
+          style={styles.plannedBannerShadow}
+          onPress={() => {
+            hapticMedium();
+            setPlannedModalVisible(true);
+          }}
+        >
+          <View style={styles.plannedBannerInner}>
+            {/* Folder Tab trên cùng */}
+            <View style={styles.plannedFolderTab}>
+              <Ionicons name="shield-checkmark" size={12} color="#000000" />
+              <Text style={styles.plannedFolderTabText}>KẾ HOẠCH DỰ CHI & TIỀN AN TOÀN</Text>
+            </View>
+
+            <View style={styles.plannedContentRow}>
+              <View style={styles.plannedLeftCol}>
+                <Text style={styles.plannedBalanceLabel}>Tiền có thể tiêu an toàn</Text>
+                <Text style={styles.plannedBalanceVal} numberOfLines={1}>
+                  {isBalanceHidden ? '•••••••• ₫' : formatVND(safeToSpendBalance)}
+                </Text>
+                <Text style={styles.plannedDetailText}>
+                  {totalPendingPlanned > 0
+                    ? `Đã bảo lưu ${formatVND(totalPendingPlanned)} cho ${plannedExpenses.filter(p => p.status === 'pending').length} khoản dự chi`
+                    : 'Chưa có khoản dự chi nào đang chờ'}
+                </Text>
+              </View>
+
+              <View style={styles.plannedActionBox}>
+                <View style={styles.plannedIconCircle}>
+                  <Ionicons name="calendar" size={20} color="#000000" />
+                </View>
+                <View style={styles.plannedArrowBox}>
+                  <Text style={styles.plannedActionText}>Chi tiết</Text>
+                  <Ionicons name="chevron-forward" size={13} color="#000000" />
+                </View>
+              </View>
+            </View>
+
+            {upcomingPlanned && (
+              <View style={styles.upcomingPill}>
+                <View style={styles.upcomingPillDot} />
+                <Text style={styles.upcomingPillTitle} numberOfLines={1}>
+                  Gần nhất: {upcomingPlanned.title} ({formatVND(upcomingPlanned.amount)})
+                </Text>
+                <View style={styles.upcomingPillBadge}>
+                  <Text style={styles.upcomingPillBadgeText}>
+                    {daysUntil < 0
+                      ? `Quá hạn ${Math.abs(daysUntil)} ngày`
+                      : daysUntil === 0
+                      ? 'Hôm nay'
+                      : daysUntil === 1
+                      ? 'Ngày mai'
+                      : `Còn ${daysUntil} ngày`}
+                  </Text>
+                </View>
+              </View>
+            )}
+          </View>
+        </Pressable>
+
         {/* Section: My Collections / Nguồn Tiền Của Tôi (Lưới 2 cột các thẻ Folder Tab y như ảnh của Ngài) */}
         <View style={styles.sectionContainer}>
           <View style={styles.sectionHeaderRow}>
@@ -538,6 +616,11 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
         }}
         wallet={adjustingWallet}
         mode={adjustingWallet ? 'adjust' : 'create'}
+      />
+
+      <PlannedExpensesModal
+        visible={plannedModalVisible}
+        onClose={() => setPlannedModalVisible(false)}
       />
     </SafeAreaView>
   );
@@ -1089,5 +1172,129 @@ const styles = StyleSheet.create({
     borderColor: '#000000',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  plannedBannerShadow: {
+    backgroundColor: '#000000',
+    borderRadius: 18,
+    marginHorizontal: 16,
+    marginBottom: 20,
+    marginTop: 6,
+  },
+  plannedBannerInner: {
+    backgroundColor: '#ECFDF5',
+    borderRadius: 18,
+    borderWidth: 2.5,
+    borderColor: '#000000',
+    padding: 14,
+    transform: [{ translateX: -2.5 }, { translateY: -2.5 }],
+  },
+  plannedFolderTab: {
+    position: 'absolute',
+    top: -12,
+    left: 14,
+    height: 16,
+    paddingHorizontal: 10,
+    backgroundColor: THEME.primary,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+    borderWidth: 2,
+    borderColor: '#000000',
+    borderBottomWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    zIndex: 2,
+  },
+  plannedFolderTabText: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#000000',
+    letterSpacing: 0.5,
+  },
+  plannedContentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  plannedLeftCol: {
+    flex: 1,
+    marginRight: 10,
+  },
+  plannedBalanceLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#4B5563',
+  },
+  plannedBalanceVal: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#000000',
+    marginVertical: 2,
+  },
+  plannedDetailText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  plannedActionBox: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  plannedIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: THEME.popYellow,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  plannedArrowBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  plannedActionText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  upcomingPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginTop: 10,
+    gap: 6,
+  },
+  upcomingPillDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#DC2626',
+  },
+  upcomingPillTitle: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#1F2937',
+    flex: 1,
+  },
+  upcomingPillBadge: {
+    backgroundColor: THEME.popPinkLight,
+    borderWidth: 1,
+    borderColor: '#000000',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  upcomingPillBadgeText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#000000',
   },
 });

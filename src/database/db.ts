@@ -75,9 +75,26 @@ export async function initDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
       value TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS planned_expenses (
+      id TEXT PRIMARY KEY NOT NULL,
+      title TEXT NOT NULL,
+      amount REAL NOT NULL,
+      target_date TEXT NOT NULL,
+      wallet_id TEXT,
+      category_id TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      actual_amount REAL,
+      note TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (wallet_id) REFERENCES wallets(id) ON DELETE SET NULL,
+      FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_transactions_transacted_at ON transactions(transacted_at DESC);
     CREATE INDEX IF NOT EXISTS idx_transactions_wallet ON transactions(wallet_id);
     CREATE INDEX IF NOT EXISTS idx_debts_status ON debts(status);
+    CREATE INDEX IF NOT EXISTS idx_planned_target_date ON planned_expenses(target_date ASC);
+    CREATE INDEX IF NOT EXISTS idx_planned_status ON planned_expenses(status);
   `);
 
   // ONLY seed default standard categories (no wallets, no transactions, no debts)

@@ -102,3 +102,26 @@ export interface CategorySpending {
   total_amount: number;
   percentage: number;
 }
+
+export type PlannedExpenseStatus = 'pending' | 'executed' | 'cancelled';
+
+export interface PlannedExpense {
+  id: string;
+  title: string;
+  amount: number;
+  target_date: string; // YYYY-MM-DD or ISO string
+  wallet_id?: string | null;
+  category_id?: string | null;
+  status: PlannedExpenseStatus;
+  actual_amount?: number | null;
+  note?: string;
+  created_at: string;
+  // Joined fields
+  wallet_name?: string;
+  wallet_color?: string;
+  wallet_icon?: string;
+  category_name?: string;
+  category_icon?: string;
+  category_color?: string;
+}
+

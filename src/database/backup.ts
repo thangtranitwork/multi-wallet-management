@@ -1,5 +1,5 @@
 import * as SQLite from 'expo-sqlite';
-import { Wallet, Category, Debt, Transaction, DebtPayment } from '../types';
+import { Wallet, Category, Debt, Transaction, DebtPayment, PlannedExpense } from '../types';
 
 export interface BackupData {
   app: 'multi-wallet-management';
@@ -11,6 +11,7 @@ export interface BackupData {
     debts_count: number;
     transactions_count: number;
     debt_payments_count: number;
+    planned_expenses_count?: number;
   };
   data: {
     wallets: Wallet[];
@@ -18,6 +19,7 @@ export interface BackupData {
     debts: Debt[];
     transactions: Transaction[];
     debt_payments: DebtPayment[];
+    planned_expenses?: PlannedExpense[];
   };
 }
 
@@ -44,12 +46,13 @@ export const DEFAULT_CATEGORIES: Category[] = [
  * Trích xuất toàn bộ dữ liệu SQLite hiện tại thành BackupData
  */
 export async function exportAllData(db: SQLite.SQLiteDatabase): Promise<BackupData> {
-  const [wallets, categories, debts, transactions, debt_payments] = await Promise.all([
+  const [wallets, categories, debts, transactions, debt_payments, planned_expenses] = await Promise.all([
     db.getAllAsync<Wallet>('SELECT * FROM wallets ORDER BY created_at ASC'),
     db.getAllAsync<Category>('SELECT * FROM categories ORDER BY type ASC, name ASC'),
     db.getAllAsync<Debt>('SELECT * FROM debts ORDER BY created_at DESC'),
     db.getAllAsync<Transaction>('SELECT id, type, amount, wallet_id, to_wallet_id, category_id, debt_id, note, transacted_at, created_at FROM transactions ORDER BY transacted_at DESC'),
     db.getAllAsync<DebtPayment>('SELECT * FROM debt_payments ORDER BY paid_at DESC'),
+    db.getAllAsync<PlannedExpense>('SELECT * FROM planned_expenses ORDER BY target_date ASC'),
   ]);
 
   return {
@@ -62,6 +65,7 @@ export async function exportAllData(db: SQLite.SQLiteDatabase): Promise<BackupDa
       debts_count: debts.length,
       transactions_count: transactions.length,
       debt_payments_count: debt_payments.length,
+      planned_expenses_count: planned_expenses.length,
     },
     data: {
       wallets,
@@ -69,6 +73,7 @@ export async function exportAllData(db: SQLite.SQLiteDatabase): Promise<BackupDa
       debts,
       transactions,
       debt_payments,
+      planned_expenses,
     },
   };
 }
@@ -115,6 +120,7 @@ export async function importAllData(
   const debts: Debt[] = raw.debts || [];
   const transactions: Transaction[] = raw.transactions || [];
   const debtPayments: DebtPayment[] = raw.debt_payments || [];
+  const plannedExpenses: PlannedExpense[] = raw.planned_expenses || [];
 
   await db.withTransactionAsync(async () => {
     if (mode === 'replace') {
@@ -122,6 +128,7 @@ export async function importAllData(
       await db.runAsync('DELETE FROM debt_payments;');
       await db.runAsync('DELETE FROM transactions;');
       await db.runAsync('DELETE FROM debts;');
+      await db.runAsync('DELETE FROM planned_expenses;');
       await db.runAsync('DELETE FROM wallets;');
       await db.runAsync('DELETE FROM categories;');
     }
@@ -212,6 +219,26 @@ export async function importAllData(
         ]
       );
     }
+
+    // 7. Chèn các khoản dự chi
+    for (const pe of plannedExpenses) {
+      await db.runAsync(
+        `INSERT OR REPLACE INTO planned_expenses (id, title, amount, target_date, wallet_id, category_id, status, actual_amount, note, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          pe.id,
+          pe.title,
+          pe.amount,
+          pe.target_date,
+          pe.wallet_id || null,
+          pe.category_id || null,
+          pe.status || 'pending',
+          pe.actual_amount || null,
+          pe.note || '',
+          pe.created_at || new Date().toISOString(),
+        ]
+      );
+    }
   });
 
   return {
@@ -230,6 +257,7 @@ export async function resetDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
     await db.runAsync('DELETE FROM debt_payments;');
     await db.runAsync('DELETE FROM transactions;');
     await db.runAsync('DELETE FROM debts;');
+    await db.runAsync('DELETE FROM planned_expenses;');
     await db.runAsync('DELETE FROM wallets;');
     await db.runAsync('DELETE FROM categories;');
 

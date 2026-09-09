@@ -7,6 +7,8 @@ import {
   Category,
   FinancialSummary,
   CategorySpending,
+  PlannedExpense,
+  PlannedExpenseStatus,
 } from '../types';
 
 // ==================== WALLET QUERIES ====================
@@ -781,4 +783,154 @@ export async function getAnalyticsByRange(
     categorySpendings,
   };
 }
+
+// ==================== PLANNED EXPENSES QUERIES ====================
+
+export async function getPlannedExpenses(
+  db: SQLite.SQLiteDatabase,
+  status?: PlannedExpenseStatus
+): Promise<PlannedExpense[]> {
+  let sql = `
+    SELECT pe.*,
+           w.name as wallet_name, w.color as wallet_color, w.icon as wallet_icon,
+           c.name as category_name, c.color as category_color, c.icon as category_icon
+    FROM planned_expenses pe
+    LEFT JOIN wallets w ON pe.wallet_id = w.id
+    LEFT JOIN categories c ON pe.category_id = c.id
+  `;
+  const params: any[] = [];
+  if (status) {
+    sql += ' WHERE pe.status = ?';
+    params.push(status);
+  }
+  sql += ` ORDER BY 
+    CASE pe.status
+      WHEN 'pending' THEN 1
+      WHEN 'executed' THEN 2
+      ELSE 3
+    END,
+    pe.target_date ASC`;
+
+  return await db.getAllAsync<PlannedExpense>(sql, params);
+}
+
+export async function createPlannedExpense(
+  db: SQLite.SQLiteDatabase,
+  expense: {
+    id: string;
+    title: string;
+    amount: number;
+    target_date: string;
+    wallet_id?: string | null;
+    category_id?: string | null;
+    note?: string;
+  }
+): Promise<void> {
+  const now = new Date().toISOString();
+  await db.runAsync(
+    `INSERT INTO planned_expenses (id, title, amount, target_date, wallet_id, category_id, status, note, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+    [
+      expense.id,
+      expense.title,
+      expense.amount,
+      expense.target_date,
+      expense.wallet_id || null,
+      expense.category_id || null,
+      expense.note || '',
+      now,
+    ]
+  );
+}
+
+export async function updatePlannedExpense(
+  db: SQLite.SQLiteDatabase,
+  expense: Partial<PlannedExpense> & { id: string }
+): Promise<void> {
+  await db.runAsync(
+    `UPDATE planned_expenses
+     SET title = COALESCE(?, title),
+         amount = COALESCE(?, amount),
+         target_date = COALESCE(?, target_date),
+         wallet_id = COALESCE(?, wallet_id),
+         category_id = COALESCE(?, category_id),
+         status = COALESCE(?, status),
+         actual_amount = COALESCE(?, actual_amount),
+         note = COALESCE(?, note)
+     WHERE id = ?`,
+    [
+      expense.title ?? null,
+      expense.amount ?? null,
+      expense.target_date ?? null,
+      expense.wallet_id ?? null,
+      expense.category_id ?? null,
+      expense.status ?? null,
+      expense.actual_amount ?? null,
+      expense.note ?? null,
+      expense.id,
+    ]
+  );
+}
+
+export async function executePlannedExpense(
+  db: SQLite.SQLiteDatabase,
+  params: {
+    id: string;
+    actualAmount: number;
+    walletId: string;
+    transactedAt?: string;
+    note?: string;
+  }
+): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    const planned = await db.getFirstAsync<PlannedExpense>(
+      'SELECT * FROM planned_expenses WHERE id = ?',
+      [params.id]
+    );
+    if (!planned) throw new Error('Khoản dự chi không tồn tại');
+
+    const now = new Date().toISOString();
+    const transactedAt = params.transactedAt || now;
+    const txId = 'tx_' + Date.now();
+
+    // 1. Cập nhật trạng thái khoản dự chi thành 'executed'
+    await db.runAsync(
+      `UPDATE planned_expenses
+       SET status = 'executed',
+           actual_amount = ?,
+           wallet_id = ?
+       WHERE id = ?`,
+      [params.actualAmount, params.walletId, params.id]
+    );
+
+    // 2. Trừ số dư ví
+    await db.runAsync(
+      'UPDATE wallets SET balance = balance - ? WHERE id = ?',
+      [params.actualAmount, params.walletId]
+    );
+
+    // 3. Thêm giao dịch chi tiêu thực tế
+    await db.runAsync(
+      `INSERT INTO transactions (id, type, amount, wallet_id, to_wallet_id, category_id, note, transacted_at, created_at)
+       VALUES (?, 'expense', ?, ?, NULL, ?, ?, ?, ?)`,
+      [
+        txId,
+        params.actualAmount,
+        params.walletId,
+        planned.category_id || null,
+        `[Dự chi] ${planned.title}${params.note ? ` - ${params.note}` : ''}`.trim(),
+        transactedAt,
+        now,
+      ]
+    );
+  });
+}
+
+export async function deletePlannedExpense(
+  db: SQLite.SQLiteDatabase,
+  id: string
+): Promise<void> {
+  await db.runAsync('DELETE FROM planned_expenses WHERE id = ?', [id]);
+}
+
 

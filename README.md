@@ -55,22 +55,43 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
 - Choose from 12+ vibrant Neo-Brutalist color palettes.
 - Safely delete categories with automatic transaction unlinking.
 
-### 6. Tactile Haptic Feedback (Cảm ứng xúc giác cơ học)
+### 6. Planned Expenses & Safe-to-Spend (Kế Hoạch Dự Chi & Tiền An Toàn)
+- **Schedule Upcoming Future Expenses**:
+  - Plan upcoming fixed or variable expenses (house rent, electricity, tuition fees, gifts, etc.).
+  - **Target Due Date (Ngày dự chi)** with intelligent relative countdown badges:
+    - `Hôm nay đến hạn!` (Urgent warning)
+    - `Quá hạn X ngày` (Overdue alert)
+    - `Ngày mai` / `Còn X ngày` (Upcoming schedule)
+    - `Đã chi` (Completed)
+  - One-tap quick date chips: *Hôm nay, Ngày mai, Sau 3 ngày, 1 tuần tới, Đầu tháng tới*.
+- **Safe-to-Spend Balance (Tiền có thể chi tiêu an toàn)**:
+  - Real-time calculation:
+    $$\text{Safe-to-Spend} = \text{Total Wallet Balances} - \text{Total Pending Planned Expenses}$$
+  - Clearly displayed on both the **Dashboard Widget** and the **Planned Expenses Modal**. Know exactly how much money is safe to spend today without running out of cash for scheduled bills!
+- **1-Tap "Đã Chi" Execution**:
+  - Convert any planned expense into an actual expense transaction with 1 tap.
+  - Choose the paying wallet, confirm or adjust the actual transacted amount, and add notes.
+  - Handled atomically inside an `expo-sqlite` transaction (marks executed, updates balance, creates transaction).
+
+### 7. Tactile Haptic Feedback (Cảm ứng xúc giác cơ học)
 - Powered by `expo-haptics` with fine-tuned vibration pulses.
 - Mechanical keypress feedback on the Neo-Brutalist numeric keypad (`0-9`, `000`, `⌫`).
 - Distinct haptic feedback patterns for tab switching, saving transactions, and alert warnings.
 - User-configurable on/off switch in Settings.
 
-### 7. Biometric (Fingerprint) & PIN App Lock (Bảo mật sinh trắc học & Mã PIN)
+### 8. Biometric (Fingerprint) & Tactile PIN Lock (Bảo mật vân tay & Mã PIN)
 - Powered by `expo-local-authentication` and SQLite local encrypted settings.
 - **Fingerprint Scanner (Cảm biến vân tay)**: Fast and seamless biometric unlock.
-- **4-Digit Neo-Brutalist PIN Pad**: Tactile passcode fallback with wrong-PIN shake animations.
+- **Dedicated Neo-Brutalist Numeric Keypad**: 
+  - Centered PIN setup modal with an on-screen tactile keypad (no soft keyboard clutter).
+  - 2-step setup flow: Step 1 (Create PIN) $\to$ Step 2 (Confirm PIN).
+  - Tactile indicator dots (`● ○ ○ ○`) with error shake animation (`Animated.sequence`) on mismatch.
 - Auto-locks whenever the app is sent to the background or reopened.
 - Configurable toggle and PIN change options in Settings.
 
-### 8. Settings & Complete Data Backup (Import / Export)
+### 9. Settings & Complete Data Backup (Import / Export)
 - **Export Backup**:
-  - Export all SQLite tables into a standardized JSON file.
+  - Export all SQLite tables (including planned expenses) into a standardized JSON file.
   - Native system share sheet (AirDrop, Google Drive, Telegram, Zalo, Save to Files, etc.).
   - View & copy raw JSON directly to your clipboard.
 - **Import Backup**:
@@ -88,6 +109,7 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
 - **Database**: `expo-sqlite` (WAL mode enabled, foreign keys enforced)
 - **Navigation**: React Navigation v7
 - **Native File APIs**: `expo-file-system`, `expo-sharing`, `expo-document-picker`
+- **Security & Biometrics**: `expo-local-authentication`, `expo-haptics`
 - **Date Utility**: `dayjs`
 - **Design Aesthetic**: Tactile Neo-Brutalism with high-contrast borders, playful offsets, and curated palettes.
 
@@ -162,29 +184,35 @@ adb install android/app/build/outputs/apk/release/app-release.apk
 ```text
 ├── .github/
 │   └── workflows/
-│       └── build-apk.yml       # Automated CI/CD GitHub Actions APK builder
+│       └── build-apk.yml           # Automated CI/CD GitHub Actions APK builder
 ├── src/
-│   ├── components/             # Reusable Neo-Brutalist UI components
-│   │   ├── DebtModal.tsx       # Loan creation & payment modal
-│   │   ├── NeoCard.tsx         # Tactile card component
-│   │   ├── NeoDropdown.tsx     # Custom dropdown selector
-│   │   ├── QuickAddModal.tsx   # Transaction logger with date & time picker
-│   │   ├── TransactionItem.tsx # Individual transaction card
-│   │   ├── WalletCard.tsx      # Interactive wallet balance card
-│   │   └── WalletModal.tsx     # Wallet creation & editing modal
-│   ├── constants/              # Theme tokens, palettes & formatters
+│   ├── components/                 # Reusable Neo-Brutalist UI components
+│   │   ├── CategoryManagementModal.tsx # Custom category creation & color/icon picker
+│   │   ├── DebtModal.tsx           # Loan creation & payment modal
+│   │   ├── LockScreenOverlay.tsx   # Biometric & PIN lock overlay
+│   │   ├── NeoCard.tsx             # Tactile card component
+│   │   ├── NeoDropdown.tsx         # Custom dropdown selector
+│   │   ├── PlannedExpensesModal.tsx# Planned expenses & safe-to-spend manager
+│   │   ├── QuickAddModal.tsx       # Transaction logger with date & time picker
+│   │   ├── TransactionItem.tsx     # Individual transaction card
+│   │   ├── WalletCard.tsx          # Interactive wallet balance card
+│   │   └── WalletModal.tsx         # Wallet creation & editing modal
+│   ├── constants/                  # Theme tokens, palettes & formatters
 │   ├── context/
-│   │   └── WalletContext.tsx   # Global state & SQLite bridge
+│   │   ├── SecurityContext.tsx     # Biometrics & PIN lock state
+│   │   └── WalletContext.tsx       # Global finance state & SQLite bridge
 │   ├── database/
-│   │   ├── backup.ts           # JSON serialization, export & import engine
-│   │   ├── db.ts               # SQLite schema & category seeds
-│   │   └── queries.ts          # Optimized SQL queries & transactions
+│   │   ├── backup.ts               # JSON serialization, export & import engine
+│   │   ├── db.ts                   # SQLite schema & category seeds
+│   │   └── queries.ts              # Optimized SQL queries & atomic transactions
 │   ├── navigation/
-│   │   └── RootNavigator.tsx   # Tab navigator & route definitions
-│   ├── screens/                # Core screens (Dashboard, Wallets, Debts, Transactions, Settings)
-│   └── types/                  # TypeScript data interfaces
-├── app.json                    # Expo configuration & plugins
-├── eas.json                    # EAS build profiles
+│   │   └── RootNavigator.tsx       # Tab navigator & route definitions
+│   ├── screens/                    # Core screens (Dashboard, Analytics, Wallets, Debts, Transactions, Settings)
+│   ├── utils/
+│   │   └── haptics.ts              # Fine-tuned vibration & haptic helpers
+│   └── types/                      # TypeScript data interfaces
+├── app.json                        # Expo configuration & plugins
+├── eas.json                        # EAS build profiles
 └── package.json
 ```
 
