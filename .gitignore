@@ -39,3 +39,8 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# build outputs & editor
+build-output/
+.claude/
+

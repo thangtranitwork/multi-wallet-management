@@ -1,25 +1,41 @@
 {
   "expo": {
-    "name": "multi-wallet-management",
+    "name": "Ví Của Tôi",
     "slug": "multi-wallet-management",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.thang.multiwallet"
     },
     "android": {
+      "package": "com.thang.multiwallet",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#EFEFE5",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false
     },
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FAF8F5"
+    },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-sqlite",
+      "expo-sharing"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "dae2ff64-6e2a-4073-af2f-705684443c36"
+      }
     }
   }
 }

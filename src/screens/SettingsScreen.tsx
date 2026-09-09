@@ -1,0 +1,1001 @@
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Pressable,
+  Alert,
+  Modal,
+  TextInput,
+  Share,
+  ActivityIndicator,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import * as Sharing from 'expo-sharing';
+import { File, Paths } from 'expo-file-system';
+import * as DocumentPicker from 'expo-document-picker';
+import dayjs from 'dayjs';
+import { useWallet } from '../context/WalletContext';
+import { THEME } from '../constants';
+
+interface SettingsScreenProps {
+  navigation: any;
+}
+
+export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
+  const {
+    wallets,
+    transactions,
+    debts,
+    categories,
+    isBalanceHidden,
+    toggleHideBalance,
+    exportDataToJsonString,
+    importDataFromJsonString,
+    resetAllData,
+  } = useWallet();
+
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [importMode, setImportMode] = useState<'replace' | 'merge'>('replace');
+
+  // Modal xem / sao chép JSON
+  const [jsonPreviewModalVisible, setJsonPreviewModalVisible] = useState<boolean>(false);
+  const [jsonContent, setJsonContent] = useState<string>('');
+
+  // Modal dán JSON để nhập
+  const [jsonPasteModalVisible, setJsonPasteModalVisible] = useState<boolean>(false);
+  const [pastedJson, setPastedJson] = useState<string>('');
+
+  // 1. Xử lý xuất file .json qua Sharing API
+  const handleExportFile = async () => {
+    try {
+      setIsProcessing(true);
+      const jsonStr = await exportDataToJsonString();
+      const dateStr = dayjs().format('YYYYMMDD_HHmm');
+      const filename = `MultiWallet_Backup_${dateStr}.json`;
+      const backupFile = new File(Paths.cache, filename);
+      backupFile.create({ overwrite: true });
+      backupFile.write(jsonStr);
+      const fileUri = backupFile.uri;
+
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (isAvailable) {
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'application/json',
+          dialogTitle: 'Sao lưu dữ liệu Ví Của Tôi',
+          UTI: 'public.json',
+        });
+      } else {
+        // Dự phòng bằng Share API mặc định
+        await Share.share({
+          message: jsonStr,
+          title: filename,
+        });
+      }
+    } catch (err: any) {
+      Alert.alert('Lỗi xuất dữ liệu', err?.message || 'Không thể tạo file sao lưu');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // 2. Mở modal xem và copy mã JSON
+  const handleViewJson = async () => {
+    try {
+      setIsProcessing(true);
+      const jsonStr = await exportDataToJsonString();
+      setJsonContent(jsonStr);
+      setJsonPreviewModalVisible(true);
+    } catch (err: any) {
+      Alert.alert('Lỗi', err?.message || 'Không thể tải mã JSON');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // 3. Xử lý chọn file .json từ máy
+  const handlePickFileToImport = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/json', 'text/json', '*/*'],
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      setIsProcessing(true);
+
+      const pickedFile = new File(asset.uri);
+      const content = await pickedFile.text();
+
+      let parsed: any;
+      try {
+        parsed = JSON.parse(content);
+      } catch {
+        Alert.alert('Lỗi file', 'Nội dung file không đúng định dạng JSON.');
+        setIsProcessing(false);
+        return;
+      }
+
+      const raw = parsed.data || parsed;
+      const wCount = (raw.wallets || []).length;
+      const tCount = (raw.transactions || []).length;
+      const dCount = (raw.debts || []).length;
+
+      Alert.alert(
+        'Xác nhận khôi phục',
+        `Phát hiện dữ liệu gồm:\n• ${wCount} ví tiền\n• ${tCount} giao dịch\n• ${dCount} khoản nợ\n\nChế độ: ${
+          importMode === 'replace'
+            ? 'GHI ĐÈ TOÀN BỘ (xóa dữ liệu hiện tại)'
+            : 'HỢP NHẤT (bổ sung dữ liệu)'
+        }\n\nBạn có muốn tiếp tục?`,
+        [
+          { text: 'Hủy', style: 'cancel' },
+          {
+            text: 'Tiến hành khôi phục',
+            style: importMode === 'replace' ? 'destructive' : 'default',
+            onPress: async () => {
+              try {
+                setIsProcessing(true);
+                const res = await importDataFromJsonString(content, importMode);
+                Alert.alert(
+                  'Thành công 🎉',
+                  `Đã khôi phục thành công:\n• ${res.walletsCount} ví tiền\n• ${res.transactionsCount} giao dịch\n• ${res.debtsCount} khoản nợ`
+                );
+              } catch (importErr: any) {
+                Alert.alert('Lỗi khôi phục', importErr?.message || 'Không thể nhập dữ liệu');
+              } finally {
+                setIsProcessing(false);
+              }
+            },
+          },
+        ]
+      );
+    } catch (err: any) {
+      Alert.alert('Lỗi chọn file', err?.message || 'Không thể đọc file đã chọn');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // 4. Xử lý nhập JSON dán trực tiếp
+  const handleImportPastedJson = async () => {
+    if (!pastedJson.trim()) {
+      Alert.alert('Thiếu dữ liệu', 'Vui lòng dán nội dung JSON vào ô.');
+      return;
+    }
+
+    try {
+      setIsProcessing(true);
+      const res = await importDataFromJsonString(pastedJson.trim(), importMode);
+      setJsonPasteModalVisible(false);
+      setPastedJson('');
+      Alert.alert(
+        'Thành công 🎉',
+        `Đã khôi phục thành công:\n• ${res.walletsCount} ví tiền\n• ${res.transactionsCount} giao dịch\n• ${res.debtsCount} khoản nợ`
+      );
+    } catch (err: any) {
+      Alert.alert('Lỗi nhập dữ liệu', err?.message || 'Nội dung JSON không hợp lệ');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // 5. Xử lý Đặt lại dữ liệu gốc (Reset)
+  const handleResetApp = () => {
+    Alert.alert(
+      '⚠️ Cảnh báo xóa toàn bộ dữ liệu',
+      'Hành động này sẽ xóa vĩnh viễn toàn bộ ví, giao dịch và sổ nợ hiện tại trên máy của bạn. Bạn không thể hoàn tác sau khi đã xóa.\n\nBạn có chắc chắn muốn tiếp tục?',
+      [
+        { text: 'Hủy bỏ', style: 'cancel' },
+        {
+          text: 'XÓA TẤT CẢ',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setIsProcessing(true);
+              await resetAllData();
+              Alert.alert('Đã hoàn tất', 'Ứng dụng đã được đưa về trạng thái dữ liệu ban đầu.');
+            } catch (err: any) {
+              Alert.alert('Lỗi đặt lại', err?.message || 'Không thể xóa dữ liệu');
+            } finally {
+              setIsProcessing(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      {/* Header */}
+      <View style={styles.topHeader}>
+        <Pressable
+          style={styles.backBtnShadow}
+          onPress={() => navigation.goBack()}
+        >
+          <View style={styles.backBtnInner}>
+            <Ionicons name="arrow-back" size={20} color="#000000" />
+          </View>
+        </Pressable>
+
+        <View style={styles.headerTitleCol}>
+          <Text style={styles.screenTitle}>Cài Đặt & Dữ Liệu</Text>
+          <Text style={styles.screenSubtitle}>Sao lưu, nhập xuất & tùy chọn hệ thống</Text>
+        </View>
+      </View>
+
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Current Database Summary Card */}
+        <View style={styles.cardShadow}>
+          <View style={styles.cardInner}>
+            <View style={[styles.folderTab, { backgroundColor: THEME.popYellow }]}>
+              <Text style={styles.folderTabText}>DỮ LIỆU HIỆN TẠI</Text>
+            </View>
+
+            <View style={styles.cardBody}>
+              <Text style={styles.cardDescText}>
+                Toàn bộ dữ liệu tài chính của bạn được lưu trữ ngoại tuyến an toàn trên SQLite của máy.
+              </Text>
+
+              <View style={styles.statsGrid}>
+                <View style={styles.statBox}>
+                  <Text style={styles.statVal}>{wallets.length}</Text>
+                  <Text style={styles.statLabel}>Ví tiền</Text>
+                </View>
+
+                <View style={styles.statBox}>
+                  <Text style={styles.statVal}>{transactions.length}</Text>
+                  <Text style={styles.statLabel}>Giao dịch</Text>
+                </View>
+
+                <View style={styles.statBox}>
+                  <Text style={styles.statVal}>{debts.length}</Text>
+                  <Text style={styles.statLabel}>Khoản nợ</Text>
+                </View>
+
+                <View style={styles.statBox}>
+                  <Text style={styles.statVal}>{categories.length}</Text>
+                  <Text style={styles.statLabel}>Danh mục</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* Export Data Section */}
+        <View style={styles.cardShadow}>
+          <View style={styles.cardInner}>
+            <View style={[styles.folderTab, { backgroundColor: THEME.primary }]}>
+              <Text style={styles.folderTabText}>XUẤT DỮ LIỆU (EXPORT)</Text>
+            </View>
+
+            <View style={styles.cardBody}>
+              <Text style={styles.cardSectionTitle}>Sao lưu dự phòng</Text>
+              <Text style={styles.cardDescText}>
+                Trích xuất toàn bộ ví, giao dịch, sổ nợ và danh mục thành định dạng chuẩn JSON để lưu giữ an toàn hoặc chuyển sang thiết bị mới.
+              </Text>
+
+              <View style={styles.actionButtonsCol}>
+                <Pressable
+                  style={styles.actionBtnPrimary}
+                  onPress={handleExportFile}
+                  disabled={isProcessing}
+                >
+                  <Ionicons name="share-social-outline" size={18} color="#000000" />
+                  <Text style={styles.actionBtnText}>Xuất file sao lưu (.json) & Chia sẻ</Text>
+                </Pressable>
+
+                <Pressable
+                  style={styles.actionBtnSecondary}
+                  onPress={handleViewJson}
+                  disabled={isProcessing}
+                >
+                  <Ionicons name="code-slash-outline" size={18} color="#000000" />
+                  <Text style={styles.actionBtnTextSecondary}>Xem & Sao chép mã JSON</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* Import Data Section */}
+        <View style={styles.cardShadow}>
+          <View style={styles.cardInner}>
+            <View style={[styles.folderTab, { backgroundColor: THEME.popBlue }]}>
+              <Text style={styles.folderTabText}>NHẬP DỮ LIỆU (IMPORT)</Text>
+            </View>
+
+            <View style={styles.cardBody}>
+              <Text style={styles.cardSectionTitle}>Khôi phục dữ liệu</Text>
+              <Text style={styles.cardDescText}>
+                Tải lại toàn bộ dữ liệu từ bản sao lưu .json đã lưu trước đây.
+              </Text>
+
+              {/* Mode Switcher */}
+              <View style={styles.importModeContainer}>
+                <Text style={styles.importModeTitle}>Chế độ khôi phục:</Text>
+                <View style={styles.modeTabsRow}>
+                  <Pressable
+                    style={[
+                      styles.modeTab,
+                      importMode === 'replace' && styles.modeTabActiveReplace,
+                    ]}
+                    onPress={() => setImportMode('replace')}
+                  >
+                    <Ionicons
+                      name="refresh-circle-outline"
+                      size={16}
+                      color={importMode === 'replace' ? '#000000' : '#6B7280'}
+                    />
+                    <Text
+                      style={[
+                        styles.modeTabText,
+                        importMode === 'replace' && styles.modeTabTextActive,
+                      ]}
+                    >
+                      Ghi đè toàn bộ
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={[
+                      styles.modeTab,
+                      importMode === 'merge' && styles.modeTabActiveMerge,
+                    ]}
+                    onPress={() => setImportMode('merge')}
+                  >
+                    <Ionicons
+                      name="git-merge-outline"
+                      size={16}
+                      color={importMode === 'merge' ? '#000000' : '#6B7280'}
+                    />
+                    <Text
+                      style={[
+                        styles.modeTabText,
+                        importMode === 'merge' && styles.modeTabTextActive,
+                      ]}
+                    >
+                      Hợp nhất thêm
+                    </Text>
+                  </Pressable>
+                </View>
+                <Text style={styles.modeNoticeText}>
+                  {importMode === 'replace'
+                    ? '⚡ Ghi đè: Thay thế toàn bộ dữ liệu hiện tại bằng dữ liệu trong bản sao lưu.'
+                    : '➕ Hợp nhất: Thêm các ví và giao dịch mới, giữ nguyên dữ liệu hiện có.'}
+                </Text>
+              </View>
+
+              <View style={styles.actionButtonsCol}>
+                <Pressable
+                  style={styles.actionBtnPrimary}
+                  onPress={handlePickFileToImport}
+                  disabled={isProcessing}
+                >
+                  <Ionicons name="document-attach-outline" size={18} color="#000000" />
+                  <Text style={styles.actionBtnText}>Chọn file sao lưu (.json) từ máy</Text>
+                </Pressable>
+
+                <Pressable
+                  style={styles.actionBtnSecondary}
+                  onPress={() => setJsonPasteModalVisible(true)}
+                  disabled={isProcessing}
+                >
+                  <Ionicons name="clipboard-outline" size={18} color="#000000" />
+                  <Text style={styles.actionBtnTextSecondary}>Dán mã JSON trực tiếp</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* Preferences & Danger Zone */}
+        <View style={styles.cardShadow}>
+          <View style={styles.cardInner}>
+            <View style={[styles.folderTab, { backgroundColor: THEME.popPink }]}>
+              <Text style={styles.folderTabText}>TÙY CHỌN & HỆ THỐNG</Text>
+            </View>
+
+            <View style={styles.cardBody}>
+              {/* Toggle Balance Visibility */}
+              <Pressable
+                style={styles.settingRow}
+                onPress={toggleHideBalance}
+              >
+                <View style={styles.settingRowLeft}>
+                  <View style={styles.settingRowIconBox}>
+                    <Ionicons
+                      name={isBalanceHidden ? 'eye-off-outline' : 'eye-outline'}
+                      size={18}
+                      color="#000000"
+                    />
+                  </View>
+                  <View>
+                    <Text style={styles.settingRowTitle}>Ẩn số dư nhạy cảm</Text>
+                    <Text style={styles.settingRowDesc}>
+                      {isBalanceHidden ? 'Đang ẩn số dư với ký tự ••••••' : 'Đang hiển thị số tiền đầy đủ'}
+                    </Text>
+                  </View>
+                </View>
+                <View
+                  style={[
+                    styles.toggleSwitch,
+                    isBalanceHidden && styles.toggleSwitchActive,
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.toggleKnob,
+                      isBalanceHidden && styles.toggleKnobActive,
+                    ]}
+                  />
+                </View>
+              </Pressable>
+
+              <View style={styles.divider} />
+
+              {/* Reset Data Button */}
+              <Pressable
+                style={styles.dangerResetBtn}
+                onPress={handleResetApp}
+                disabled={isProcessing}
+              >
+                <Ionicons name="trash-outline" size={18} color="#E11D48" />
+                <Text style={styles.dangerResetText}>Đặt lại ứng dụng ban đầu (Xóa tất cả)</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+
+        {/* App Info Footer */}
+        <View style={styles.footerContainer}>
+          <Text style={styles.footerAppName}>Ví Của Tôi • Multi-Wallet Manager</Text>
+          <Text style={styles.footerNote}>
+            Phiên bản 1.0.0 • SQLite Offline Local Storage
+          </Text>
+          <Text style={styles.footerPrivacy}>
+            100% dữ liệu được lưu trữ trên thiết bị của bạn, hoàn toàn riêng tư và không tải lên máy chủ ngoài.
+          </Text>
+        </View>
+      </ScrollView>
+
+      {/* Loading Overlay */}
+      {isProcessing && (
+        <View style={styles.loadingOverlay}>
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color="#000000" />
+            <Text style={styles.loadingText}>Đang xử lý dữ liệu...</Text>
+          </View>
+        </View>
+      )}
+
+      {/* Modal 1: Xem / Copy mã JSON */}
+      <Modal
+        visible={jsonPreviewModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setJsonPreviewModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Mã JSON Sao Lưu</Text>
+              <Pressable
+                style={styles.modalCloseBtn}
+                onPress={() => setJsonPreviewModalVisible(false)}
+              >
+                <Ionicons name="close" size={20} color="#000000" />
+              </Pressable>
+            </View>
+
+            <Text style={styles.modalSubtitle}>
+              Bạn có thể sao chép chuỗi JSON này để lưu vào ghi chú cá nhân hoặc sao lưu thủ công.
+            </Text>
+
+            <TextInput
+              style={styles.jsonPreviewArea}
+              multiline
+              editable={false}
+              value={jsonContent}
+              selectTextOnFocus={true}
+            />
+
+            <Pressable
+              style={styles.modalConfirmBtn}
+              onPress={async () => {
+                await Share.share({
+                  message: jsonContent,
+                  title: 'MultiWallet_Backup.json',
+                });
+              }}
+            >
+              <Ionicons name="share-outline" size={18} color="#000000" />
+              <Text style={styles.modalConfirmBtnText}>Chia sẻ mã sao lưu</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal 2: Dán mã JSON để nhập */}
+      <Modal
+        visible={jsonPasteModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setJsonPasteModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Dán Mã JSON Khôi Phục</Text>
+              <Pressable
+                style={styles.modalCloseBtn}
+                onPress={() => {
+                  setJsonPasteModalVisible(false);
+                  setPastedJson('');
+                }}
+              >
+                <Ionicons name="close" size={20} color="#000000" />
+              </Pressable>
+            </View>
+
+            <Text style={styles.modalSubtitle}>
+              Dán chuỗi JSON đã sao lưu trước đó vào khung bên dưới để khôi phục dữ liệu:
+            </Text>
+
+            <TextInput
+              style={styles.jsonInputArea}
+              multiline
+              placeholder="Dán mã JSON tại đây (bắt đầu bằng { ... })..."
+              placeholderTextColor="#9CA3AF"
+              value={pastedJson}
+              onChangeText={setPastedJson}
+            />
+
+            <Pressable
+              style={styles.modalConfirmBtn}
+              onPress={handleImportPastedJson}
+              disabled={isProcessing}
+            >
+              <Ionicons name="download-outline" size={18} color="#000000" />
+              <Text style={styles.modalConfirmBtnText}>Xác nhận khôi phục dữ liệu</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
+  );
+};
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: THEME.bg,
+  },
+  topHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 14,
+    gap: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: '#000000',
+    backgroundColor: '#FFFFFF',
+  },
+  backBtnShadow: {
+    backgroundColor: '#000000',
+    borderRadius: 12,
+    width: 38,
+    height: 38,
+  },
+  backBtnInner: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    transform: [{ translateX: -2 }, { translateY: -2 }],
+  },
+  headerTitleCol: {
+    flex: 1,
+  },
+  screenTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  screenSubtitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6B7280',
+    marginTop: 1,
+  },
+  container: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 40,
+    gap: 16,
+  },
+  // Neo-Brutalist Folder Card
+  cardShadow: {
+    backgroundColor: '#000000',
+    borderRadius: 20,
+  },
+  cardInner: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    borderWidth: 2.5,
+    borderColor: '#000000',
+    overflow: 'hidden',
+    transform: [{ translateX: -3 }, { translateY: -3 }],
+  },
+  folderTab: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderBottomRightRadius: 14,
+    borderRightWidth: 2,
+    borderBottomWidth: 2,
+    borderColor: '#000000',
+  },
+  folderTabText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#000000',
+    letterSpacing: 0.5,
+  },
+  cardBody: {
+    padding: 16,
+  },
+  cardSectionTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#000000',
+    marginBottom: 4,
+  },
+  cardDescText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#4B5563',
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  statBox: {
+    flex: 1,
+    backgroundColor: '#FAF8F5',
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+  },
+  statVal: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  statLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#6B7280',
+    marginTop: 2,
+    textTransform: 'uppercase',
+  },
+  actionButtonsCol: {
+    gap: 10,
+  },
+  actionBtnPrimary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: THEME.popYellow,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#000000',
+  },
+  actionBtnText: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  actionBtnSecondary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#FAF8F5',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#000000',
+  },
+  actionBtnTextSecondary: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  importModeContainer: {
+    backgroundColor: '#FAF8F5',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    marginBottom: 14,
+  },
+  importModeTitle: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#000000',
+    marginBottom: 8,
+  },
+  modeTabsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+  },
+  modeTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+  },
+  modeTabActiveReplace: {
+    backgroundColor: THEME.popPinkLight,
+    borderWidth: 2,
+  },
+  modeTabActiveMerge: {
+    backgroundColor: THEME.primaryLight,
+    borderWidth: 2,
+  },
+  modeTabText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#6B7280',
+  },
+  modeTabTextActive: {
+    color: '#000000',
+    fontWeight: '900',
+  },
+  modeNoticeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#6B7280',
+    lineHeight: 16,
+  },
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  settingRowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  settingRowIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#FAF8F5',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  settingRowTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  settingRowDesc: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  toggleSwitch: {
+    width: 46,
+    height: 26,
+    borderRadius: 14,
+    backgroundColor: '#E5E7EB',
+    borderWidth: 2,
+    borderColor: '#000000',
+    padding: 2,
+    justifyContent: 'center',
+  },
+  toggleSwitchActive: {
+    backgroundColor: THEME.primary,
+  },
+  toggleKnob: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#000000',
+  },
+  toggleKnobActive: {
+    alignSelf: 'flex-end',
+  },
+  divider: {
+    height: 1.5,
+    backgroundColor: '#E5E7EB',
+    marginVertical: 14,
+  },
+  dangerResetBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#FEE2E2',
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#E11D48',
+  },
+  dangerResetText: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#E11D48',
+  },
+  footerContainer: {
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+  },
+  footerAppName: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  footerNote: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  footerPrivacy: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#9CA3AF',
+    textAlign: 'center',
+    marginTop: 6,
+    lineHeight: 14,
+  },
+  // Loading Overlay
+  loadingOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  loadingBox: {
+    backgroundColor: '#FFFFFF',
+    padding: 24,
+    borderRadius: 16,
+    borderWidth: 2.5,
+    borderColor: '#000000',
+    alignItems: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  // Modals
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: THEME.bg,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 20,
+    maxHeight: '85%',
+    borderTopWidth: 3,
+    borderLeftWidth: 2.5,
+    borderRightWidth: 2.5,
+    borderColor: '#000000',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  modalCloseBtn: {
+    padding: 6,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    backgroundColor: '#FFFFFF',
+  },
+  modalSubtitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginBottom: 12,
+    lineHeight: 18,
+  },
+  jsonPreviewArea: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#000000',
+    padding: 12,
+    fontFamily: 'monospace',
+    fontSize: 11,
+    height: 240,
+    color: '#000000',
+    marginBottom: 14,
+  },
+  jsonInputArea: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#000000',
+    padding: 12,
+    fontFamily: 'monospace',
+    fontSize: 12,
+    height: 200,
+    color: '#000000',
+    marginBottom: 14,
+    textAlignVertical: 'top',
+  },
+  modalConfirmBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: THEME.popYellow,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 2.5,
+    borderColor: '#000000',
+  },
+  modalConfirmBtnText: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#000000',
+  },
+});
