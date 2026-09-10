@@ -33,8 +33,7 @@
       "expo-sqlite",
       "expo-sharing",
       "expo-local-authentication",
-      "expo-web-browser",
-      "./plugins/withAndroidSplits"
+      "expo-web-browser"
     ],
     "extra": {
       "eas": {
