@@ -39,35 +39,14 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: 🐘 Setup Gradle & High-Speed Build Cache
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          cache-read-only: false
-
-      - name: 📦 Cache node_modules
-        id: npm-cache
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-node-modules-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-modules-
+      - name: 🤖 Setup Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: 📦 Install NPM Dependencies
-        if: steps.npm-cache.outputs.cache-hit != 'true'
-        run: npm ci --prefer-offline
+        run: npm ci || npm install
 
       - name: 🏗️ Generate Native Android Project
-        run: |
-          npx expo prebuild -p android --no-install
-          # Tối ưu hóa JVM và tiến trình biên dịch song song cho máy ảo CI (7GB RAM)
-          cat << 'EOF' >> android/gradle.properties
-          org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:+HeapDumpOnOutOfMemoryError
-          org.gradle.parallel=true
-          org.gradle.caching=true
-          org.gradle.vfs.watch=false
-          android.enableR8.fullMode=false
-          EOF
+        run: npx expo prebuild -p android --clean
 
       - name: 🔨 Build Android APK (${{ inputs.build_type || 'release' }})
         run: |
@@ -75,9 +54,9 @@ jobs:
           chmod +x gradlew
           BUILD_TYPE="${{ inputs.build_type || 'release' }}"
           if [ "$BUILD_TYPE" = "debug" ]; then
-            ./gradlew assembleDebug --build-cache --parallel
+            ./gradlew assembleDebug --no-daemon
           else
-            ./gradlew assembleRelease --build-cache --parallel
+            ./gradlew assembleRelease --no-daemon
           fi
 
       - name: 📂 Prepare APK Output
