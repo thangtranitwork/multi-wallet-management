@@ -27,7 +27,7 @@ jobs:
       - name: ⬇️ Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 🟢 Setup Node.js
+      - name: 🟢 Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -39,32 +39,55 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: 🤖 Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: 🐘 Setup Gradle & High-Speed Build Cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: 📦 Cache node_modules
+        id: npm-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-modules-
 
       - name: 📦 Install NPM Dependencies
-        run: npm ci || npm install
+        if: steps.npm-cache.outputs.cache-hit != 'true'
+        run: npm ci --prefer-offline
 
       - name: 🏗️ Generate Native Android Project
-        run: npx expo prebuild -p android --clean
+        run: |
+          npx expo prebuild -p android --no-install
+          # Tối ưu hóa JVM và tiến trình biên dịch song song cho máy ảo CI (7GB RAM)
+          cat << 'EOF' >> android/gradle.properties
+          org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:+HeapDumpOnOutOfMemoryError
+          org.gradle.parallel=true
+          org.gradle.caching=true
+          org.gradle.vfs.watch=false
+          android.enableR8.fullMode=false
+          EOF
 
       - name: 🔨 Build Android APK (${{ inputs.build_type || 'release' }})
         run: |
           cd android
           chmod +x gradlew
-          if [ "${{ inputs.build_type }}" == "debug" ]; then
-            ./gradlew assembleDebug --no-daemon
+          BUILD_TYPE="${{ inputs.build_type || 'release' }}"
+          if [ "$BUILD_TYPE" = "debug" ]; then
+            ./gradlew assembleDebug --build-cache --parallel
           else
-            ./gradlew assembleRelease --no-daemon
+            ./gradlew assembleRelease --build-cache --parallel
           fi
 
       - name: 📂 Prepare APK Output
         run: |
           mkdir -p build-output
-          if [ "${{ inputs.build_type }}" == "debug" ]; then
-            cp android/app/build/outputs/apk/debug/app-debug.apk build-output/MultiWallet-Debug.apk
+          BUILD_TYPE="${{ inputs.build_type || 'release' }}"
+          if [ "$BUILD_TYPE" = "debug" ]; then
+            find android/app/build/outputs/apk/debug -name "*.apk" -exec cp {} build-output/MultiWallet-Debug.apk \;
           else
-            cp android/app/build/outputs/apk/release/app-release.apk build-output/MultiWallet-Release.apk
+            find android/app/build/outputs/apk/release -name "*.apk" -exec cp {} build-output/MultiWallet-Release.apk \;
           fi
 
       - name: 🚀 Upload APK Artifact
@@ -73,6 +96,7 @@ jobs:
           name: MultiWallet-${{ inputs.build_type || 'Release' }}-APK
           path: build-output/*.apk
           retention-days: 30
+          compression-level: 0
 
       - name: 🏷️ Create GitHub Release (On Version Tag)
         if: startsWith(github.ref, 'refs/tags/v')

@@ -331,54 +331,9 @@ export async function createDebt(
 ): Promise<void> {
   await db.withTransactionAsync(async () => {
     const now = new Date().toISOString();
+    const effectiveWalletId = debt.wallet_id?.trim() || null;
 
-    // 1. Cập nhật số dư ví nếu có liên kết ví
-    if (debt.wallet_id) {
-      if (debt.type === 'lend') {
-        // Cho vay: trừ tiền từ ví
-        await db.runAsync(
-          'UPDATE wallets SET balance = balance - ? WHERE id = ?',
-          [debt.initial_amount, debt.wallet_id]
-        );
-        // Lưu giao dịch tương ứng
-        await db.runAsync(
-          `INSERT INTO transactions (id, type, amount, wallet_id, debt_id, note, transacted_at, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            'tx_' + Date.now(),
-            'debt_lend',
-            debt.initial_amount,
-            debt.wallet_id,
-            debt.id,
-            `Cho ${debt.person_name} mượn: ${debt.note || ''}`.trim(),
-            now,
-            now,
-          ]
-        );
-      } else {
-        // Đi vay: cộng tiền vào ví
-        await db.runAsync(
-          'UPDATE wallets SET balance = balance + ? WHERE id = ?',
-          [debt.initial_amount, debt.wallet_id]
-        );
-        await db.runAsync(
-          `INSERT INTO transactions (id, type, amount, wallet_id, debt_id, note, transacted_at, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            'tx_' + Date.now(),
-            'debt_borrow',
-            debt.initial_amount,
-            debt.wallet_id,
-            debt.id,
-            `Vay tiền từ ${debt.person_name}: ${debt.note || ''}`.trim(),
-            now,
-            now,
-          ]
-        );
-      }
-    }
-
-    // 2. Lưu vào bảng debts
+    // 1. Lưu vào bảng debts TRƯỚC (để transactions.debt_id không bị lỗi FOREIGN KEY constraint)
     await db.runAsync(
       `INSERT INTO debts (id, type, person_name, person_phone, initial_amount, remaining_amount, wallet_id, due_date, status, note, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
@@ -389,12 +344,59 @@ export async function createDebt(
         debt.person_phone || null,
         debt.initial_amount,
         debt.initial_amount,
-        debt.wallet_id || null,
+        effectiveWalletId,
         debt.due_date || null,
         debt.note || '',
         now,
       ]
     );
+
+    // 2. Cập nhật số dư ví nếu có liên kết ví và ghi nhận giao dịch
+    if (effectiveWalletId) {
+      const txId = `tx_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      if (debt.type === 'lend') {
+        // Cho vay: trừ tiền từ ví
+        await db.runAsync(
+          'UPDATE wallets SET balance = balance - ? WHERE id = ?',
+          [debt.initial_amount, effectiveWalletId]
+        );
+        // Lưu giao dịch tương ứng
+        await db.runAsync(
+          `INSERT INTO transactions (id, type, amount, wallet_id, debt_id, note, transacted_at, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            txId,
+            'debt_lend',
+            debt.initial_amount,
+            effectiveWalletId,
+            debt.id,
+            `Cho ${debt.person_name} mượn: ${debt.note || ''}`.trim(),
+            now,
+            now,
+          ]
+        );
+      } else {
+        // Đi vay: cộng tiền vào ví
+        await db.runAsync(
+          'UPDATE wallets SET balance = balance + ? WHERE id = ?',
+          [debt.initial_amount, effectiveWalletId]
+        );
+        await db.runAsync(
+          `INSERT INTO transactions (id, type, amount, wallet_id, debt_id, note, transacted_at, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            txId,
+            'debt_borrow',
+            debt.initial_amount,
+            effectiveWalletId,
+            debt.id,
+            `Vay tiền từ ${debt.person_name}: ${debt.note || ''}`.trim(),
+            now,
+            now,
+          ]
+        );
+      }
+    }
   });
 }
 

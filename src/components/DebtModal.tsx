@@ -182,7 +182,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({
                 onPress={() => setType('lend')}
               >
                 <Text style={[styles.tabText, type === 'lend' && styles.tabTextActive]}>
-                  Người khác nợ tôi (Cho vay)
+                  Người khác nợ tôi
                 </Text>
               </Pressable>
 
@@ -191,7 +191,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({
                 onPress={() => setType('borrow')}
               >
                 <Text style={[styles.tabText, type === 'borrow' && styles.tabTextActive]}>
-                  Tôi nợ người khác (Đi vay)
+                  Tôi nợ người khác
                 </Text>
               </Pressable>
             </View>
