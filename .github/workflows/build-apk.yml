@@ -11,6 +11,14 @@ on:
         options:
           - release
           - debug
+      target_arch:
+        description: 'Kiến trúc CPU (arm64-v8a: Siêu nhanh ~3-4 phút cho mọi điện thoại hiện đại)'
+        required: true
+        default: 'arm64-v8a'
+        type: choice
+        options:
+          - 'arm64-v8a'
+          - 'arm64-v8a,armeabi-v7a'
   push:
     branches:
       - master
@@ -39,6 +47,11 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: 🐘 Setup Gradle & Build Cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
       - name: 🤖 Setup Android SDK
         uses: android-actions/setup-android@v3
 
@@ -48,26 +61,65 @@ jobs:
       - name: 🏗️ Generate Native Android Project
         run: npx expo prebuild -p android --clean
 
+      - name: ⚡ Tune Gradle Performance & Architecture
+        run: |
+          TARGET_ARCH="${{ inputs.target_arch || 'arm64-v8a,armeabi-v7a' }}"
+          echo "Configuring build for architectures: $TARGET_ARCH"
+          
+          # Tối ưu bộ nhớ & kích hoạt Gradle Build Cache
+          cat << 'EOF' >> android/gradle.properties
+          org.gradle.jvmargs=-Xmx3584m -XX:+UseParallelGC -XX:MaxMetaspaceSize=768m
+          org.gradle.parallel=true
+          org.gradle.caching=true
+          EOF
+          
+          # Giới hạn kiến trúc cần compile (tiết kiệm 50-70% thời gian biên dịch NDK)
+          sed -i "s/reactNativeArchitectures=.*/reactNativeArchitectures=$TARGET_ARCH/g" android/gradle.properties
+
       - name: 🔨 Build Android APK (${{ inputs.build_type || 'release' }})
         run: |
           cd android
           chmod +x gradlew
           BUILD_TYPE="${{ inputs.build_type || 'release' }}"
           if [ "$BUILD_TYPE" = "debug" ]; then
-            ./gradlew assembleDebug --no-daemon
+            ./gradlew assembleDebug --build-cache
           else
-            ./gradlew assembleRelease --no-daemon
+            ./gradlew assembleRelease --build-cache
           fi
 
       - name: 📂 Prepare APK Output
         run: |
           mkdir -p build-output
           BUILD_TYPE="${{ inputs.build_type || 'release' }}"
-          if [ "$BUILD_TYPE" = "debug" ]; then
-            find android/app/build/outputs/apk/debug -name "*.apk" -exec cp {} build-output/MultiWallet-Debug.apk \;
-          else
-            find android/app/build/outputs/apk/release -name "*.apk" -exec cp {} build-output/MultiWallet-Release.apk \;
+          APK_DIR="android/app/build/outputs/apk/$BUILD_TYPE"
+          
+          echo "Found APK files in $APK_DIR:"
+          ls -lh "$APK_DIR"/*.apk || true
+          
+          # 1. arm64-v8a: Modern 64-bit phones (Samsung, Xiaomi, Pixel, Oppo...) ~25MB (RECOMMENDED)
+          if [ -f "$APK_DIR/app-arm64-v8a-$BUILD_TYPE.apk" ]; then
+            cp "$APK_DIR/app-arm64-v8a-$BUILD_TYPE.apk" "build-output/MultiWallet-arm64-v8a.apk"
+            # Also keep MultiWallet-Release.apk pointing to arm64-v8a for easy 1-click install
+            cp "$APK_DIR/app-arm64-v8a-$BUILD_TYPE.apk" "build-output/MultiWallet-Release.apk"
           fi
+          
+          # 2. armeabi-v7a: Older 32-bit Android phones ~22MB
+          if [ -f "$APK_DIR/app-armeabi-v7a-$BUILD_TYPE.apk" ]; then
+            cp "$APK_DIR/app-armeabi-v7a-$BUILD_TYPE.apk" "build-output/MultiWallet-armeabi-v7a.apk"
+          fi
+          
+          # 3. Universal APK: All architectures bundled together (~88MB)
+          if [ -f "$APK_DIR/app-universal-$BUILD_TYPE.apk" ]; then
+            cp "$APK_DIR/app-universal-$BUILD_TYPE.apk" "build-output/MultiWallet-Universal.apk"
+          fi
+          
+          # 4. Fallback if splits weren't used
+          if [ -f "$APK_DIR/app-$BUILD_TYPE.apk" ] && [ ! -f "build-output/MultiWallet-Release.apk" ]; then
+            cp "$APK_DIR/app-$BUILD_TYPE.apk" "build-output/MultiWallet-Release.apk"
+          fi
+          
+          echo "Prepared APK artifacts in build-output:"
+          ls -lh build-output/
 
       - name: 🚀 Upload APK Artifact
         uses: actions/upload-artifact@v4
