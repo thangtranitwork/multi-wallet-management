@@ -16,6 +16,7 @@ import { useWallet } from '../context/WalletContext';
 import { TransactionItem } from '../components/TransactionItem';
 import { QuickAddModal } from '../components/QuickAddModal';
 import { SplitTransactionModal } from '../components/SplitTransactionModal';
+import { TransactionDetailModal } from '../components/TransactionDetailModal';
 import { NeoDropdown } from '../components/NeoDropdown';
 import { Transaction } from '../types';
 import { THEME, formatVND } from '../constants';
@@ -37,6 +38,7 @@ export const TransactionsScreen: React.FC = () => {
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('all');
   const [quickAddVisible, setQuickAddVisible] = useState(false);
   const [splitTargetTx, setSplitTargetTx] = useState<Transaction | null>(null);
+  const [selectedDetailTx, setSelectedDetailTx] = useState<Transaction | null>(null);
 
   // Filter transactions
   const filteredTransactions = transactions.filter(t => {
@@ -272,11 +274,7 @@ export const TransactionsScreen: React.FC = () => {
                     key={tx.id}
                     transaction={tx}
                     isBalanceHidden={isBalanceHidden}
-                    onPress={() => {
-                      if (tx.type === 'expense') {
-                        setSplitTargetTx(tx);
-                      }
-                    }}
+                    onPress={() => setSelectedDetailTx(tx)}
                     onDelete={() => handleDelete(tx)}
                   />
                 ))}
@@ -304,6 +302,22 @@ export const TransactionsScreen: React.FC = () => {
       <QuickAddModal
         visible={quickAddVisible}
         onClose={() => setQuickAddVisible(false)}
+      />
+
+      {/* Transaction Detail Modal */}
+      <TransactionDetailModal
+        visible={!!selectedDetailTx}
+        onClose={() => setSelectedDetailTx(null)}
+        transaction={
+          selectedDetailTx
+            ? transactions.find(t => t.id === selectedDetailTx.id) || selectedDetailTx
+            : null
+        }
+        onSplit={tx => {
+          setSelectedDetailTx(null);
+          setSplitTargetTx(tx);
+        }}
+        onDelete={handleDelete}
       />
 
       {/* Split Transaction Modal */}

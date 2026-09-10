@@ -266,6 +266,17 @@ export async function deleteTransaction(
   });
 }
 
+export async function updateTransactionCategory(
+  db: SQLite.SQLiteDatabase,
+  transactionId: string,
+  categoryId: string | null
+): Promise<void> {
+  await db.runAsync(
+    'UPDATE transactions SET category_id = ? WHERE id = ?',
+    [categoryId, transactionId]
+  );
+}
+
 export interface SplitItem {
   personName: string;
   personPhone?: string | null;

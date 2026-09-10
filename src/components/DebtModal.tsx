@@ -31,7 +31,8 @@ export const DebtModal: React.FC<DebtModalProps> = ({
   defaultType = 'lend',
 }) => {
   const { wallets, addDebt, payOrCollectDebt, isBalanceHidden } = useWallet();
-  const effectiveDebt = debtToPay !== null ? debtToPay : targetDebt;
+  const effectiveDebt = debtToPay || targetDebt;
+  const isPaymentMode = !!effectiveDebt;
 
   // State cho Mode Create
   const [type, setType] = useState<'lend' | 'borrow'>(defaultType);
@@ -123,7 +124,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({
   };
 
   const handleSavePayment = async () => {
-    if (!targetDebt) return;
+    if (!effectiveDebt) return;
     const payAmount = parseInt(payAmountStr, 10) || 0;
     if (payAmount <= 0) {
       hapticError();
@@ -138,7 +139,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({
 
     try {
       await payOrCollectDebt({
-        debtId: targetDebt.id,
+        debtId: effectiveDebt.id,
         amount: payAmount,
         walletId: selectedWalletId,
         note: note.trim(),
@@ -151,7 +152,6 @@ export const DebtModal: React.FC<DebtModalProps> = ({
     }
   };
 
-  const isPaymentMode = !!targetDebt;
   const currentAmount = isPaymentMode
     ? parseInt(payAmountStr, 10) || 0
     : parseInt(amountStr, 10) || 0;
@@ -163,10 +163,10 @@ export const DebtModal: React.FC<DebtModalProps> = ({
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.headerTitle}>
-              {isPaymentMode
-                ? targetDebt.type === 'lend'
-                  ? `Thu nợ từ ${targetDebt.person_name}`
-                  : `Trả nợ cho ${targetDebt.person_name}`
+              {isPaymentMode && effectiveDebt
+                ? effectiveDebt.type === 'lend'
+                  ? `Thu nợ từ ${effectiveDebt.person_name}`
+                  : `Trả nợ cho ${effectiveDebt.person_name}`
                 : 'Tạo khoản nợ mới'}
             </Text>
             <Pressable style={styles.closeBtn} onPress={onClose}>
@@ -199,18 +199,18 @@ export const DebtModal: React.FC<DebtModalProps> = ({
 
           <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false}>
             {/* Payment Summary Info if payment mode */}
-            {isPaymentMode && targetDebt && (
+            {isPaymentMode && effectiveDebt && (
               <View style={styles.targetDebtInfo}>
                 <View style={styles.targetDebtRow}>
                   <Text style={styles.targetLabel}>Tổng số tiền ban đầu:</Text>
                   <Text style={styles.targetValue}>
-                    {isBalanceHidden ? '••••••' : formatVND(targetDebt.initial_amount)}
+                    {isBalanceHidden ? '••••••' : formatVND(effectiveDebt.initial_amount)}
                   </Text>
                 </View>
                 <View style={styles.targetDebtRow}>
                   <Text style={styles.targetLabel}>Số tiền còn nợ:</Text>
                   <Text style={[styles.targetValue, { color: '#F43F5E', fontWeight: '800' }]}>
-                    {isBalanceHidden ? '••••••' : formatVND(targetDebt.remaining_amount)}
+                    {isBalanceHidden ? '••••••' : formatVND(effectiveDebt.remaining_amount)}
                   </Text>
                 </View>
               </View>
@@ -275,7 +275,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({
             <View style={styles.sectionContainer}>
               <Text style={styles.sectionLabel}>
                 {isPaymentMode
-                  ? targetDebt?.type === 'lend'
+                  ? effectiveDebt?.type === 'lend'
                     ? 'Tiền thu về ví nào'
                     : 'Trích tiền từ ví nào'
                   : type === 'lend'
@@ -329,7 +329,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({
             <View style={styles.amountDisplayContainer}>
               <Text style={styles.amountLabel}>
                 {isPaymentMode
-                  ? targetDebt?.type === 'lend'
+                  ? effectiveDebt?.type === 'lend'
                     ? 'Số tiền thu nợ'
                     : 'Số tiền trả nợ'
                   : 'Số tiền'}
@@ -337,7 +337,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({
               <Text
                 style={[
                   styles.amountNumber,
-                  (isPaymentMode ? targetDebt?.type === 'lend' : type === 'lend')
+                  (isPaymentMode ? effectiveDebt?.type === 'lend' : type === 'lend')
                     ? styles.textLend
                     : styles.textBorrow,
                 ]}
@@ -386,7 +386,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({
             <Pressable
               style={({ pressed }) => [
                 styles.saveBtn,
-                (isPaymentMode ? targetDebt?.type === 'lend' : type === 'lend')
+                (isPaymentMode ? effectiveDebt?.type === 'lend' : type === 'lend')
                   ? styles.saveBtnLend
                   : styles.saveBtnBorrow,
                 pressed && { opacity: 0.9 },
@@ -395,7 +395,11 @@ export const DebtModal: React.FC<DebtModalProps> = ({
             >
               <Ionicons name="checkmark-sharp" size={22} color="#000000" />
               <Text style={styles.saveBtnText}>
-                {isPaymentMode ? 'Xác nhận thanh toán' : 'Tạo khoản nợ'}
+                {isPaymentMode
+                  ? effectiveDebt?.type === 'lend'
+                    ? 'Xác nhận thu nợ'
+                    : 'Xác nhận trả nợ'
+                  : 'Tạo khoản nợ'}
               </Text>
             </Pressable>
           </ScrollView>

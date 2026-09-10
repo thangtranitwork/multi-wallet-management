@@ -19,6 +19,7 @@ import { QuickAddModal } from '../components/QuickAddModal';
 import { WalletModal } from '../components/WalletModal';
 import { PlannedExpensesModal } from '../components/PlannedExpensesModal';
 import { SplitTransactionModal } from '../components/SplitTransactionModal';
+import { TransactionDetailModal } from '../components/TransactionDetailModal';
 import { Wallet, Transaction } from '../types';
 import { THEME, formatVND } from '../constants';
 import { hapticMedium, hapticLight } from '../utils/haptics';
@@ -50,6 +51,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
   const [adjustingWallet, setAdjustingWallet] = useState<Wallet | null>(null);
   const [plannedModalVisible, setPlannedModalVisible] = useState(false);
   const [splitTargetTx, setSplitTargetTx] = useState<Transaction | null>(null);
+  const [selectedDetailTx, setSelectedDetailTx] = useState<Transaction | null>(null);
 
   const upcomingPlanned = useMemo(() => {
     const pending = plannedExpenses.filter(p => p.status === 'pending');
@@ -595,11 +597,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
                 key={tx.id}
                 transaction={tx}
                 isBalanceHidden={isBalanceHidden}
-                onPress={() => {
-                  if (tx.type === 'expense') {
-                    setSplitTargetTx(tx);
-                  }
-                }}
+                onPress={() => setSelectedDetailTx(tx)}
                 onDelete={() => removeTransaction(tx.id)}
               />
             ))
@@ -628,6 +626,21 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
       <PlannedExpensesModal
         visible={plannedModalVisible}
         onClose={() => setPlannedModalVisible(false)}
+      />
+
+      <TransactionDetailModal
+        visible={!!selectedDetailTx}
+        onClose={() => setSelectedDetailTx(null)}
+        transaction={
+          selectedDetailTx
+            ? transactions.find(t => t.id === selectedDetailTx.id) || selectedDetailTx
+            : null
+        }
+        onSplit={tx => {
+          setSelectedDetailTx(null);
+          setSplitTargetTx(tx);
+        }}
+        onDelete={tx => removeTransaction(tx.id)}
       />
 
       <SplitTransactionModal

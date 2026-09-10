@@ -35,12 +35,13 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
   onClose,
   transaction,
 }) => {
-  const { splitTransaction } = useWallet();
+  const { splitTransaction, categories, updateTransactionCategory } = useWallet();
 
   const [members, setMembers] = useState<MemberSplit[]>([
     { id: '1', name: '', phone: '', amountStr: '0', note: '' },
   ]);
   const [activeInputId, setActiveInputId] = useState<string>('1');
+  const [isChangingCat, setIsChangingCat] = useState<boolean>(false);
 
   useEffect(() => {
     if (visible && transaction) {
@@ -56,6 +57,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
         },
       ]);
       setActiveInputId('1');
+      setIsChangingCat(false);
     }
   }, [visible, transaction]);
 
@@ -227,9 +229,20 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
                   />
                 </View>
                 <View style={styles.origInfo}>
-                  <Text style={styles.origTitle}>
-                    {transaction.category_name || 'Chi tiêu'}
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={styles.origTitle}>
+                      {transaction.category_name || 'Chi tiêu'}
+                    </Text>
+                    <Pressable
+                      style={styles.origCatEditBtn}
+                      onPress={() => {
+                        hapticLight();
+                        setIsChangingCat(!isChangingCat);
+                      }}
+                    >
+                      <Text style={styles.origCatEditText}>{isChangingCat ? 'Đóng' : 'Đổi'}</Text>
+                    </Pressable>
+                  </View>
                   <Text style={styles.origMeta}>
                     {transaction.wallet_name ? `Ví: ${transaction.wallet_name} · ` : ''}
                     {dayjs(transaction.transacted_at).format('DD/MM/YYYY, HH:mm')}
@@ -240,6 +253,43 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
                   <Text style={styles.origAmount}>{formatVND(transaction.amount)}</Text>
                 </View>
               </View>
+
+              {isChangingCat && (
+                <View style={styles.catPickerWrapper}>
+                  <Text style={styles.catPickerTitle}>Chọn danh mục mới:</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catPickerScroll}>
+                    {categories
+                      .filter(c => c.type === 'expense')
+                      .map(c => {
+                        const isSel = transaction.category_id === c.id;
+                        return (
+                          <Pressable
+                            key={c.id}
+                            style={[styles.catPickerChip, isSel && styles.catPickerChipSelected]}
+                            onPress={async () => {
+                              hapticLight();
+                              try {
+                                await updateTransactionCategory(transaction.id, c.id);
+                                hapticSuccess();
+                                setIsChangingCat(false);
+                              } catch (e: any) {
+                                hapticError();
+                                Alert.alert('Lỗi', e?.message || 'Không thể đổi danh mục');
+                              }
+                            }}
+                          >
+                            <View style={[styles.catPickerIconBox, { backgroundColor: c.color || THEME.primary }]}>
+                              <Ionicons name={(c.icon as any) || 'pricetag-outline'} size={13} color="#000000" />
+                            </View>
+                            <Text style={[styles.catPickerText, isSel && styles.catPickerTextSelected]}>
+                              {c.name}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                  </ScrollView>
+                </View>
+              )}
 
               {transaction.note ? (
                 <View style={styles.origNoteRow}>
@@ -816,5 +866,66 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '900',
     color: '#000000',
+  },
+  origCatEditBtn: {
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#000000',
+  },
+  origCatEditText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  catPickerWrapper: {
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  catPickerTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#6B7280',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+  },
+  catPickerScroll: {
+    flexDirection: 'row',
+  },
+  catPickerChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#F3F4F6',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#000000',
+    marginRight: 6,
+  },
+  catPickerChipSelected: {
+    backgroundColor: '#FEF08A',
+  },
+  catPickerIconBox: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  catPickerText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  catPickerTextSelected: {
+    fontWeight: '900',
   },
 });
