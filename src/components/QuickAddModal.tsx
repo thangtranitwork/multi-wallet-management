@@ -15,21 +15,29 @@ import { useWallet } from '../context/WalletContext';
 import { NeoDropdown } from './NeoDropdown';
 import { THEME, formatVND } from '../constants';
 import { hapticLight, hapticMedium, hapticSuccess, hapticError } from '../utils/haptics';
+import { predictCategory, PredictionResult } from '../services/predictionService';
 
 interface QuickAddModalProps {
   visible: boolean;
   onClose: () => void;
   defaultType?: 'expense' | 'income' | 'transfer';
+  prefillCategoryId?: string;
+  prefillAmount?: number;
+  prefillNote?: string;
 }
 
 export const QuickAddModal: React.FC<QuickAddModalProps> = ({
   visible,
   onClose,
   defaultType = 'expense',
+  prefillCategoryId,
+  prefillAmount,
+  prefillNote,
 }) => {
-  const { wallets, categories, addTransaction } = useWallet();
+  const { wallets, categories, transactions, addTransaction } = useWallet();
 
   const [type, setType] = useState<'expense' | 'income' | 'transfer'>(defaultType);
+  const [prediction, setPrediction] = useState<PredictionResult | null>(null);
   const [amountStr, setAmountStr] = useState<string>('0');
   const [selectedWalletId, setSelectedWalletId] = useState<string>('');
   const [selectedToWalletId, setSelectedToWalletId] = useState<string>('');
@@ -44,8 +52,10 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
   useEffect(() => {
     if (visible) {
       setType(defaultType);
-      setAmountStr('0');
-      setNote('');
+      const initialAmt = prefillAmount ? prefillAmount.toString() : '0';
+      const initialNote = prefillNote || '';
+      setAmountStr(initialAmt);
+      setNote(initialNote);
       setSelectedDate(new Date());
       setIsPickerExpanded(false);
       setPickerMonth(new Date());
@@ -55,16 +65,78 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
           setSelectedToWalletId(wallets[1].id);
         }
       }
-    }
-  }, [visible, defaultType, wallets]);
 
-  // Set default category according to type
-  useEffect(() => {
-    const filteredCats = categories.filter(c => c.type === (type === 'income' ? 'income' : 'expense'));
-    if (filteredCats.length > 0) {
-      setSelectedCategoryId(filteredCats[0].id);
+      // Run smart category prediction
+      if (defaultType !== 'transfer') {
+        const pred = predictCategory({
+          type: defaultType,
+          currentDate: new Date(),
+          note: initialNote,
+          transactions,
+          categories,
+        });
+        setPrediction(pred);
+
+        if (prefillCategoryId) {
+          setSelectedCategoryId(prefillCategoryId);
+        } else if (pred.primarySuggestion) {
+          setSelectedCategoryId(pred.primarySuggestion.category.id);
+          // Suggest predicted recurring amount if not set
+          if (!prefillAmount && pred.predictedAmount) {
+            setAmountStr(pred.predictedAmount.toString());
+          }
+          if (!prefillNote && pred.predictedNote) {
+            setNote(pred.predictedNote);
+          }
+        } else {
+          const filteredCats = categories.filter(c => c.type === (defaultType === 'income' ? 'income' : 'expense'));
+          if (filteredCats.length > 0) {
+            setSelectedCategoryId(filteredCats[0].id);
+          }
+        }
+      }
     }
-  }, [type, categories]);
+  }, [visible, defaultType, wallets, prefillCategoryId, prefillAmount, prefillNote, transactions, categories]);
+
+  const handleTypeChange = (newType: 'expense' | 'income' | 'transfer') => {
+    setType(newType);
+    if (newType !== 'transfer') {
+      const pred = predictCategory({
+        type: newType,
+        currentDate: selectedDate,
+        note,
+        transactions,
+        categories,
+      });
+      setPrediction(pred);
+      if (pred.primarySuggestion) {
+        setSelectedCategoryId(pred.primarySuggestion.category.id);
+      } else {
+        const filteredCats = categories.filter(c => c.type === (newType === 'income' ? 'income' : 'expense'));
+        if (filteredCats.length > 0) {
+          setSelectedCategoryId(filteredCats[0].id);
+        }
+      }
+    }
+  };
+
+  const handleNoteChange = (text: string) => {
+    setNote(text);
+    if (type !== 'transfer' && text.trim().length >= 2) {
+      const pred = predictCategory({
+        type,
+        currentDate: selectedDate,
+        note: text,
+        transactions,
+        categories,
+      });
+      setPrediction(pred);
+      // If a high-confidence semantic match is found, auto-switch selected category
+      if (pred.primarySuggestion && pred.primarySuggestion.confidence === 'high') {
+        setSelectedCategoryId(pred.primarySuggestion.category.id);
+      }
+    }
+  };
 
   const filteredCategories = categories.filter(
     c => c.type === (type === 'income' ? 'income' : 'expense')
@@ -282,7 +354,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
           <View style={styles.tabContainer}>
             <Pressable
               style={[styles.tab, type === 'expense' && styles.tabActiveExpense]}
-              onPress={() => setType('expense')}
+              onPress={() => handleTypeChange('expense')}
             >
               <Text
                 style={[
@@ -296,7 +368,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
 
             <Pressable
               style={[styles.tab, type === 'income' && styles.tabActiveIncome]}
-              onPress={() => setType('income')}
+              onPress={() => handleTypeChange('income')}
             >
               <Text
                 style={[
@@ -310,7 +382,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
 
             <Pressable
               style={[styles.tab, type === 'transfer' && styles.tabActiveTransfer]}
-              onPress={() => setType('transfer')}
+              onPress={() => handleTypeChange('transfer')}
             >
               <Text
                 style={[
@@ -409,7 +481,65 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
             {/* Categories (for Expense / Income) as Dropdown */}
             {type !== 'transfer' && (
               <View style={styles.sectionContainer}>
-                <Text style={styles.sectionLabel}>Hạng mục danh mục</Text>
+                <View style={styles.categoryHeaderRow}>
+                  <Text style={styles.sectionLabel}>Hạng mục danh mục</Text>
+                  {prediction?.primarySuggestion?.reason && (
+                    <View style={styles.smartBadge}>
+                      <Ionicons name="sparkles" size={10} color="#D97706" style={{ marginRight: 3 }} />
+                      <Text style={styles.smartBadgeText} numberOfLines={1}>
+                        {prediction.primarySuggestion.reason}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Smart Suggested Chips */}
+                {prediction?.topSuggestions && prediction.topSuggestions.length > 0 && (
+                  <View style={styles.smartChipsWrapper}>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      style={styles.smartChipsScroll}
+                    >
+                      {prediction.topSuggestions.map(s => {
+                        const isSelected = selectedCategoryId === s.category.id;
+                        return (
+                          <Pressable
+                            key={s.category.id}
+                            style={[
+                              styles.smartChip,
+                              isSelected && styles.smartChipSelected,
+                              isSelected && { backgroundColor: s.category.color },
+                            ]}
+                            onPress={() => {
+                              hapticLight();
+                              setSelectedCategoryId(s.category.id);
+                            }}
+                          >
+                            <Ionicons
+                              name={(s.category.icon as any) || 'pricetag-outline'}
+                              size={13}
+                              color={isSelected ? '#FFFFFF' : s.category.color}
+                              style={{ marginRight: 4 }}
+                            />
+                            <Text
+                              style={[
+                                styles.smartChipText,
+                                isSelected && styles.smartChipTextSelected,
+                              ]}
+                            >
+                              {s.category.name}
+                            </Text>
+                            {s.confidence === 'high' && (
+                              <View style={[styles.confidenceDot, isSelected && { backgroundColor: '#FFFFFF' }]} />
+                            )}
+                          </Pressable>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+                )}
+
                 <NeoDropdown
                   title={type === 'income' ? 'Chọn hạng mục thu nhập' : 'Chọn hạng mục chi tiêu'}
                   triggerLabel={selectedCategory?.name || 'Chọn hạng mục'}
@@ -725,10 +855,10 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
               <Text style={styles.sectionLabel}>Ghi chú (tùy chọn)</Text>
               <TextInput
                 style={styles.noteInput}
-                placeholder="Ví dụ: Ăn bún chả với đồng nghiệp..."
+                placeholder="Ví dụ: Cơm trưa, tiền trọ tháng này..."
                 placeholderTextColor={THEME.textMuted}
                 value={note}
-                onChangeText={setNote}
+                onChangeText={handleNoteChange}
               />
             </View>
 
@@ -1331,5 +1461,68 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '900',
     color: '#000000',
+  },
+  categoryHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  smartBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    maxWidth: '65%',
+  },
+  smartBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  smartChipsWrapper: {
+    marginBottom: 8,
+  },
+  smartChipsScroll: {
+    flexDirection: 'row',
+  },
+  smartChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    marginRight: 6,
+  },
+  smartChipSelected: {
+    borderColor: '#000000',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  smartChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  smartChipTextSelected: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+  confidenceDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+    marginLeft: 5,
   },
 });

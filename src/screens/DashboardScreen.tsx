@@ -20,6 +20,8 @@ import { WalletModal } from '../components/WalletModal';
 import { PlannedExpensesModal } from '../components/PlannedExpensesModal';
 import { SplitTransactionModal } from '../components/SplitTransactionModal';
 import { TransactionDetailModal } from '../components/TransactionDetailModal';
+import { SmartForecastCard } from '../components/SmartForecastCard';
+import { getDashboardForecast, DashboardForecast } from '../services/predictionService';
 import { Wallet, Transaction } from '../types';
 import { THEME, formatVND } from '../constants';
 import { hapticMedium, hapticLight } from '../utils/haptics';
@@ -33,6 +35,7 @@ interface DashboardScreenProps {
 export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
   const {
     wallets,
+    categories,
     transactions,
     summary,
     isLoading,
@@ -47,11 +50,29 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
   } = useWallet();
 
   const [quickAddVisible, setQuickAddVisible] = useState(false);
+  const [quickAddPrefill, setQuickAddPrefill] = useState<{
+    categoryId?: string;
+    amount?: number;
+    note?: string;
+  }>({});
   const [walletModalVisible, setWalletModalVisible] = useState(false);
   const [adjustingWallet, setAdjustingWallet] = useState<Wallet | null>(null);
   const [plannedModalVisible, setPlannedModalVisible] = useState(false);
   const [splitTargetTx, setSplitTargetTx] = useState<Transaction | null>(null);
   const [selectedDetailTx, setSelectedDetailTx] = useState<Transaction | null>(null);
+
+  const dashboardForecast = useMemo(() => {
+    return getDashboardForecast(transactions, categories);
+  }, [transactions, categories]);
+
+  const handleForecastAction = (forecast: DashboardForecast) => {
+    setQuickAddPrefill({
+      categoryId: forecast.category.id,
+      amount: forecast.suggestedAmount,
+      note: forecast.suggestedNote,
+    });
+    setQuickAddVisible(true);
+  };
 
   const upcomingPlanned = useMemo(() => {
     const pending = plannedExpenses.filter(p => p.status === 'pending');
@@ -197,6 +218,12 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
             </View>
           </Pressable>
         </View>
+
+        {/* Smart Forecast & Reminder Card (Tự học hành vi 11h ăn uống, ngày 10 tiền trọ) */}
+        <SmartForecastCard
+          forecast={dashboardForecast}
+          onQuickAction={handleForecastAction}
+        />
 
         {/* Hero Card: Net Worth Overview (Thẻ Folder Tab Xanh Lá viền đen dập nổi) */}
         <View style={styles.netWorthCardShadow}>
@@ -610,7 +637,13 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
       {/* Modals */}
       <QuickAddModal
         visible={quickAddVisible}
-        onClose={() => setQuickAddVisible(false)}
+        onClose={() => {
+          setQuickAddVisible(false);
+          setQuickAddPrefill({});
+        }}
+        prefillCategoryId={quickAddPrefill.categoryId}
+        prefillAmount={quickAddPrefill.amount}
+        prefillNote={quickAddPrefill.note}
       />
 
       <WalletModal

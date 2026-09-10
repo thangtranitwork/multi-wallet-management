@@ -24,6 +24,7 @@ import {
   deleteDriveBackup,
   DriveBackupFile,
   DEFAULT_GOOGLE_CLIENT_ID,
+  getRedirectUri,
 } from '../services/googleDriveService';
 import {
   loadCloudBackupConfig,
@@ -334,6 +335,23 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                       <Text style={styles.advancedHint}>
                         Nếu bạn có Google Cloud Project riêng, bạn có thể dán Client ID vào đây. Nếu để trống, app sẽ dùng cấu hình mặc định.
                       </Text>
+
+                      <View style={{ marginTop: 12 }}>
+                        <Text style={styles.advancedLabel}>Authorized Redirect URI của ứng dụng:</Text>
+                        <TextInput
+                          style={[styles.advancedInput, { backgroundColor: '#F3F4F6', color: '#1F2937', fontSize: 11 }]}
+                          value={getRedirectUri()}
+                          editable={false}
+                          selectTextOnFocus={true}
+                        />
+                        <Text style={[styles.advancedHint, { marginTop: 4, color: '#D97706', fontWeight: '600' }]}>
+                          ⚠️ Lưu ý khi dùng Google Cloud cá nhân:
+                        </Text>
+                        <Text style={styles.advancedHint}>
+                          1. Trong tab "Credentials" &gt; OAuth Client ID: Hãy thêm URI trên và "https://auth.expo.io/@anonymous/multi-wallet-management" vào mục "Authorized redirect URIs".{'\n'}
+                          2. Nếu màn hình OAuth Consent Screen đang ở chế độ "Testing", hãy vào mục "Audience" (hoặc "Test users") và thêm địa chỉ Gmail của bạn vào danh sách "Người dùng thử nghiệm".
+                        </Text>
+                      </View>
                     </View>
                   )}
                 </View>
