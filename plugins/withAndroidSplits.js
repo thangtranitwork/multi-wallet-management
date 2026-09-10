@@ -10,7 +10,6 @@ module.exports = function withAndroidSplits(config) {
         abi {
             reset()
             enable true
-            universalApk (findProperty('enableUniversalApk') ?: 'false').toBoolean()
             include "armeabi-v7a", "arm64-v8a"
         }
     }`
