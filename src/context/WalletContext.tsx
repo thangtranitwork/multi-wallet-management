@@ -57,7 +57,7 @@ interface WalletContextType {
     walletId: string;
     note?: string;
   }) => Promise<void>;
-  removeDebt: (id: string) => Promise<void>;
+  removeDebt: (id: string, refundToWallet?: boolean) => Promise<void>;
   addCategory: (category: Omit<Category, 'id'> & { id?: string }) => Promise<void>;
   editCategory: (category: Partial<Category> & { id: string }) => Promise<void>;
   removeCategory: (id: string) => Promise<void>;
@@ -231,8 +231,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     await refreshData();
   };
 
-  const removeDebt = async (id: string) => {
-    await queries.deleteDebt(db, id);
+  const removeDebt = async (id: string, refundToWallet: boolean = false) => {
+    await queries.deleteDebt(db, id, refundToWallet);
     await refreshData();
   };
 

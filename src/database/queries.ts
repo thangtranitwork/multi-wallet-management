@@ -479,9 +479,71 @@ export async function processDebtPayment(
 
 export async function deleteDebt(
   db: SQLite.SQLiteDatabase,
-  id: string
+  id: string,
+  refundToWallet: boolean = false
 ): Promise<void> {
-  await db.runAsync('DELETE FROM debts WHERE id = ?', [id]);
+  await db.withTransactionAsync(async () => {
+    if (refundToWallet) {
+      // Lấy thông tin debt để tính số tiền cần hoàn
+      const debt = await db.getFirstAsync<{
+        type: string;
+        wallet_id: string | null;
+        remaining_amount: number;
+        person_name: string;
+      }>(
+        'SELECT type, wallet_id, remaining_amount, person_name FROM debts WHERE id = ?',
+        [id]
+      );
+
+      if (debt && debt.wallet_id && debt.remaining_amount > 0) {
+        const now = new Date().toISOString();
+        const txId = `tx_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+        if (debt.type === 'lend') {
+          // Cho vay nhưng xóa → hoàn tiền đã cho vay (chưa thu được) vào lại ví
+          await db.runAsync(
+            'UPDATE wallets SET balance = balance + ? WHERE id = ?',
+            [debt.remaining_amount, debt.wallet_id]
+          );
+          await db.runAsync(
+            `INSERT INTO transactions (id, type, amount, wallet_id, debt_id, note, transacted_at, created_at)
+             VALUES (?, 'income', ?, ?, ?, ?, ?, ?)`,
+            [
+              txId,
+              debt.remaining_amount,
+              debt.wallet_id,
+              id,
+              `Hoàn tiền xóa khoản cho vay: ${debt.person_name}`,
+              now,
+              now,
+            ]
+          );
+        } else {
+          // Đi vay nhưng xóa → trừ lại số tiền vay chưa trả ra khỏi ví
+          await db.runAsync(
+            'UPDATE wallets SET balance = balance - ? WHERE id = ?',
+            [debt.remaining_amount, debt.wallet_id]
+          );
+          await db.runAsync(
+            `INSERT INTO transactions (id, type, amount, wallet_id, debt_id, note, transacted_at, created_at)
+             VALUES (?, 'expense', ?, ?, ?, ?, ?, ?)`,
+            [
+              txId,
+              debt.remaining_amount,
+              debt.wallet_id,
+              id,
+              `Hoàn tiền xóa khoản đi vay: ${debt.person_name}`,
+              now,
+              now,
+            ]
+          );
+        }
+      }
+    }
+
+    // Xóa debt (cascade sẽ xóa debt_payments và transactions liên quan nếu có ON DELETE CASCADE)
+    await db.runAsync('DELETE FROM debts WHERE id = ?', [id]);
+  });
 }
 
 // ==================== CATEGORY QUERIES ====================

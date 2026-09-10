@@ -50,18 +50,41 @@ export const DebtsScreen: React.FC = () => {
   });
 
   const handleDeleteDebt = (debt: Debt) => {
+    const hasWallet = !!debt.wallet_id;
+    const hasRemaining = debt.remaining_amount > 0;
+    const canRefund = hasWallet && hasRemaining && debt.status !== 'settled';
+
+    const refundLabel =
+      debt.type === 'lend'
+        ? `Xóa & Hoàn ${formatVND(debt.remaining_amount)} vào ví`
+        : `Xóa & Trừ ${formatVND(debt.remaining_amount)} khỏi ví`;
+
+    const message = canRefund
+      ? `Khoản nợ của "${debt.person_name}" còn ${formatVND(debt.remaining_amount)} chưa tất toán.\n\nBạn có muốn hoàn tiền về ví không?`
+      : `Bạn có chắc muốn xóa khoản nợ của "${debt.person_name}"?`;
+
     Alert.alert(
       'Xóa khoản nợ',
-      `Ngài có chắc muốn xóa khoản nợ của "${debt.person_name}"?`,
+      message,
       [
         { text: 'Hủy', style: 'cancel' },
         {
-          text: 'Xóa',
+          text: 'Xóa (không hoàn tiền)',
           style: 'destructive',
           onPress: async () => {
-            await removeDebt(debt.id);
+            await removeDebt(debt.id, false);
           },
         },
+        ...(canRefund
+          ? [
+              {
+                text: refundLabel,
+                onPress: async () => {
+                  await removeDebt(debt.id, true);
+                },
+              },
+            ]
+          : []),
       ]
     );
   };
