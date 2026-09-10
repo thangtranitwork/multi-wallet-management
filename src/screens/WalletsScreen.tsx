@@ -20,6 +20,7 @@ export const WalletsScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
     summary,
     isLoading,
     isBalanceHidden,
+    toggleHideBalance,
     refreshData,
     setActiveWalletFilter,
     addWallet,
@@ -57,15 +58,28 @@ export const WalletsScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
           <Text style={styles.screenSubtitle}>Quản lý tài khoản & số dư</Text>
         </View>
 
-        <Pressable
-          style={styles.addBtnShadow}
-          onPress={() => setCreateModalVisible(true)}
-        >
-          <View style={styles.addBtnInner}>
-            <Ionicons name="add" size={18} color="#000000" />
-            <Text style={styles.addBtnText}>Thêm ví</Text>
-          </View>
-        </Pressable>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Pressable
+            style={styles.eyeBtn}
+            onPress={toggleHideBalance}
+          >
+            <Ionicons
+              name={isBalanceHidden ? 'eye-off-outline' : 'eye-outline'}
+              size={18}
+              color="#000000"
+            />
+          </Pressable>
+
+          <Pressable
+            style={styles.addBtnShadow}
+            onPress={() => setCreateModalVisible(true)}
+          >
+            <View style={styles.addBtnInner}>
+              <Ionicons name="add" size={18} color="#000000" />
+              <Text style={styles.addBtnText}>Thêm ví</Text>
+            </View>
+          </Pressable>
+        </View>
       </View>
 
       {/* Summary Total Card */}
@@ -298,6 +312,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#6B7280',
     marginTop: 2,
+  },
+  eyeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   addBtnShadow: {
     backgroundColor: '#000000',

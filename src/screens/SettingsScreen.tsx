@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -22,6 +22,9 @@ import dayjs from 'dayjs';
 import { useWallet } from '../context/WalletContext';
 import { useSecurity } from '../context/SecurityContext';
 import { CategoryManagementModal } from '../components/CategoryManagementModal';
+import { GoogleDriveSyncModal } from '../components/GoogleDriveSyncModal';
+import { loadCloudBackupConfig } from '../services/cloudBackupStorage';
+import { useSQLiteContext } from 'expo-sqlite';
 import { THEME } from '../constants';
 import { hapticLight, hapticMedium, hapticSuccess, hapticError } from '../utils/haptics';
 
@@ -53,6 +56,25 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
     toggleHaptics,
     updatePinCode,
   } = useSecurity();
+
+  const db = useSQLiteContext();
+  const [googleDriveModalVisible, setGoogleDriveModalVisible] = useState<boolean>(false);
+  const [isDriveLinked, setIsDriveLinked] = useState<boolean>(false);
+  const [driveUserEmail, setDriveUserEmail] = useState<string>('');
+
+  const checkDriveStatus = useCallback(async () => {
+    try {
+      const conf = await loadCloudBackupConfig(db);
+      setIsDriveLinked(conf.isLinked);
+      setDriveUserEmail(conf.user?.email || '');
+    } catch {
+      // ignore
+    }
+  }, [db]);
+
+  useEffect(() => {
+    checkDriveStatus();
+  }, [checkDriveStatus]);
 
   const [categoryModalVisible, setCategoryModalVisible] = useState<boolean>(false);
   const [pinModalVisible, setPinModalVisible] = useState<boolean>(false);
@@ -507,6 +529,59 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
           </View>
         </View>
 
+        {/* Google Drive Cloud Sync Section */}
+        <View style={styles.cardShadow}>
+          <View style={styles.cardInner}>
+            <View style={[styles.folderTab, { backgroundColor: THEME.popYellow }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name="logo-google" size={15} color="#000000" />
+                <Text style={styles.folderTabText}>GOOGLE DRIVE CLOUD SYNC</Text>
+              </View>
+            </View>
+
+            <View style={styles.cardBody}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <Text style={styles.cardSectionTitle}>Đồng bộ Google Drive</Text>
+                <View style={[
+                  styles.gdriveBadge,
+                  { backgroundColor: isDriveLinked ? '#DCFCE7' : '#F3F4F6' }
+                ]}>
+                  <View style={[
+                    styles.gdriveDot,
+                    { backgroundColor: isDriveLinked ? '#15803D' : '#9CA3AF' }
+                  ]} />
+                  <Text style={[
+                    styles.gdriveBadgeText,
+                    { color: isDriveLinked ? '#15803D' : '#6B7280' }
+                  ]}>
+                    {isDriveLinked ? 'Đã liên kết' : 'Chưa liên kết'}
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={styles.cardDescText}>
+                {isDriveLinked
+                  ? `Đang liên kết với: ${driveUserEmail || 'Tài khoản Google'}. Dữ liệu được tự động bảo vệ an toàn trên Google Drive cá nhân.`
+                  : 'Liên kết tài khoản Google để tự động sao lưu đám mây và khôi phục chỉ với 1 chạm khi đổi điện thoại.'}
+              </Text>
+
+              <Pressable
+                style={styles.actionBtnGoogle}
+                onPress={() => {
+                  hapticMedium();
+                  setGoogleDriveModalVisible(true);
+                }}
+              >
+                <Ionicons name="cloud-outline" size={18} color="#000000" />
+                <Text style={styles.actionBtnText}>
+                  {isDriveLinked ? 'Quản lý sao lưu Google Drive' : 'Liên kết tài khoản Google Drive'}
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color="#000000" style={{ marginLeft: 'auto' }} />
+              </Pressable>
+            </View>
+          </View>
+        </View>
+
         {/* Export Data Section */}
         <View style={styles.cardShadow}>
           <View style={styles.cardInner}>
@@ -731,6 +806,15 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
           </Text>
         </View>
       </ScrollView>
+
+      {/* Google Drive Sync Modal */}
+      <GoogleDriveSyncModal
+        visible={googleDriveModalVisible}
+        onClose={() => {
+          setGoogleDriveModalVisible(false);
+          checkDriveStatus();
+        }}
+      />
 
       {/* Loading Overlay */}
       {isProcessing && (
@@ -1142,6 +1226,37 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 2,
     borderColor: '#000000',
+  },
+  actionBtnGoogle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 13,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#000000',
+    marginTop: 4,
+  },
+  gdriveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+  },
+  gdriveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  gdriveBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
   },
   actionBtnTextSecondary: {
     fontSize: 13,

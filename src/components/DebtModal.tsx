@@ -30,7 +30,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({
   debtToPay = null,
   defaultType = 'lend',
 }) => {
-  const { wallets, addDebt, payOrCollectDebt } = useWallet();
+  const { wallets, addDebt, payOrCollectDebt, isBalanceHidden } = useWallet();
   const effectiveDebt = debtToPay !== null ? debtToPay : targetDebt;
 
   // State cho Mode Create
@@ -203,12 +203,14 @@ export const DebtModal: React.FC<DebtModalProps> = ({
               <View style={styles.targetDebtInfo}>
                 <View style={styles.targetDebtRow}>
                   <Text style={styles.targetLabel}>Tổng số tiền ban đầu:</Text>
-                  <Text style={styles.targetValue}>{formatVND(targetDebt.initial_amount)}</Text>
+                  <Text style={styles.targetValue}>
+                    {isBalanceHidden ? '••••••' : formatVND(targetDebt.initial_amount)}
+                  </Text>
                 </View>
                 <View style={styles.targetDebtRow}>
                   <Text style={styles.targetLabel}>Số tiền còn nợ:</Text>
                   <Text style={[styles.targetValue, { color: '#F43F5E', fontWeight: '800' }]}>
-                    {formatVND(targetDebt.remaining_amount)}
+                    {isBalanceHidden ? '••••••' : formatVND(targetDebt.remaining_amount)}
                   </Text>
                 </View>
               </View>

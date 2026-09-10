@@ -32,6 +32,7 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
     plannedExpenses,
     totalPendingPlanned,
     safeToSpendBalance,
+    isBalanceHidden,
     addPlannedExpense,
     editPlannedExpense,
     executePlannedExpense,
@@ -330,27 +331,27 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
               </View>
 
               <Text style={styles.safeBannerAmount} numberOfLines={1}>
-                {formatVND(safeToSpendBalance)}
+                {isBalanceHidden ? '•••••••• ₫' : formatVND(safeToSpendBalance)}
               </Text>
 
               {/* Equation breakdown bar */}
               <View style={styles.breakdownBar}>
                 <View style={styles.breakdownItem}>
                   <Text style={styles.breakdownLabel}>Tổng số dư ví</Text>
-                  <Text style={styles.breakdownVal}>{formatVND(totalWalletBalance)}</Text>
+                  <Text style={styles.breakdownVal}>{isBalanceHidden ? '••••••' : formatVND(totalWalletBalance)}</Text>
                 </View>
                 <Text style={styles.breakdownSign}>-</Text>
                 <View style={styles.breakdownItem}>
                   <Text style={styles.breakdownLabel}>Dự chi đang chờ</Text>
                   <Text style={[styles.breakdownVal, { color: '#DC2626' }]}>
-                    {formatVND(totalPendingPlanned)}
+                    {isBalanceHidden ? '••••••' : formatVND(totalPendingPlanned)}
                   </Text>
                 </View>
                 <Text style={styles.breakdownSign}>=</Text>
                 <View style={styles.breakdownItem}>
                   <Text style={styles.breakdownLabel}>An toàn</Text>
                   <Text style={[styles.breakdownVal, { color: '#15803D' }]}>
-                    {formatVND(safeToSpendBalance)}
+                    {isBalanceHidden ? '••••••' : formatVND(safeToSpendBalance)}
                   </Text>
                 </View>
               </View>
@@ -491,11 +492,11 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
 
                       <View style={styles.itemAmountCol}>
                         <Text style={styles.itemAmountText}>
-                          {formatVND(item.amount)}
+                          {isBalanceHidden ? '••••••' : formatVND(item.amount)}
                         </Text>
                         {item.actual_amount && item.actual_amount !== item.amount ? (
                           <Text style={styles.itemActualText}>
-                            Thực tế: {formatVND(item.actual_amount)}
+                            Thực tế: {isBalanceHidden ? '••••••' : formatVND(item.actual_amount)}
                           </Text>
                         ) : null}
                       </View>
@@ -706,7 +707,7 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
                         }}
                       >
                         <Text style={[styles.walletChipText, isSelected && styles.walletChipTextActive]}>
-                          {w.name} ({formatVND(w.balance)})
+                          {w.name} {isBalanceHidden ? '' : `(${formatVND(w.balance)})`}
                         </Text>
                       </Pressable>
                     );
@@ -770,7 +771,7 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
               <View style={styles.executeInfoBox}>
                 <Text style={styles.executeInfoTitle}>{executingItem?.title}</Text>
                 <Text style={styles.executeInfoSub}>
-                  Dự kiến: {formatVND(executingItem?.amount || 0)}
+                  Dự kiến: {isBalanceHidden ? '••••••' : formatVND(executingItem?.amount || 0)}
                 </Text>
               </View>
 
@@ -801,7 +802,7 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
                       }}
                     >
                       <Text style={[styles.walletChipText, isSelected && styles.walletChipTextActive]}>
-                        {w.name} ({formatVND(w.balance)})
+                        {w.name} {isBalanceHidden ? '' : `(${formatVND(w.balance)})`}
                       </Text>
                     </Pressable>
                   );

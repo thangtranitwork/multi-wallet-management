@@ -26,6 +26,7 @@ export const TransactionsScreen: React.FC = () => {
     transactions,
     isLoading,
     isBalanceHidden,
+    toggleHideBalance,
     activeWalletFilter,
     setActiveWalletFilter,
     refreshData,
@@ -138,15 +139,28 @@ export const TransactionsScreen: React.FC = () => {
           <Text style={styles.screenSubtitle}>Lịch sử thu - chi - chuyển khoản</Text>
         </View>
 
-        <Pressable
-          style={styles.addBtnShadow}
-          onPress={() => setQuickAddVisible(true)}
-        >
-          <View style={styles.addBtnInner}>
-            <Ionicons name="add" size={18} color="#000000" />
-            <Text style={styles.addBtnText}>Ghi chép</Text>
-          </View>
-        </Pressable>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Pressable
+            style={styles.eyeBtn}
+            onPress={toggleHideBalance}
+          >
+            <Ionicons
+              name={isBalanceHidden ? 'eye-off-outline' : 'eye-outline'}
+              size={18}
+              color="#000000"
+            />
+          </Pressable>
+
+          <Pressable
+            style={styles.addBtnShadow}
+            onPress={() => setQuickAddVisible(true)}
+          >
+            <View style={styles.addBtnInner}>
+              <Ionicons name="add" size={18} color="#000000" />
+              <Text style={styles.addBtnText}>Ghi chép</Text>
+            </View>
+          </Pressable>
+        </View>
       </View>
 
       {/* Search Input Bar */}
@@ -245,7 +259,11 @@ export const TransactionsScreen: React.FC = () => {
                         : { color: '#6B7280' },
                     ]}
                   >
-                    {dayTotal !== 0 ? (dayTotal > 0 ? '+' : '') + formatVND(dayTotal) : ''}
+                    {dayTotal !== 0
+                      ? isBalanceHidden
+                        ? '••••••'
+                        : (dayTotal > 0 ? '+' : '') + formatVND(dayTotal)
+                      : ''}
                   </Text>
                 </View>
 
@@ -259,7 +277,6 @@ export const TransactionsScreen: React.FC = () => {
                         setSplitTargetTx(tx);
                       }
                     }}
-                    onSplit={() => setSplitTargetTx(tx)}
                     onDelete={() => handleDelete(tx)}
                   />
                 ))}
@@ -323,6 +340,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#6B7280',
     marginTop: 2,
+  },
+  eyeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   addBtnShadow: {
     backgroundColor: '#000000',

@@ -207,7 +207,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
           {/* Header */}
           <View style={styles.header}>
             <View>
-              <Text style={styles.headerTitle}>✂️ Tách Tiền Giao Dịch</Text>
+              <Text style={styles.headerTitle}>Tách Tiền Giao Dịch</Text>
               <Text style={styles.headerSub}>Chuyển một phần chi tiêu thành khoản người khác nợ</Text>
             </View>
             <Pressable style={styles.closeBtn} onPress={onClose}>

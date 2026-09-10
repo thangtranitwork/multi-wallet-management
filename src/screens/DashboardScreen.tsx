@@ -341,7 +341,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
                 </Text>
                 <Text style={styles.plannedDetailText}>
                   {totalPendingPlanned > 0
-                    ? `Đã bảo lưu ${formatVND(totalPendingPlanned)} cho ${plannedExpenses.filter(p => p.status === 'pending').length} khoản dự chi`
+                    ? `Đã bảo lưu ${isBalanceHidden ? '••••••' : formatVND(totalPendingPlanned)} cho ${plannedExpenses.filter(p => p.status === 'pending').length} khoản dự chi`
                     : 'Chưa có khoản dự chi nào đang chờ'}
                 </Text>
               </View>
@@ -361,7 +361,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
               <View style={styles.upcomingPill}>
                 <View style={styles.upcomingPillDot} />
                 <Text style={styles.upcomingPillTitle} numberOfLines={1}>
-                  Gần nhất: {upcomingPlanned.title} ({formatVND(upcomingPlanned.amount)})
+                  Gần nhất: {upcomingPlanned.title} ({isBalanceHidden ? '••••••' : formatVND(upcomingPlanned.amount)})
                 </Text>
                 <View style={styles.upcomingPillBadge}>
                   <Text style={styles.upcomingPillBadgeText}>
@@ -600,7 +600,6 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
                     setSplitTargetTx(tx);
                   }
                 }}
-                onSplit={() => setSplitTargetTx(tx)}
                 onDelete={() => removeTransaction(tx.id)}
               />
             ))

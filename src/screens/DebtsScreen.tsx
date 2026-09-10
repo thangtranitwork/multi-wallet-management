@@ -24,6 +24,7 @@ export const DebtsScreen: React.FC = () => {
     summary,
     isLoading,
     isBalanceHidden,
+    toggleHideBalance,
     refreshData,
     removeDebt,
   } = useWallet();
@@ -98,15 +99,28 @@ export const DebtsScreen: React.FC = () => {
           <Text style={styles.screenSubtitle}>Theo dõi công nợ 2 chiều</Text>
         </View>
 
-        <Pressable
-          style={styles.addBtnShadow}
-          onPress={() => setCreateModalVisible(true)}
-        >
-          <View style={styles.addBtnInner}>
-            <Ionicons name="add" size={18} color="#000000" />
-            <Text style={styles.addBtnText}>Thêm nợ</Text>
-          </View>
-        </Pressable>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Pressable
+            style={styles.eyeBtn}
+            onPress={toggleHideBalance}
+          >
+            <Ionicons
+              name={isBalanceHidden ? 'eye-off-outline' : 'eye-outline'}
+              size={18}
+              color="#000000"
+            />
+          </Pressable>
+
+          <Pressable
+            style={styles.addBtnShadow}
+            onPress={() => setCreateModalVisible(true)}
+          >
+            <View style={styles.addBtnInner}>
+              <Ionicons name="add" size={18} color="#000000" />
+              <Text style={styles.addBtnText}>Thêm nợ</Text>
+            </View>
+          </Pressable>
+        </View>
       </View>
 
       {/* Summary Folder Tab Cards */}
@@ -541,6 +555,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#6B7280',
     marginTop: 2,
+  },
+  eyeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   addBtnShadow: {
     backgroundColor: '#000000',

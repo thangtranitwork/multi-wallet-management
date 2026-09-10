@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSQLiteContext } from 'expo-sqlite';
+import dayjs from 'dayjs';
 import {
   Wallet,
   Transaction,
@@ -11,6 +12,10 @@ import {
 } from '../types';
 import * as queries from '../database/queries';
 import * as backup from '../database/backup';
+import * as LocalAuthentication from 'expo-local-authentication';
+import { hapticLight, hapticSuccess, hapticError } from '../utils/haptics';
+import { loadCloudBackupConfig, saveCloudBackupConfig } from '../services/cloudBackupStorage';
+import { uploadBackupToDrive } from '../services/googleDriveService';
 
 interface WalletContextType {
   wallets: Wallet[];
@@ -24,7 +29,7 @@ interface WalletContextType {
   safeToSpendBalance: number;
   isLoading: boolean;
   isBalanceHidden: boolean;
-  toggleHideBalance: () => void;
+  toggleHideBalance: () => Promise<void> | void;
   activeWalletFilter: string | null;
   setActiveWalletFilter: (id: string | null) => void;
   refreshData: () => Promise<void>;
@@ -104,9 +109,42 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [isBalanceHidden, setIsBalanceHidden] = useState<boolean>(false);
   const [activeWalletFilter, setActiveWalletFilter] = useState<string | null>(null);
 
-  const toggleHideBalance = useCallback(() => {
-    setIsBalanceHidden(prev => !prev);
-  }, []);
+  const toggleHideBalance = useCallback(async () => {
+    if (!isBalanceHidden) {
+      // Đang hiển thị -> Muốn che: che ngay lập tức
+      hapticLight();
+      setIsBalanceHidden(true);
+      return;
+    }
+
+    // Đang che -> Muốn hiển thị: BẮT BUỘC quét vân tay / sinh trắc học
+    try {
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+
+      if (hasHardware && isEnrolled) {
+        const result = await LocalAuthentication.authenticateAsync({
+          promptMessage: 'Quét vân tay để hiển thị số tiền',
+          fallbackLabel: 'Sử dụng mật khẩu thiết bị',
+          cancelLabel: 'Hủy',
+          disableDeviceFallback: false,
+        });
+
+        if (result.success) {
+          hapticSuccess();
+          setIsBalanceHidden(false);
+        } else {
+          hapticError();
+        }
+      } else {
+        // Thiết bị không có vân tay / chưa cài vân tay -> mở trực tiếp
+        hapticLight();
+        setIsBalanceHidden(false);
+      }
+    } catch {
+      setIsBalanceHidden(false);
+    }
+  }, [isBalanceHidden]);
 
   const refreshData = useCallback(async () => {
     try {
@@ -158,6 +196,33 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     refreshData();
   }, [refreshData]);
 
+  const autoBackupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const triggerAutoBackup = useCallback(() => {
+    if (autoBackupTimerRef.current) {
+      clearTimeout(autoBackupTimerRef.current);
+    }
+    // Debounce 8 giây sau lần thao tác cuối để upload nền
+    autoBackupTimerRef.current = setTimeout(async () => {
+      try {
+        const conf = await loadCloudBackupConfig(db);
+        if (conf.isLinked && conf.autoBackupEnabled && conf.accessToken) {
+          const rawData = await backup.exportAllData(db);
+          const jsonStr = JSON.stringify(rawData, null, 2);
+          const uploadRes = await uploadBackupToDrive(conf.accessToken, jsonStr);
+          if (uploadRes.success) {
+            await saveCloudBackupConfig(db, {
+              lastBackupTime: dayjs().format('HH:mm DD/MM/YYYY'),
+              lastBackupFileName: uploadRes.fileName,
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Auto-backup skipped or error:', err);
+      }
+    }, 8000);
+  }, [db]);
+
   const addTransaction = async (tx: {
     type: 'expense' | 'income' | 'transfer';
     amount: number;
@@ -174,16 +239,19 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       transacted_at: tx.transacted_at || new Date().toISOString(),
     });
     await refreshData();
+    triggerAutoBackup();
   };
 
   const removeTransaction = async (id: string) => {
     await queries.deleteTransaction(db, id);
     await refreshData();
+    triggerAutoBackup();
   };
 
   const splitTransaction = async (transactionId: string, splits: queries.SplitItem[]) => {
     await queries.splitTransactionIntoDebts(db, transactionId, splits);
     await refreshData();
+    triggerAutoBackup();
   };
 
   const addWallet = async (wallet: Omit<Wallet, 'id' | 'created_at'>) => {
@@ -193,21 +261,25 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       ...wallet,
     });
     await refreshData();
+    triggerAutoBackup();
   };
 
   const editWallet = async (wallet: Partial<Wallet> & { id: string }) => {
     await queries.updateWallet(db, wallet);
     await refreshData();
+    triggerAutoBackup();
   };
 
   const adjustBalance = async (walletId: string, newBalance: number, note?: string) => {
     await queries.adjustWalletBalance(db, walletId, newBalance, note);
     await refreshData();
+    triggerAutoBackup();
   };
 
   const removeWallet = async (id: string) => {
     await queries.deleteWallet(db, id);
     await refreshData();
+    triggerAutoBackup();
   };
 
   const addDebt = async (debt: {
@@ -225,6 +297,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       ...debt,
     });
     await refreshData();
+    triggerAutoBackup();
   };
 
   const payOrCollectDebt = async (params: {
@@ -235,11 +308,13 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }) => {
     await queries.processDebtPayment(db, params);
     await refreshData();
+    triggerAutoBackup();
   };
 
   const removeDebt = async (id: string, refundToWallet: boolean = false) => {
     await queries.deleteDebt(db, id, refundToWallet);
     await refreshData();
+    triggerAutoBackup();
   };
 
   const addCategory = async (category: Omit<Category, 'id'> & { id?: string }) => {
@@ -299,6 +374,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       note: params.note,
     });
     await refreshData();
+    triggerAutoBackup();
   };
 
   const removePlannedExpense = async (id: string) => {
