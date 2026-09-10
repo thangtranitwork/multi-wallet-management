@@ -9,6 +9,7 @@ interface TransactionItemProps {
   transaction: Transaction;
   isBalanceHidden?: boolean;
   onPress?: () => void;
+  onSplit?: () => void;
   onDelete?: () => void;
 }
 
@@ -16,6 +17,7 @@ export const TransactionItem: React.FC<TransactionItemProps> = ({
   transaction,
   isBalanceHidden = false,
   onPress,
+  onSplit,
   onDelete,
 }) => {
   const [pressed, setPressed] = useState(false);
@@ -132,18 +134,32 @@ export const TransactionItem: React.FC<TransactionItemProps> = ({
           <Text style={styles.timeCaption}>{txDate.format('HH:mm')}</Text>
         </View>
 
-        {/* Quick Delete */}
-        {onDelete && (
-          <Pressable
-            style={styles.deleteBtn}
-            onPress={e => {
-              e.stopPropagation();
-              onDelete();
-            }}
-          >
-            <Ionicons name="trash-outline" size={15} color="#6B7280" />
-          </Pressable>
-        )}
+        {/* Action Buttons: Split & Delete */}
+        <View style={styles.actionsBox}>
+          {transaction.type === 'expense' && onSplit && (
+            <Pressable
+              style={styles.splitBtn}
+              onPress={e => {
+                e.stopPropagation();
+                onSplit();
+              }}
+            >
+              <Ionicons name="cut-outline" size={15} color="#0F766E" />
+            </Pressable>
+          )}
+
+          {onDelete && (
+            <Pressable
+              style={styles.deleteBtn}
+              onPress={e => {
+                e.stopPropagation();
+                onDelete();
+              }}
+            >
+              <Ionicons name="trash-outline" size={15} color="#6B7280" />
+            </Pressable>
+          )}
+        </View>
       </View>
     </Pressable>
   );
@@ -231,8 +247,20 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 2,
   },
+  actionsBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 6,
+    gap: 4,
+  },
+  splitBtn: {
+    padding: 5,
+    backgroundColor: '#CCFBF1',
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#0F766E',
+  },
   deleteBtn: {
-    marginLeft: 8,
-    padding: 4,
+    padding: 5,
   },
 });

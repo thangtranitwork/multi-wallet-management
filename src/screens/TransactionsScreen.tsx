@@ -15,6 +15,7 @@ import dayjs from 'dayjs';
 import { useWallet } from '../context/WalletContext';
 import { TransactionItem } from '../components/TransactionItem';
 import { QuickAddModal } from '../components/QuickAddModal';
+import { SplitTransactionModal } from '../components/SplitTransactionModal';
 import { NeoDropdown } from '../components/NeoDropdown';
 import { Transaction } from '../types';
 import { THEME, formatVND } from '../constants';
@@ -34,6 +35,7 @@ export const TransactionsScreen: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('all');
   const [quickAddVisible, setQuickAddVisible] = useState(false);
+  const [splitTargetTx, setSplitTargetTx] = useState<Transaction | null>(null);
 
   // Filter transactions
   const filteredTransactions = transactions.filter(t => {
@@ -252,6 +254,12 @@ export const TransactionsScreen: React.FC = () => {
                     key={tx.id}
                     transaction={tx}
                     isBalanceHidden={isBalanceHidden}
+                    onPress={() => {
+                      if (tx.type === 'expense') {
+                        setSplitTargetTx(tx);
+                      }
+                    }}
+                    onSplit={() => setSplitTargetTx(tx)}
                     onDelete={() => handleDelete(tx)}
                   />
                 ))}
@@ -279,6 +287,13 @@ export const TransactionsScreen: React.FC = () => {
       <QuickAddModal
         visible={quickAddVisible}
         onClose={() => setQuickAddVisible(false)}
+      />
+
+      {/* Split Transaction Modal */}
+      <SplitTransactionModal
+        visible={!!splitTargetTx}
+        onClose={() => setSplitTargetTx(null)}
+        transaction={splitTargetTx}
       />
     </SafeAreaView>
   );

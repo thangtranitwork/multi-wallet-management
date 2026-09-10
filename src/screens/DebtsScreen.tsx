@@ -14,7 +14,6 @@ import { Ionicons } from '@expo/vector-icons';
 import dayjs from 'dayjs';
 import { useWallet } from '../context/WalletContext';
 import { DebtModal } from '../components/DebtModal';
-import { SplitBillModal } from '../components/SplitBillModal';
 import { NeoDropdown } from '../components/NeoDropdown';
 import { Debt } from '../types';
 import { THEME, formatVND } from '../constants';
@@ -34,7 +33,6 @@ export const DebtsScreen: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   const [createModalVisible, setCreateModalVisible] = useState<boolean>(false);
-  const [splitModalVisible, setSplitModalVisible] = useState<boolean>(false);
   const [targetPaymentDebt, setTargetPaymentDebt] = useState<Debt | null>(null);
 
   // Filter debts
@@ -100,27 +98,15 @@ export const DebtsScreen: React.FC = () => {
           <Text style={styles.screenSubtitle}>Theo dõi công nợ 2 chiều</Text>
         </View>
 
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Pressable
-            style={styles.splitBtnShadow}
-            onPress={() => setSplitModalVisible(true)}
-          >
-            <View style={styles.splitBtnInner}>
-              <Ionicons name="cut-outline" size={16} color="#000000" />
-              <Text style={styles.splitBtnText}>Chia bill</Text>
-            </View>
-          </Pressable>
-
-          <Pressable
-            style={styles.addBtnShadow}
-            onPress={() => setCreateModalVisible(true)}
-          >
-            <View style={styles.addBtnInner}>
-              <Ionicons name="add" size={18} color="#000000" />
-              <Text style={styles.addBtnText}>Thêm nợ</Text>
-            </View>
-          </Pressable>
-        </View>
+        <Pressable
+          style={styles.addBtnShadow}
+          onPress={() => setCreateModalVisible(true)}
+        >
+          <View style={styles.addBtnInner}>
+            <Ionicons name="add" size={18} color="#000000" />
+            <Text style={styles.addBtnText}>Thêm nợ</Text>
+          </View>
+        </Pressable>
       </View>
 
       {/* Summary Folder Tab Cards */}
@@ -527,12 +513,6 @@ export const DebtsScreen: React.FC = () => {
           debtToPay={targetPaymentDebt}
         />
       )}
-
-      {/* Split Bill Modal */}
-      <SplitBillModal
-        visible={splitModalVisible}
-        onClose={() => setSplitModalVisible(false)}
-      />
     </SafeAreaView>
   );
 };
@@ -561,27 +541,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#6B7280',
     marginTop: 2,
-  },
-  splitBtnShadow: {
-    backgroundColor: '#000000',
-    borderRadius: 12,
-  },
-  splitBtnInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: THEME.primaryLight || '#A7F3D0',
-    borderWidth: 2,
-    borderColor: '#000000',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    transform: [{ translateX: -3 }, { translateY: -3 }],
-  },
-  splitBtnText: {
-    fontSize: 13,
-    fontWeight: '900',
-    color: '#000000',
   },
   addBtnShadow: {
     backgroundColor: '#000000',

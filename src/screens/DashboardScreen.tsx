@@ -18,7 +18,8 @@ import { TransactionItem } from '../components/TransactionItem';
 import { QuickAddModal } from '../components/QuickAddModal';
 import { WalletModal } from '../components/WalletModal';
 import { PlannedExpensesModal } from '../components/PlannedExpensesModal';
-import { Wallet } from '../types';
+import { SplitTransactionModal } from '../components/SplitTransactionModal';
+import { Wallet, Transaction } from '../types';
 import { THEME, formatVND } from '../constants';
 import { hapticMedium, hapticLight } from '../utils/haptics';
 
@@ -48,6 +49,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
   const [walletModalVisible, setWalletModalVisible] = useState(false);
   const [adjustingWallet, setAdjustingWallet] = useState<Wallet | null>(null);
   const [plannedModalVisible, setPlannedModalVisible] = useState(false);
+  const [splitTargetTx, setSplitTargetTx] = useState<Transaction | null>(null);
 
   const upcomingPlanned = useMemo(() => {
     const pending = plannedExpenses.filter(p => p.status === 'pending');
@@ -593,6 +595,12 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
                 key={tx.id}
                 transaction={tx}
                 isBalanceHidden={isBalanceHidden}
+                onPress={() => {
+                  if (tx.type === 'expense') {
+                    setSplitTargetTx(tx);
+                  }
+                }}
+                onSplit={() => setSplitTargetTx(tx)}
                 onDelete={() => removeTransaction(tx.id)}
               />
             ))
@@ -621,6 +629,12 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
       <PlannedExpensesModal
         visible={plannedModalVisible}
         onClose={() => setPlannedModalVisible(false)}
+      />
+
+      <SplitTransactionModal
+        visible={!!splitTargetTx}
+        onClose={() => setSplitTargetTx(null)}
+        transaction={splitTargetTx}
       />
     </SafeAreaView>
   );

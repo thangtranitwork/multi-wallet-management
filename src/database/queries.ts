@@ -266,6 +266,99 @@ export async function deleteTransaction(
   });
 }
 
+export interface SplitItem {
+  personName: string;
+  personPhone?: string | null;
+  amount: number;
+  note?: string;
+}
+
+export async function splitTransactionIntoDebts(
+  db: SQLite.SQLiteDatabase,
+  transactionId: string,
+  splits: SplitItem[]
+): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    const tx = await db.getFirstAsync<Transaction>(
+      'SELECT * FROM transactions WHERE id = ?',
+      [transactionId]
+    );
+    if (!tx) throw new Error('Không tìm thấy giao dịch gốc');
+
+    const totalSplit = splits.reduce((sum, s) => sum + s.amount, 0);
+    if (totalSplit <= 0) throw new Error('Số tiền tách phải lớn hơn 0');
+    if (totalSplit > tx.amount) {
+      throw new Error('Tổng số tiền tách không được vượt quá số tiền giao dịch gốc');
+    }
+
+    const now = new Date().toISOString();
+    const remainingAmount = tx.amount - totalSplit;
+
+    // 1. Tạo các khoản nợ (debts) cho từng người và giao dịch debt_lend tương ứng
+    const splitNames: string[] = [];
+    for (let i = 0; i < splits.length; i++) {
+      const item = splits[i];
+      if (item.amount <= 0 || !item.personName.trim()) continue;
+
+      const debtId = `debt_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 6)}`;
+      const debtNote = item.note?.trim()
+        ? item.note.trim()
+        : `Tách từ GD: ${tx.note || 'Chi tiêu'}`;
+
+      // Thêm vào bảng debts
+      await db.runAsync(
+        `INSERT INTO debts (id, type, person_name, person_phone, initial_amount, remaining_amount, wallet_id, status, note, created_at)
+         VALUES (?, 'lend', ?, ?, ?, ?, ?, 'active', ?, ?)`,
+        [
+          debtId,
+          item.personName.trim(),
+          item.personPhone?.trim() || null,
+          item.amount,
+          item.amount,
+          tx.wallet_id,
+          debtNote,
+          now,
+        ]
+      );
+
+      // Thêm vào bảng transactions bản ghi loại 'debt_lend' tương ứng
+      // Không trừ thêm tiền vào ví vì số tiền này đã nằm trong khoản chi ban đầu của tx gốc
+      const splitTxId = `tx_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 6)}`;
+      await db.runAsync(
+        `INSERT INTO transactions (id, type, amount, wallet_id, debt_id, note, transacted_at, created_at)
+         VALUES (?, 'debt_lend', ?, ?, ?, ?, ?, ?)`,
+        [
+          splitTxId,
+          item.amount,
+          tx.wallet_id,
+          debtId,
+          `Cho ${item.personName.trim()} mượn: ${debtNote}`.trim(),
+          tx.transacted_at,
+          now,
+        ]
+      );
+
+      splitNames.push(item.personName.trim());
+    }
+
+    // 2. Cập nhật giao dịch gốc:
+    if (remainingAmount > 0) {
+      const splitTag = `[Đã tách cho ${splitNames.join(', ')}]`;
+      const updatedNote = tx.note?.includes(splitTag)
+        ? tx.note
+        : tx.note ? `${tx.note} ${splitTag}` : splitTag;
+
+      await db.runAsync(
+        'UPDATE transactions SET amount = ?, note = ? WHERE id = ?',
+        [remainingAmount, updatedNote, transactionId]
+      );
+    } else {
+      // Nếu tách hết 100%, xóa giao dịch chi tiêu gốc (vì toàn bộ đã chuyển thành debt_lend)
+      await db.runAsync('DELETE FROM transactions WHERE id = ?', [transactionId]);
+    }
+  });
+}
+
 // ==================== DEBT & LOAN QUERIES ====================
 
 export async function getDebts(

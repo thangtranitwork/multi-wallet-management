@@ -38,6 +38,7 @@ interface WalletContextType {
     transacted_at?: string;
   }) => Promise<void>;
   removeTransaction: (id: string) => Promise<void>;
+  splitTransaction: (transactionId: string, splits: queries.SplitItem[]) => Promise<void>;
   addWallet: (wallet: Omit<Wallet, 'id' | 'created_at'>) => Promise<void>;
   editWallet: (wallet: Partial<Wallet> & { id: string }) => Promise<void>;
   adjustBalance: (walletId: string, newBalance: number, note?: string) => Promise<void>;
@@ -177,6 +178,11 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const removeTransaction = async (id: string) => {
     await queries.deleteTransaction(db, id);
+    await refreshData();
+  };
+
+  const splitTransaction = async (transactionId: string, splits: queries.SplitItem[]) => {
+    await queries.splitTransactionIntoDebts(db, transactionId, splits);
     await refreshData();
   };
 
@@ -340,6 +346,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         refreshData,
         addTransaction,
         removeTransaction,
+        splitTransaction,
         addWallet,
         editWallet,
         adjustBalance,
