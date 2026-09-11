@@ -516,7 +516,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>Sổ Nợ & Cho Vay</Text>
             <Pressable onPress={() => navigation.navigate('Debts')}>
-              <Text style={styles.seeAllText}>Xem tất cả ➔</Text>
+              <Text style={styles.seeAllText}>Xem tất cả →</Text>
             </Pressable>
           </View>
 
@@ -604,7 +604,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>Giao dịch gần đây</Text>
             <Pressable onPress={() => navigation.navigate('Transactions')}>
-              <Text style={styles.seeAllText}>Xem tất cả ➔</Text>
+              <Text style={styles.seeAllText}>Xem tất cả →</Text>
             </Pressable>
           </View>
 

@@ -322,7 +322,9 @@ export const AnalyticsScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
                     <View style={styles.insightGrid}>
                       {/* Peak Expense Day */}
                       <View style={[styles.insightCard, styles.insightCardBorder]}>
-                        <Text style={styles.insightIcon}>🔥</Text>
+                        <View style={[styles.insightIconBox, { backgroundColor: '#FFE4E6' }]}>
+                          <Ionicons name="trending-up" size={16} color="#E11D48" />
+                        </View>
                         <Text style={styles.insightLabel}>NGÀY CHI NHIỀU NHẤT</Text>
                         {advancedData.peakExpenseDay ? (
                           <>
@@ -340,7 +342,9 @@ export const AnalyticsScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
 
                       {/* Peak Income Day */}
                       <View style={[styles.insightCard, styles.insightCardBorder]}>
-                        <Text style={styles.insightIcon}>💵</Text>
+                        <View style={[styles.insightIconBox, { backgroundColor: '#DCFCE7' }]}>
+                          <Ionicons name="trending-down" size={16} color="#15803D" />
+                        </View>
                         <Text style={styles.insightLabel}>NGÀY THU NHIỀU NHẤT</Text>
                         {advancedData.peakIncomeDay ? (
                           <>
@@ -358,8 +362,10 @@ export const AnalyticsScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
 
                       {/* No-spend days */}
                       <View style={[styles.insightCard, styles.insightCardBorder]}>
-                        <Text style={styles.insightIcon}>🛡️</Text>
-                        <Text style={styles.insightLabel}>NGÀY KHÔNG TIÊU TIỀN</Text>
+                        <View style={[styles.insightIconBox, { backgroundColor: '#E0E7FF' }]}>
+                          <Ionicons name="shield-checkmark-outline" size={16} color="#4338CA" />
+                        </View>
+                        <Text style={styles.insightLabel}>NGÀY KHÔNG CHI</Text>
                         <Text style={[styles.insightValue, { color: '#059669' }]}>
                           {advancedData.noSpendDays}
                         </Text>
@@ -368,8 +374,10 @@ export const AnalyticsScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
 
                       {/* Avg on spend days */}
                       <View style={[styles.insightCard, styles.insightCardBorder]}>
-                        <Text style={styles.insightIcon}>📊</Text>
-                        <Text style={styles.insightLabel}>TB KHI RÚT VÍ</Text>
+                        <View style={[styles.insightIconBox, { backgroundColor: '#FEF3C7' }]}>
+                          <Ionicons name="calculator-outline" size={16} color="#B45309" />
+                        </View>
+                        <Text style={styles.insightLabel}>TB NGÀY CÓ CHI</Text>
                         <Text style={styles.insightValue}>
                           {isBalanceHidden ? '••••••' : formatVND(advancedData.avgExpenseOnSpendDays)}
                         </Text>
@@ -378,38 +386,70 @@ export const AnalyticsScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
                     </View>
 
                     {/* Largest transaction */}
-                    {advancedData.largestExpense && (
-                      <View style={styles.largestTxCard}>
-                        <View style={styles.largestTxLeft}>
-                          <View
-                            style={[
-                              styles.largestTxIcon,
-                              { backgroundColor: advancedData.largestExpense.category_color || THEME.popPink },
-                            ]}
-                          >
-                            <Ionicons
-                              name={(advancedData.largestExpense.category_icon as any) || 'pricetag-outline'}
-                              size={16}
-                              color="#FFFFFF"
-                            />
+                    {advancedData.largestExpense && (() => {
+                      const rawNote = advancedData.largestExpense.note || '';
+                      const splitMatch = rawNote.match(/\[Đã tách cho ([^\]]+)\]/);
+                      const cleanNote = rawNote.replace(/\[Đã tách cho [^\]]+\]/, '').trim();
+                      const displayTitle = cleanNote || advancedData.largestExpense.category_name || 'Khoản chi tiêu';
+                      const splitText = splitMatch ? splitMatch[1] : null;
+
+                      return (
+                        <View style={styles.largestTxCard}>
+                          <View style={styles.largestTxHeader}>
+                            <View style={styles.largestTxBadge}>
+                              <Ionicons name="receipt-outline" size={12} color="#991B1B" />
+                              <Text style={styles.largestTxBadgeText}>Khoản chi lớn nhất</Text>
+                            </View>
+                            <Text style={[styles.largestTxAmount, { color: '#E11D48' }]}>
+                              {isBalanceHidden ? '••••••' : formatVND(advancedData.largestExpense.amount)}
+                            </Text>
                           </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.largestTxTitle}>🏷️ Khoản chi lớn nhất</Text>
-                            <Text style={styles.largestTxNote} numberOfLines={1}>
-                              {advancedData.largestExpense.note ||
-                                advancedData.largestExpense.category_name ||
-                                'Không có ghi chú'}
-                            </Text>
-                            <Text style={styles.largestTxDate}>
-                              {dayjs(advancedData.largestExpense.transacted_at).format('DD/MM/YYYY')}
-                            </Text>
+
+                          <View style={styles.largestTxBody}>
+                            <View
+                              style={[
+                                styles.largestTxIcon,
+                                { backgroundColor: advancedData.largestExpense.category_color || THEME.popPink },
+                              ]}
+                            >
+                              <Ionicons
+                                name={(advancedData.largestExpense.category_icon as any) || 'pricetag-outline'}
+                                size={18}
+                                color="#FFFFFF"
+                              />
+                            </View>
+                            <View style={styles.largestTxInfo}>
+                              <Text style={styles.largestTxNote} numberOfLines={2}>
+                                {displayTitle}
+                              </Text>
+
+                              {splitText && (
+                                <View style={styles.largestTxSplitBadge}>
+                                  <Ionicons name="people-outline" size={11} color="#4338CA" />
+                                  <Text style={styles.largestTxSplitText} numberOfLines={1}>
+                                    Đã tách: {splitText}
+                                  </Text>
+                                </View>
+                              )}
+
+                              <View style={styles.largestTxMetaRow}>
+                                {advancedData.largestExpense.category_name && (
+                                  <>
+                                    <Text style={styles.largestTxCategory}>
+                                      {advancedData.largestExpense.category_name}
+                                    </Text>
+                                    <Text style={styles.largestTxMetaDot}>•</Text>
+                                  </>
+                                )}
+                                <Text style={styles.largestTxDate}>
+                                  {dayjs(advancedData.largestExpense.transacted_at).format('DD/MM/YYYY')}
+                                </Text>
+                              </View>
+                            </View>
                           </View>
                         </View>
-                        <Text style={[styles.largestTxAmount, { color: '#E11D48' }]}>
-                          {isBalanceHidden ? '••••••' : formatVND(advancedData.largestExpense.amount)}
-                        </Text>
-                      </View>
-                    )}
+                      );
+                    })()}
                   </View>
                 </View>
               </View>
@@ -953,26 +993,31 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   insightCard: {
-    width: '47%',
+    width: '48%',
     padding: 12,
     borderRadius: 10,
     backgroundColor: '#F9FAFB',
     alignItems: 'flex-start',
-    gap: 2,
   },
   insightCardBorder: {
     borderWidth: 1.5,
     borderColor: '#E5E7EB',
   },
-  insightIcon: {
-    fontSize: 18,
-    marginBottom: 2,
+  insightIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
   },
   insightLabel: {
-    fontSize: 9,
+    fontSize: 9.5,
     fontWeight: '800',
     color: '#6B7280',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
   insightValue: {
     fontSize: 14,
@@ -981,8 +1026,8 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   insightValueEmpty: {
-    fontSize: 18,
-    fontWeight: '300',
+    fontSize: 16,
+    fontWeight: '700',
     color: '#D1D5DB',
     marginTop: 4,
   },
@@ -990,13 +1035,11 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
     color: '#9CA3AF',
-    marginTop: 1,
+    marginTop: 2,
   },
 
   // Largest transaction card
   largestTxCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
     padding: 12,
     borderRadius: 10,
     borderWidth: 1.5,
@@ -1004,41 +1047,94 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF1F2',
     gap: 10,
   },
-  largestTxLeft: {
+  largestTxHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  largestTxBadge: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FECDD3',
+  },
+  largestTxBadgeText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#991B1B',
+    textTransform: 'uppercase',
+  },
+  largestTxAmount: {
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  largestTxBody: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
     gap: 10,
-    flex: 1,
   },
   largestTxIcon: {
-    width: 32,
-    height: 32,
+    width: 36,
+    height: 36,
     borderRadius: 10,
     borderWidth: 1.5,
     borderColor: '#000000',
     justifyContent: 'center',
     alignItems: 'center',
+    marginTop: 2,
   },
-  largestTxTitle: {
-    fontSize: 10,
-    fontWeight: '900',
-    color: '#6B7280',
-    marginBottom: 1,
+  largestTxInfo: {
+    flex: 1,
+    gap: 2,
   },
   largestTxNote: {
     fontSize: 13,
     fontWeight: '800',
     color: '#000000',
+    lineHeight: 18,
+  },
+  largestTxSplitBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    alignSelf: 'flex-start',
+    marginTop: 2,
+  },
+  largestTxSplitText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#4338CA',
+  },
+  largestTxMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  largestTxCategory: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#4B5563',
+  },
+  largestTxMetaDot: {
+    fontSize: 10,
+    color: '#9CA3AF',
   },
   largestTxDate: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '600',
-    color: '#9CA3AF',
-    marginTop: 1,
-  },
-  largestTxAmount: {
-    fontSize: 14,
-    fontWeight: '900',
+    color: '#6B7280',
   },
 
   // Top spending days

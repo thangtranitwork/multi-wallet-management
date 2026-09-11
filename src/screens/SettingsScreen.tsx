@@ -191,7 +191,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                 setIsProcessing(true);
                 const res = await importDataFromJsonString(content, importMode);
                 Alert.alert(
-                  'Thành công 🎉',
+                  'Thành công',
                   `Đã khôi phục thành công:\n• ${res.walletsCount} ví tiền\n• ${res.transactionsCount} giao dịch\n• ${res.debtsCount} khoản nợ`
                 );
               } catch (importErr: any) {
@@ -223,7 +223,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
       setJsonPasteModalVisible(false);
       setPastedJson('');
       Alert.alert(
-        'Thành công 🎉',
+        'Thành công',
         `Đã khôi phục thành công:\n• ${res.walletsCount} ví tiền\n• ${res.transactionsCount} giao dịch\n• ${res.debtsCount} khoản nợ`
       );
     } catch (err: any) {
@@ -285,7 +285,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
           await updatePinCode(next);
           await toggleAppLock(true);
           setPinModalVisible(false);
-          Alert.alert('Thành công 🎉', 'Đã lưu mã PIN và kích hoạt khóa bảo mật.');
+          Alert.alert('Thành công', 'Đã lưu mã PIN và kích hoạt khóa bảo mật.');
         } else {
           hapticError();
           triggerPinShake();
@@ -328,7 +328,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
   // 5. Xử lý Đặt lại dữ liệu gốc (Reset)
   const handleResetApp = () => {
     Alert.alert(
-      '⚠️ Cảnh báo xóa toàn bộ dữ liệu',
+      'Cảnh báo xóa toàn bộ dữ liệu',
       'Hành động này sẽ xóa vĩnh viễn toàn bộ ví, giao dịch và sổ nợ hiện tại trên máy của bạn. Bạn không thể hoàn tác sau khi đã xóa.\n\nBạn có chắc chắn muốn tiếp tục?',
       [
         { text: 'Hủy bỏ', style: 'cancel' },
@@ -681,8 +681,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                 </View>
                 <Text style={styles.modeNoticeText}>
                   {importMode === 'replace'
-                    ? '⚡ Ghi đè: Thay thế toàn bộ dữ liệu hiện tại bằng dữ liệu trong bản sao lưu.'
-                    : '➕ Hợp nhất: Thêm các ví và giao dịch mới, giữ nguyên dữ liệu hiện có.'}
+                    ? 'Ghi đè: Thay thế toàn bộ dữ liệu hiện tại bằng dữ liệu trong bản sao lưu.'
+                    : 'Hợp nhất: Thêm các ví và giao dịch mới, giữ nguyên dữ liệu hiện có.'}
                 </Text>
               </View>
 

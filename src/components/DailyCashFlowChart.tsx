@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -23,7 +23,9 @@ interface DailyCashFlowChartProps {
 }
 
 const CHART_HEIGHT = 120;
-const BAR_MIN_WIDTH = 28;
+const BASELINE_BOTTOM = 28;
+const AVAILABLE_HEIGHT = CHART_HEIGHT - 12;
+const BAR_MIN_WIDTH = 30;
 const BAR_GAP = 6;
 
 const VI_DAY_LABELS: Record<string, string> = {
@@ -60,6 +62,14 @@ export const DailyCashFlowChart: React.FC<DailyCashFlowChartProps> = ({
     setContainerWidth(e.nativeEvent.layout.width);
   }, []);
 
+  useEffect(() => {
+    if (dailyStats.length > 7) {
+      setTimeout(() => {
+        scrollRef.current?.scrollToEnd({ animated: true });
+      }, 150);
+    }
+  }, [dailyStats.length]);
+
   if (dailyStats.length === 0) {
     return (
       <View style={styles.emptyBox}>
@@ -86,7 +96,13 @@ export const DailyCashFlowChart: React.FC<DailyCashFlowChartProps> = ({
       ? Math.min(avgDailyExpense / currentMax, 1)
       : 0;
 
-  const totalBarWidth = BAR_MIN_WIDTH + BAR_GAP;
+  // Nếu ít ngày (<= 7), giãn đều theo chiều rộng container
+  const isShortRange = dailyStats.length <= 7 && containerWidth > 0;
+  const barItemWidth = isShortRange
+    ? Math.max(34, Math.floor((containerWidth - 16) / dailyStats.length) - BAR_GAP)
+    : BAR_MIN_WIDTH;
+
+  const totalBarWidth = barItemWidth + BAR_GAP;
   const totalChartWidth = Math.max(
     containerWidth,
     dailyStats.length * totalBarWidth + 16
@@ -129,7 +145,7 @@ export const DailyCashFlowChart: React.FC<DailyCashFlowChartProps> = ({
               {VI_DOW[dayjs(selectedDay.date).day()]}
             </Text>
             <Text style={styles.popupDate}>
-              {dayjs(selectedDay.date).format('DD/MM')}
+              {dayjs(selectedDay.date).format('DD/MM/YYYY')}
             </Text>
             <Pressable
               hitSlop={8}
@@ -169,10 +185,10 @@ export const DailyCashFlowChart: React.FC<DailyCashFlowChartProps> = ({
           <View
             style={[
               styles.avgLineLabel,
-              { bottom: 22 + avgLinePercent * CHART_HEIGHT },
+              { bottom: BASELINE_BOTTOM + Math.round(avgLinePercent * AVAILABLE_HEIGHT) + 4 },
             ]}
           >
-            <Text style={styles.avgLabelText}>TB</Text>
+            <Text style={styles.avgLabelText}>TB ngày</Text>
           </View>
         )}
 
@@ -183,19 +199,35 @@ export const DailyCashFlowChart: React.FC<DailyCashFlowChartProps> = ({
           contentContainerStyle={[styles.scrollContent, { width: totalChartWidth }]}
         >
           <View style={styles.barsContainer}>
+            {/* Trục đáy chuẩn (Baseline) */}
+            <View style={[styles.baselineAxis, { width: totalChartWidth }]} />
+
+            {/* Đường trung bình ngày */}
             {(mode === 'expense' || mode === 'both') && avgLinePercent > 0 && (
               <View
                 style={[
                   styles.avgLine,
-                  { bottom: 22 + avgLinePercent * CHART_HEIGHT, width: totalChartWidth },
+                  {
+                    bottom: BASELINE_BOTTOM + Math.round(avgLinePercent * AVAILABLE_HEIGHT),
+                    width: totalChartWidth,
+                  },
                 ]}
               />
             )}
 
             {dailyStats.map((day, idx) => {
               const isSelected = selectedIndex === idx;
-              const expenseH = Math.max((day.expense / currentMax) * CHART_HEIGHT, day.expense > 0 ? 4 : 0);
-              const incomeH = Math.max((day.income / currentMax) * CHART_HEIGHT, day.income > 0 ? 4 : 0);
+              const expenseH = day.expense > 0
+                ? Math.max(Math.round((day.expense / currentMax) * AVAILABLE_HEIGHT), 5)
+                : 0;
+              const incomeH = day.income > 0
+                ? Math.max(Math.round((day.income / currentMax) * AVAILABLE_HEIGHT), 5)
+                : 0;
+
+              const hasBoth = day.income > 0 && day.expense > 0;
+              const hasOnlyIncome = day.income > 0 && day.expense === 0;
+              const hasOnlyExpense = day.expense > 0 && day.income === 0;
+
               const dow = dayjs(day.date).day().toString();
               const dayLabel = VI_DAY_LABELS[dow] || '';
               const dayNum = dayjs(day.date).format('D');
@@ -203,37 +235,101 @@ export const DailyCashFlowChart: React.FC<DailyCashFlowChartProps> = ({
               return (
                 <Pressable
                   key={day.date}
-                  style={[styles.barGroup, { width: BAR_MIN_WIDTH }]}
+                  style={[styles.barGroup, { width: barItemWidth }]}
                   onPress={() => {
                     hapticLight();
                     setSelectedIndex(isSelected ? null : idx);
                   }}
                 >
                   <View style={styles.barArea}>
-                    {(mode === 'both' || mode === 'income') && (
-                      <View
-                        style={[
-                          styles.bar,
-                          styles.barIncome,
-                          {
-                            height: incomeH,
-                            opacity: isSelected ? 1 : 0.85,
-                          },
-                        ]}
-                      />
-                    )}
-                    {(mode === 'both' || mode === 'expense') && (
-                      <View
-                        style={[
-                          styles.bar,
-                          styles.barExpense,
-                          {
-                            height: expenseH,
-                            borderWidth: isSelected ? 1.5 : 0,
-                            borderColor: isSelected ? '#000000' : 'transparent',
-                          },
-                        ]}
-                      />
+                    {mode === 'both' ? (
+                      hasBoth ? (
+                        <View style={styles.pairedBarsRow}>
+                          <View
+                            style={[
+                              styles.singleBar,
+                              styles.barIncome,
+                              {
+                                height: incomeH,
+                                width: 8,
+                                opacity: isSelected ? 1 : 0.85,
+                              },
+                            ]}
+                          />
+                          <View
+                            style={[
+                              styles.singleBar,
+                              styles.barExpense,
+                              {
+                                height: expenseH,
+                                width: 8,
+                                borderWidth: isSelected ? 1.5 : 0,
+                                borderColor: isSelected ? '#000000' : 'transparent',
+                              },
+                            ]}
+                          />
+                        </View>
+                      ) : hasOnlyIncome ? (
+                        <View
+                          style={[
+                            styles.singleBar,
+                            styles.barIncome,
+                            {
+                              height: incomeH,
+                              width: 13,
+                              opacity: isSelected ? 1 : 0.85,
+                            },
+                          ]}
+                        />
+                      ) : hasOnlyExpense ? (
+                        <View
+                          style={[
+                            styles.singleBar,
+                            styles.barExpense,
+                            {
+                              height: expenseH,
+                              width: 13,
+                              borderWidth: isSelected ? 1.5 : 0,
+                              borderColor: isSelected ? '#000000' : 'transparent',
+                            },
+                          ]}
+                        />
+                      ) : (
+                        <View style={styles.zeroPip} />
+                      )
+                    ) : mode === 'expense' ? (
+                      day.expense > 0 ? (
+                        <View
+                          style={[
+                            styles.singleBar,
+                            styles.barExpense,
+                            {
+                              height: expenseH,
+                              width: 15,
+                              borderWidth: isSelected ? 1.5 : 0,
+                              borderColor: isSelected ? '#000000' : 'transparent',
+                            },
+                          ]}
+                        />
+                      ) : (
+                        <View style={styles.zeroPip} />
+                      )
+                    ) : (
+                      day.income > 0 ? (
+                        <View
+                          style={[
+                            styles.singleBar,
+                            styles.barIncome,
+                            {
+                              height: incomeH,
+                              width: 15,
+                              opacity: isSelected ? 1 : 0.85,
+                            },
+                          ]}
+                        />
+                      ) : (
+                        <View style={styles.zeroPip} />
+                      )
                     )}
                   </View>
 
@@ -385,13 +481,19 @@ const styles = StyleSheet.create({
   },
   avgLineLabel: {
     position: 'absolute',
-    left: 0,
-    zIndex: 2,
+    left: 4,
+    zIndex: 4,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
   },
   avgLabelText: {
-    fontSize: 8,
+    fontSize: 9,
     fontWeight: '900',
-    color: '#F59E0B',
+    color: '#B45309',
   },
   scrollContent: {
     paddingHorizontal: 4,
@@ -403,6 +505,14 @@ const styles = StyleSheet.create({
     paddingTop: 4,
     position: 'relative',
   },
+  baselineAxis: {
+    position: 'absolute',
+    left: 0,
+    bottom: BASELINE_BOTTOM,
+    height: 1.5,
+    backgroundColor: '#E5E7EB',
+    zIndex: 1,
+  },
   avgLine: {
     position: 'absolute',
     left: 0,
@@ -410,7 +520,7 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
     borderWidth: 1,
     borderColor: '#F59E0B',
-    zIndex: 1,
+    zIndex: 2,
   },
   barGroup: {
     alignItems: 'center',
@@ -420,12 +530,18 @@ const styles = StyleSheet.create({
     height: CHART_HEIGHT,
     justifyContent: 'flex-end',
     alignItems: 'center',
-    gap: 2,
-    flexDirection: 'row',
+    paddingBottom: 0,
   },
-  bar: {
-    flex: 1,
-    borderRadius: 4,
+  pairedBarsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 3,
+  },
+  singleBar: {
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 4,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
   },
   barIncome: {
     backgroundColor: '#10B981',
@@ -433,11 +549,17 @@ const styles = StyleSheet.create({
   barExpense: {
     backgroundColor: '#FB7185',
   },
+  zeroPip: {
+    width: 6,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#D1D5DB',
+  },
   barDayLabel: {
     fontSize: 9,
     fontWeight: '700',
     color: '#9CA3AF',
-    marginTop: 3,
+    marginTop: 4,
   },
   barDayLabelSelected: {
     color: '#000000',

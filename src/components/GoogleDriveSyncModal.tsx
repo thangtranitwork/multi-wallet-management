@@ -111,7 +111,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
         });
         await fetchConfig();
         Alert.alert(
-          'Liên kết thành công! 🎉',
+          'Liên kết thành công',
           `Chào mừng ${res.user.name}!\nTài khoản (${res.user.email}) đã được kết nối với Google Drive.`
         );
       } else if (res.error && res.error !== 'Người dùng đã hủy đăng nhập.') {
@@ -168,7 +168,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
           lastBackupFileName: res.fileName,
         });
         await fetchConfig();
-        Alert.alert('Đã sao lưu lên Google Drive! ☁️', `Bản sao lưu: ${res.fileName}\nThời gian: ${nowStr}`);
+        Alert.alert('Đã sao lưu lên Google Drive', `Bản sao lưu: ${res.fileName}\nThời gian: ${nowStr}`);
       } else {
         hapticError();
         Alert.alert('Lỗi sao lưu', res.error || 'Không thể tải lên Google Drive.');
@@ -200,7 +200,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
               const res = await importDataFromJsonString(jsonContent, 'replace');
               hapticSuccess();
               Alert.alert(
-                'Khôi phục thành công! 🎉',
+                'Khôi phục thành công',
                 `Đã nạp lại:\n• ${res.walletsCount} ví tiền\n• ${res.transactionsCount} giao dịch\n• ${res.debtsCount} khoản nợ`
               );
             } catch (err: any) {
@@ -317,7 +317,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                     onPress={() => setShowAdvanced(prev => !prev)}
                   >
                     <Text style={styles.advancedToggleText}>
-                      {showAdvanced ? '▼ Thu gọn cài đặt Client ID' : '⚙️ Tùy chỉnh OAuth Client ID (Tùy chọn)'}
+                      {showAdvanced ? 'Thu gọn cài đặt Client ID' : 'Tùy chỉnh OAuth Client ID (Tùy chọn)'}
                     </Text>
                   </Pressable>
 
@@ -345,7 +345,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                           selectTextOnFocus={true}
                         />
                         <Text style={[styles.advancedHint, { marginTop: 4, color: '#D97706', fontWeight: '600' }]}>
-                          ⚠️ Lưu ý khi dùng Google Cloud cá nhân:
+                          Lưu ý khi dùng Google Cloud cá nhân:
                         </Text>
                         <Text style={styles.advancedHint}>
                           1. Trong tab "Credentials" &gt; OAuth Client ID: Hãy thêm URI trên và "https://auth.expo.io/@anonymous/multi-wallet-management" vào mục "Authorized redirect URIs".{'\n'}

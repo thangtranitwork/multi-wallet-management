@@ -1,4 +1,5 @@
 import * as SQLite from 'expo-sqlite';
+import dayjs from 'dayjs';
 import {
   Wallet,
   Transaction,
@@ -1018,6 +1019,50 @@ export async function getDailyBreakdown(
     params
   );
 
+  const rowMap = new Map<string, { income: number; expense: number; txCount: number }>();
+  for (const r of rows) {
+    rowMap.set(r.date, { income: r.income, expense: r.expense, txCount: r.txCount });
+  }
+
+  // Điền đầy đủ các ngày trong kỳ nếu có startDate & endDate (áp dụng cho tuần, tháng, 2 tháng)
+  if (startDateIso && endDateIso) {
+    const start = dayjs(startDateIso).startOf('day');
+    const endLimit = dayjs(endDateIso).endOf('day');
+    const today = dayjs().endOf('day');
+
+    let actualEnd = endLimit;
+    if (endLimit.isAfter(today)) {
+      let maxTxDate = today;
+      for (const r of rows) {
+        const d = dayjs(r.date);
+        if (d.isAfter(maxTxDate)) maxTxDate = d;
+      }
+      actualEnd = maxTxDate;
+    }
+
+    const diffDays = actualEnd.diff(start, 'day');
+    if (diffDays >= 0 && diffDays <= 62) {
+      const fullList: DailyStatItem[] = [];
+      let cur = start;
+      while (cur.isBefore(actualEnd) || cur.isSame(actualEnd, 'day')) {
+        const dateStr = cur.format('YYYY-MM-DD');
+        const item = rowMap.get(dateStr);
+        const income = item ? item.income : 0;
+        const expense = item ? item.expense : 0;
+        const txCount = item ? item.txCount : 0;
+        fullList.push({
+          date: dateStr,
+          income,
+          expense,
+          net: income - expense,
+          txCount,
+        });
+        cur = cur.add(1, 'day');
+      }
+      return fullList;
+    }
+  }
+
   return rows.map(r => ({
     date: r.date,
     income: r.income,
@@ -1048,10 +1093,10 @@ export async function getAdvancedAnalyticsMetrics(
       totalDaysWithExpense++;
       totalExpenseOnSpendDays += day.expense;
     }
-    if (!peakExpenseDay || day.expense > peakExpenseDay.expense) {
+    if (day.expense > 0 && (!peakExpenseDay || day.expense > peakExpenseDay.expense)) {
       peakExpenseDay = day;
     }
-    if (!peakIncomeDay || day.income > peakIncomeDay.income) {
+    if (day.income > 0 && (!peakIncomeDay || day.income > peakIncomeDay.income)) {
       peakIncomeDay = day;
     }
   }

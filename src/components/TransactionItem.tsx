@@ -48,7 +48,7 @@ export const TransactionItem: React.FC<TransactionItemProps> = ({
   } else if (transaction.type === 'transfer') {
     iconName = 'swap-horizontal-outline';
     popBg = THEME.popBlue;
-    title = `${transaction.wallet_name || 'Ví'} ➔ ${transaction.to_wallet_name || 'Ví'}`;
+    title = `${transaction.wallet_name || 'Ví'} → ${transaction.to_wallet_name || 'Ví'}`;
   } else if (transaction.type === 'debt_lend') {
     iconName = 'arrow-up-circle-outline';
     popBg = THEME.primary;

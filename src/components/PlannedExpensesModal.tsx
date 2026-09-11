@@ -196,7 +196,7 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
       });
       hapticSuccess();
       setExecutingItem(null);
-      Alert.alert('Tuyệt vời 🎉', 'Đã ghi nhận giao dịch chi tiêu và cập nhật số dư ví thành công!');
+      Alert.alert('Thành công', 'Đã ghi nhận giao dịch chi tiêu và cập nhật số dư ví thành công!');
     } catch (err: any) {
       hapticError();
       Alert.alert('Lỗi khi trừ tiền', err?.message || 'Không thể hoàn thành khoản chi.');

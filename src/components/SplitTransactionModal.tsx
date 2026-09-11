@@ -189,7 +189,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
       await splitTransaction(transaction.id, validSplits);
       hapticSuccess();
       Alert.alert(
-        'Tách tiền thành công! 🎉',
+        'Tách tiền thành công',
         `Đã chuyển ${formatVND(totalSplitAmount)} thành khoản nợ trong Sổ nợ.\nChi tiêu của bạn cho giao dịch này giảm còn ${formatVND(remainingForMe)}.`
       );
       onClose();
