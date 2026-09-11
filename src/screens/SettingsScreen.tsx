@@ -28,6 +28,15 @@ import { loadCloudBackupConfig } from '../services/cloudBackupStorage';
 import { useSQLiteContext } from 'expo-sqlite';
 import { THEME } from '../constants';
 import { hapticLight, hapticMedium, hapticSuccess, hapticError } from '../utils/haptics';
+import {
+  loadHabitConfig,
+  saveHabitConfig,
+  refreshHabitReminders,
+  sendTestHabitNotificationAsync,
+  setupNotificationChannelAsync,
+  HabitReminderConfig,
+  DEFAULT_HABIT_CONFIG,
+} from '../services/habitNotificationService';
 
 interface SettingsScreenProps {
   navigation: any;
@@ -79,6 +88,52 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
   }, [checkDriveStatus]);
 
   const [categoryModalVisible, setCategoryModalVisible] = useState<boolean>(false);
+  const [habitConfig, setHabitConfig] = useState<HabitReminderConfig>(DEFAULT_HABIT_CONFIG);
+
+  useEffect(() => {
+    loadHabitConfig().then((conf) => setHabitConfig(conf));
+  }, []);
+
+  const handleToggleHabitEnabled = async (val: boolean) => {
+    hapticLight();
+    if (val) {
+      const granted = await setupNotificationChannelAsync();
+      if (!granted) {
+        Alert.alert(
+          'Cần cấp quyền thông báo',
+          'Vui lòng bật quyền thông báo trong Cài đặt hệ thống để ứng dụng có thể gửi nhắc nhở thói quen.'
+        );
+        return;
+      }
+    }
+    const updated = await saveHabitConfig({ enabled: val });
+    setHabitConfig(updated);
+    await refreshHabitReminders(transactions, categories);
+  };
+
+  const handleToggleAutoLearn = async (val: boolean) => {
+    hapticLight();
+    const updated = await saveHabitConfig({ autoLearn: val });
+    setHabitConfig(updated);
+    await refreshHabitReminders(transactions, categories);
+  };
+
+  const handleTestNotification = async () => {
+    hapticSuccess();
+    const ok = await sendTestHabitNotificationAsync();
+    if (ok) {
+      Alert.alert(
+        'Đã kích hoạt thử nghiệm',
+        'Một thông báo sẽ xuất hiện trên thanh thông báo trong 2 giây tới. Hãy vuốt mở hoặc khóa màn hình để kiểm tra nhé!'
+      );
+    } else {
+      Alert.alert(
+        'Chưa thể gửi thông báo',
+        'Ứng dụng chưa được cấp quyền gửi thông báo trên thiết bị này.'
+      );
+    }
+  };
+
   const [pinModalVisible, setPinModalVisible] = useState<boolean>(false);
   const [pinStep, setPinStep] = useState<'enter' | 'confirm'>('enter');
   const [pinInput, setPinInput] = useState<string>('');
@@ -836,11 +891,108 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
           </View>
         </View>
 
+        {/* Smart Contextual Reminders Section */}
+        <View style={styles.cardShadow}>
+          <View style={styles.cardInner}>
+            <View style={[styles.folderTab, { backgroundColor: THEME.popPurple }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name="notifications-outline" size={15} color="#000000" />
+                <Text style={styles.folderTabText}>NHẮC NHỞ CHI TIÊU THÔNG MINH</Text>
+              </View>
+            </View>
+
+            <View style={styles.cardBody}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <Text style={styles.cardSectionTitle}>Nhắc theo thói quen sinh hoạt</Text>
+                <Switch
+                  value={habitConfig.enabled}
+                  onValueChange={handleToggleHabitEnabled}
+                  trackColor={{ false: '#E5E7EB', true: THEME.primary }}
+                  thumbColor="#000000"
+                />
+              </View>
+
+              <Text style={styles.cardDescText}>
+                Tự động phân tích giờ ăn uống, sinh hoạt từ SQLite để nhắc bạn ghi chép chi tiêu. Nếu hôm nay bạn đã ghi chép rồi, ứng dụng sẽ hoàn toàn im lặng, không làm phiền.
+              </Text>
+
+              {habitConfig.enabled && (
+                <>
+                  <View style={styles.divider} />
+
+                  {/* Sub-toggle: Auto Learn */}
+                  <View style={styles.settingRow}>
+                    <View style={styles.settingRowLeft}>
+                      <View style={[styles.settingRowIconBox, { backgroundColor: '#DCFCE7' }]}>
+                        <Ionicons name="sparkles-outline" size={18} color="#15803D" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.settingRowTitle}>Tự động học thói quen</Text>
+                        <Text style={styles.settingRowDesc}>
+                          Học giờ đỉnh từ lịch sử giao dịch để căn chỉnh mốc giờ nhắc phù hợp nhịp sống.
+                        </Text>
+                      </View>
+                    </View>
+                    <Switch
+                      value={habitConfig.autoLearn}
+                      onValueChange={handleToggleAutoLearn}
+                      trackColor={{ false: '#E5E7EB', true: '#22C55E' }}
+                      thumbColor="#000000"
+                    />
+                  </View>
+
+                  {/* Habit Routine Info Box */}
+                  <View style={styles.habitRoutineBox}>
+                    <Text style={styles.habitRoutineTitle}>KHUNG GIỜ NHẬN DIỆN & LÊN LỊCH</Text>
+
+                    <View style={styles.habitRoutineRow}>
+                      <View style={styles.habitRoutineLeft}>
+                        <Ionicons name="restaurant-outline" size={16} color="#B45309" />
+                        <Text style={styles.habitRoutineLabel}>Bữa trưa:</Text>
+                      </View>
+                      <Text style={styles.habitRoutineValue}>
+                        {habitConfig.detectedLunchPeak ? `Đỉnh ~${habitConfig.detectedLunchPeak} -> ` : ''}Nhắc lúc {habitConfig.lunchTime}
+                      </Text>
+                    </View>
+
+                    <View style={styles.habitRoutineRow}>
+                      <View style={styles.habitRoutineLeft}>
+                        <Ionicons name="pizza-outline" size={16} color="#B91C1C" />
+                        <Text style={styles.habitRoutineLabel}>Bữa tối:</Text>
+                      </View>
+                      <Text style={styles.habitRoutineValue}>
+                        {habitConfig.detectedDinnerPeak ? `Đỉnh ~${habitConfig.detectedDinnerPeak} -> ` : ''}Nhắc lúc {habitConfig.dinnerTime}
+                      </Text>
+                    </View>
+
+                    <View style={styles.habitRoutineRow}>
+                      <View style={styles.habitRoutineLeft}>
+                        <Ionicons name="moon-outline" size={16} color="#4338CA" />
+                        <Text style={styles.habitRoutineLabel}>Chốt sổ ngày:</Text>
+                      </View>
+                      <Text style={styles.habitRoutineValue}>Nhắc lúc {habitConfig.dailyWrapUpTime}</Text>
+                    </View>
+                  </View>
+
+                  {/* Test Notification Button */}
+                  <Pressable
+                    style={styles.actionBtnTestNotification}
+                    onPress={handleTestNotification}
+                  >
+                    <Ionicons name="paper-plane-outline" size={18} color="#000000" />
+                    <Text style={styles.actionBtnText}>Gửi thông báo thử nghiệm ngay (2s)</Text>
+                  </Pressable>
+                </>
+              )}
+            </View>
+          </View>
+        </View>
+
         {/* App Info Footer */}
         <View style={styles.footerContainer}>
           <Text style={styles.footerAppName}>Ví Của Tôi • Multi-Wallet Manager</Text>
           <Text style={styles.footerNote}>
-            Phiên bản 1.0.0 • SQLite Offline Local Storage
+            Phiên bản 1.1.0 • SQLite Offline Local Storage
           </Text>
           <Text style={styles.footerPrivacy}>
             100% dữ liệu được lưu trữ trên thiết bị của bạn, hoàn toàn riêng tư và không tải lên máy chủ ngoài.
@@ -1449,6 +1601,55 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     color: '#000000',
+  },
+  habitRoutineBox: {
+    backgroundColor: '#FAF8F5',
+    borderWidth: 2,
+    borderColor: '#000000',
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 10,
+    marginBottom: 8,
+  },
+  habitRoutineTitle: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#4B5563',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  habitRoutineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  habitRoutineLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  habitRoutineLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  habitRoutineValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1D4ED8',
+  },
+  actionBtnTestNotification: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: THEME.popPurpleLight,
+    borderWidth: 2,
+    borderColor: '#000000',
+    borderRadius: 10,
+    paddingVertical: 10,
+    marginTop: 8,
   },
   footerContainer: {
     alignItems: 'center',

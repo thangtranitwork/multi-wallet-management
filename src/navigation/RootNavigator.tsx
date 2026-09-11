@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, Pressable, Platform, Text, Linking } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import * as Notifications from 'expo-notifications';
 import { DashboardScreen } from '../screens/DashboardScreen';
 import { WalletsScreen } from '../screens/WalletsScreen';
 import { TransactionsScreen } from '../screens/TransactionsScreen';
@@ -19,6 +20,11 @@ const NullComponent = () => null;
 export const RootNavigator: React.FC = () => {
   const [quickAddVisible, setQuickAddVisible] = useState(false);
   const [quickAddType, setQuickAddType] = useState<'expense' | 'income' | 'transfer'>('expense');
+  const [quickAddPrefill, setQuickAddPrefill] = useState<{
+    categoryId?: string;
+    amount?: number;
+    note?: string;
+  }>({});
   const [centerPressed, setCenterPressed] = useState(false);
 
   useEffect(() => {
@@ -38,12 +44,15 @@ export const RootNavigator: React.FC = () => {
             });
           });
         } else if (url.includes('type=income')) {
+          setQuickAddPrefill({});
           setQuickAddType('income');
           setQuickAddVisible(true);
         } else if (url.includes('type=expense')) {
+          setQuickAddPrefill({});
           setQuickAddType('expense');
           setQuickAddVisible(true);
         } else if (url.includes('quick-add')) {
+          setQuickAddPrefill({});
           setQuickAddType('expense');
           setQuickAddVisible(true);
         }
@@ -58,8 +67,35 @@ export const RootNavigator: React.FC = () => {
       handleDeepLink(event.url);
     });
 
+    // Xử lý khi người dùng chạm vào thông báo nhắc nhở thông minh
+    const handleNotificationData = (data: any) => {
+      if (!data) return;
+      if (data.action === 'QUICK_ADD') {
+        if (data.type) {
+          setQuickAddType(data.type);
+        }
+        setQuickAddPrefill({
+          categoryId: data.categoryId,
+          note: data.suggestedNote,
+        });
+        setQuickAddVisible(true);
+      }
+    };
+
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response?.notification?.request?.content?.data) {
+        handleNotificationData(response.notification.request.content.data);
+      }
+    });
+
+    const notificationSub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response?.notification?.request?.content?.data;
+      handleNotificationData(data);
+    });
+
     return () => {
       subscription.remove();
+      notificationSub.remove();
     };
   }, []);
 
@@ -208,8 +244,14 @@ export const RootNavigator: React.FC = () => {
 
       <QuickAddModal
         visible={quickAddVisible}
-        onClose={() => setQuickAddVisible(false)}
+        onClose={() => {
+          setQuickAddVisible(false);
+          setQuickAddPrefill({});
+        }}
         defaultType={quickAddType}
+        prefillCategoryId={quickAddPrefill.categoryId}
+        prefillAmount={quickAddPrefill.amount}
+        prefillNote={quickAddPrefill.note}
       />
     </>
   );

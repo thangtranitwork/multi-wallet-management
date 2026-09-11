@@ -3,7 +3,7 @@
     "name": "Ví Của Tôi",
     "slug": "multi-wallet-management",
     "scheme": "com.thang.multiwallet",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -34,6 +34,13 @@
       "expo-sharing",
       "expo-local-authentication",
       "expo-web-browser",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#FFE600"
+        }
+      ],
       [
         "react-native-android-widget",
         {

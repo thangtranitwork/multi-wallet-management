@@ -1,4 +1,4 @@
-# MultiWallet - Personal Finance & Multi-Source Wallet Management
+# MultiWallet (v1.1.0) - Personal Finance & Multi-Source Wallet Management
 
 A modern, high-performance mobile application built with **React Native (Expo SDK 57)**, **TypeScript**, and **Expo SQLite**, crafted with a distinctive, tactile Neo-Brutalist design language. 
 
@@ -6,7 +6,7 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
 
 ---
 
-## 🌟 Key Features
+## Key Features
 
 ### 1. Multi-Source Wallet Management
 - Seamlessly track multiple financial accounts in one place:
@@ -39,7 +39,23 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
   - Interactive Neo-Brutalist calendar grid and hour/minute steppers for precise transaction backdating.
 - Tactile mobile number keypad with `000` triple-zero button for effortless entry.
 
-### 4. Financial Analytics, Cash Flow & Spending Ratio
+### 4. Interactive Neo-Brutalist Home Screen Widget (Android 4x2)
+- **Real-Time Financial Overview**: Total assets, monthly income, and monthly expense directly on your Android Home Screen.
+- **Interactive Balance Privacy Toggle**: Tap the eye button right on the widget to toggle masking (`••••••`) without needing to launch the app.
+- **Tactile 1-Tap Shortcuts**:
+  - `[+]` button: Instantly launches the app directly into the quick-expense logger.
+  - `[-]` button: Directly logs quick expense.
+  - `[Eye]` button: Toggles privacy status immediately.
+- **Automatic Instant Sync**: Automatically updates the widget whenever transactions are created, edited, deleted, or wallets are adjusted.
+
+### 5. Smart Contextual Reminders (Nhắc nhở thông minh theo thói quen)
+- **100% Offline Local Notifications**: Powered by `expo-notifications`, requires zero internet and keeps all financial habits completely private on your device.
+- **Auto-learn Peak Hours (Học thói quen sinh hoạt)**: Automatically analyzes your SQLite transaction history to cluster meal times (lunch ~12:30 $\to$ reminder ~13:15; dinner ~18:30 $\to$ reminder ~20:00).
+- **Smart Absence Check (Kiểm tra vắng mặt thông minh)**: If you already recorded your lunch or dinner today, the app stays completely silent and will not disturb you. Reminders only trigger when you haven't recorded.
+- **1-Tap Quick Add Execution**: Tapping on any notification immediately opens `QuickAddModal` with the matching category pre-filled and the numeric keypad ready to record within 2 seconds.
+- **Playful Vietnamese Tone (0 Emoji)**: Witty "chiếc ví bạn thân" voice lines, strictly adhering to the project 0-emoji design rule.
+
+### 6. Financial Analytics, Cash Flow & Spending Ratio
 - Standard financial formula for **Net Worth**:
   $$\text{Net Worth} = (\text{Total Available Wallet Balances} + \text{Receivables}) - (\text{Credit Card Debt} + \text{Payables})$$
 - **Flexible Time Period Filter**: This Week, This Month, Last Month, This Year, All Time.
@@ -47,15 +63,15 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
 - Ratio meter comparing Income vs Expense percentages.
 - Category spending distribution with interactive percentage badges and progress tracks.
 - Asset allocation breakdown across multiple wallets.
-- Privacy eye toggle (`👁️`) to mask sensitive figures (`••••••`) in public spaces.
+- Privacy eye toggle to mask sensitive figures (`••••••`) in public spaces.
 
-### 5. Custom Category Management
+### 7. Custom Category Management
 - Manage Expense & Income categories with personalized naming.
 - Pick from 24+ curated financial and lifestyle icons.
 - Choose from 12+ vibrant Neo-Brutalist color palettes.
 - Safely delete categories with automatic transaction unlinking.
 
-### 6. Planned Expenses & Safe-to-Spend (Kế Hoạch Dự Chi & Tiền An Toàn)
+### 8. Planned Expenses & Safe-to-Spend (Kế Hoạch Dự Chi & Tiền An Toàn)
 - **Schedule Upcoming Future Expenses**:
   - Plan upcoming fixed or variable expenses (house rent, electricity, tuition fees, gifts, etc.).
   - **Target Due Date (Ngày dự chi)** with intelligent relative countdown badges:
@@ -73,13 +89,13 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
   - Choose the paying wallet, confirm or adjust the actual transacted amount, and add notes.
   - Handled atomically inside an `expo-sqlite` transaction (marks executed, updates balance, creates transaction).
 
-### 7. Tactile Haptic Feedback (Cảm ứng xúc giác cơ học)
+### 9. Tactile Haptic Feedback (Cảm ứng xúc giác cơ học)
 - Powered by `expo-haptics` with fine-tuned vibration pulses.
 - Mechanical keypress feedback on the Neo-Brutalist numeric keypad (`0-9`, `000`, `⌫`).
 - Distinct haptic feedback patterns for tab switching, saving transactions, and alert warnings.
 - User-configurable on/off switch in Settings.
 
-### 8. Biometric (Fingerprint) & Tactile PIN Lock (Bảo mật vân tay & Mã PIN)
+### 10. Biometric (Fingerprint) & Tactile PIN Lock (Bảo mật vân tay & Mã PIN)
 - Powered by `expo-local-authentication` and SQLite local encrypted settings.
 - **Fingerprint Scanner (Cảm biến vân tay)**: Fast and seamless biometric unlock.
 - **Dedicated Neo-Brutalist Numeric Keypad**: 
@@ -89,9 +105,10 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
 - Auto-locks whenever the app is sent to the background or reopened.
 - Configurable toggle and PIN change options in Settings.
 
-### 9. Settings & Complete Data Backup (Import / Export)
+### 11. Settings & Complete Data Backup (Import / Export)
+- **Google Drive Cloud Sync**: Seamless OAuth 2.0 cloud backup to private Google Drive storage.
 - **Export Backup**:
-  - Export all SQLite tables (including planned expenses) into a standardized JSON file.
+  - Export all SQLite tables into a standardized JSON file.
   - Native system share sheet (AirDrop, Google Drive, Telegram, Zalo, Save to Files, etc.).
   - View & copy raw JSON directly to your clipboard.
 - **Import Backup**:
@@ -102,11 +119,13 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
 
 ---
 
-## 🛠️ Technology Stack
+## Technology Stack
 
 - **Framework**: React Native 0.86 + Expo SDK 57 (New Architecture enabled)
 - **Language**: TypeScript 6.0
 - **Database**: `expo-sqlite` (WAL mode enabled, foreign keys enforced)
+- **Home Widget**: `react-native-android-widget` (Neo-brutalist interactive widget)
+- **Local Notifications**: `expo-notifications` (Offline habit reminders & absence check)
 - **Navigation**: React Navigation v7
 - **Native File APIs**: `expo-file-system`, `expo-sharing`, `expo-document-picker`
 - **Security & Biometrics**: `expo-local-authentication`, `expo-haptics`
@@ -179,7 +198,7 @@ adb install android/app/build/outputs/apk/release/app-release.apk
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```text
 ├── .github/
@@ -206,8 +225,16 @@ adb install android/app/build/outputs/apk/release/app-release.apk
 │   │   ├── db.ts                   # SQLite schema & category seeds
 │   │   └── queries.ts              # Optimized SQL queries & atomic transactions
 │   ├── navigation/
-│   │   └── RootNavigator.tsx       # Tab navigator & route definitions
+│   │   └── RootNavigator.tsx       # Tab navigator & notification routing
 │   ├── screens/                    # Core screens (Dashboard, Analytics, Wallets, Debts, Transactions, Settings)
+│   ├── services/
+│   │   ├── habitNotificationService.ts # Habit learning, absence check & local notifications
+│   │   ├── widgetSyncService.ts    # Android Home Widget persistent state sync
+│   │   ├── googleDriveService.ts   # Google Drive OAuth & file backup API
+│   │   └── predictionService.ts    # Category heuristic prediction
+│   ├── widgets/
+│   │   ├── WalletWidget.tsx        # Neo-brutalist Android Home Screen Widget (4x2)
+│   │   └── widgetTaskHandler.tsx   # Background click & update task handler
 │   ├── utils/
 │   │   └── haptics.ts              # Fine-tuned vibration & haptic helpers
 │   └── types/                      # TypeScript data interfaces
@@ -218,6 +245,6 @@ adb install android/app/build/outputs/apk/release/app-release.apk
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License. See [LICENSE](file:///home/thang/coding/multi-wallet-management/LICENSE) for details.

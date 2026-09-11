@@ -17,6 +17,7 @@ import { hapticLight, hapticSuccess, hapticError } from '../utils/haptics';
 import { loadCloudBackupConfig, saveCloudBackupConfig } from '../services/cloudBackupStorage';
 import { uploadBackupToDrive } from '../services/googleDriveService';
 import { syncWidgetData } from '../services/widgetSyncService';
+import { refreshHabitReminders } from '../services/habitNotificationService';
 
 interface WalletContextType {
   wallets: Wallet[];
@@ -212,6 +213,11 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           walletCount: fetchedWallets.length,
         });
       }
+
+      // Cập nhật lịch nhắc nhở thói quen thông minh (Smart Absence Check & Peak Hours)
+      refreshHabitReminders(fetchedTxs, fetchedCategories).catch((err) => {
+        console.warn('Lỗi cập nhật lịch nhắc nhở thói quen:', err);
+      });
     } catch (error) {
       console.error('Lỗi tải dữ liệu SQLite:', error);
     } finally {
