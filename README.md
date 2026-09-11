@@ -1,4 +1,4 @@
-# MultiWallet (v1.1.0) - Personal Finance & Multi-Source Wallet Management
+# MultiWallet (v1.1.1) - Personal Finance & Multi-Source Wallet Management
 
 A modern, high-performance mobile application built with **React Native (Expo SDK 57)**, **TypeScript**, and **Expo SQLite**, crafted with a distinctive, tactile Neo-Brutalist design language. 
 
@@ -48,11 +48,18 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
   - `[Eye]` button: Toggles privacy status immediately.
 - **Automatic Instant Sync**: Automatically updates the widget whenever transactions are created, edited, deleted, or wallets are adjusted.
 
-### 5. Smart Contextual Reminders (Nhắc nhở thông minh theo thói quen)
-- **100% Offline Local Notifications**: Powered by `expo-notifications`, requires zero internet and keeps all financial habits completely private on your device.
-- **Auto-learn Peak Hours (Học thói quen sinh hoạt)**: Automatically analyzes your SQLite transaction history to cluster meal times (lunch ~12:30 $\to$ reminder ~13:15; dinner ~18:30 $\to$ reminder ~20:00).
-- **Smart Absence Check (Kiểm tra vắng mặt thông minh)**: If you already recorded your lunch or dinner today, the app stays completely silent and will not disturb you. Reminders only trigger when you haven't recorded.
-- **1-Tap Quick Add Execution**: Tapping on any notification immediately opens `QuickAddModal` with the matching category pre-filled and the numeric keypad ready to record within 2 seconds.
+### 5. Smart Multi-Category Habitual Reminders (Nhắc nhở thông minh đa thói quen)
+- **Universal Habit Clustering Engine**: Automatically analyzes your SQLite transaction history to discover recurring behavioral patterns across **all categories**:
+  - **Morning Routine (06:00 - 10:00)**: Cà phê sáng, ăn sáng, đổ xăng đầu ngày.
+  - **Lunch Routine (11:00 - 14:00)**: Cơm trưa, đồ uống trưa.
+  - **Afternoon Routine (14:00 - 17:30)**: Trà chiều, cà phê chiều, ăn vặt công sở, gym / thể thao.
+  - **Dinner Routine (17:30 - 21:00)**: Bữa tối, đi chợ / siêu thị, xăng xe tan tầm.
+  - **Monthly Recurring Bills**: Tự động phát hiện hóa đơn điện, nước, internet, tiền nhà định kỳ theo ngày trong tháng.
+  - **Daily Wrap-up (21:30)**: Chốt sổ kiểm tra chi tiêu cuối ngày.
+- **100% Offline Local Notifications**: Powered by `expo-notifications`, zero cloud dependencies, complete on-device privacy.
+- **Dynamic Smart Absence Check**: If you have already recorded an expense for that specific category in today's window (or paid this month's bill), the app stays completely silent.
+- **Individual Habit Toggles in Settings**: View all detected habits with peak time, scheduled time, and toggle each habit on or off individually.
+- **1-Tap Quick Add Execution**: Tapping any reminder opens `QuickAddModal` with the corresponding category pre-filled and numeric keypad ready.
 - **Playful Vietnamese Tone (0 Emoji)**: Witty "chiếc ví bạn thân" voice lines, strictly adhering to the project 0-emoji design rule.
 
 ### 6. Financial Analytics, Cash Flow & Spending Ratio
@@ -134,7 +141,7 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
 
 ---
 
-## 🚀 Getting Started (Run on Real Device / Simulator)
+## Getting Started (Run on Real Device / Simulator)
 
 ### Prerequisites
 - Node.js 20+ installed
@@ -156,9 +163,9 @@ npx expo start
 
 ---
 
-## 📱 Building Android APK
+## Building Android APK
 
-### ⚡ Option 1: Automated GitHub Actions (Recommended - 4 Minutes, 0 Queue)
+### Option 1: Automated GitHub Actions (Recommended - 4 Minutes, 0 Queue)
 This repository includes a pre-configured GitHub Actions workflow (`.github/workflows/build-apk.yml`).
 
 1. Push this project to your GitHub repository:
@@ -172,7 +179,7 @@ This repository includes a pre-configured GitHub Actions workflow (`.github/work
 
 ---
 
-### 💻 Option 2: Build Locally with EAS CLI
+### Option 2: Build Locally with EAS CLI
 If your computer has the Android SDK installed:
 ```bash
 npx eas build -p android --profile preview --local
@@ -181,7 +188,7 @@ The resulting `.apk` file will be generated directly in your project root.
 
 ---
 
-### 🛠️ Option 3: Offline Native Gradle Build
+### Option 3: Offline Native Gradle Build
 ```bash
 # 1. Generate native Android project files
 npx expo prebuild -p android

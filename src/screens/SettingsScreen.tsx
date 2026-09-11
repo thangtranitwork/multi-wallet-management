@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -34,6 +34,9 @@ import {
   refreshHabitReminders,
   sendTestHabitNotificationAsync,
   setupNotificationChannelAsync,
+  discoverLearnedHabits,
+  toggleHabitItem,
+  LearnedHabit,
   HabitReminderConfig,
   DEFAULT_HABIT_CONFIG,
 } from '../services/habitNotificationService';
@@ -93,6 +96,17 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
   useEffect(() => {
     loadHabitConfig().then((conf) => setHabitConfig(conf));
   }, []);
+
+  const discoveredHabits = useMemo(() => {
+    return discoverLearnedHabits(transactions, categories, habitConfig);
+  }, [transactions, categories, habitConfig]);
+
+  const handleToggleSingleHabit = async (habitId: string, currentEnabled: boolean) => {
+    hapticLight();
+    const updated = await toggleHabitItem(habitId, !currentEnabled);
+    setHabitConfig(updated);
+    await refreshHabitReminders(transactions, categories);
+  };
 
   const handleToggleHabitEnabled = async (val: boolean) => {
     hapticLight();
@@ -941,37 +955,44 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                     />
                   </View>
 
-                  {/* Habit Routine Info Box */}
+                  {/* Dynamic Discovered Habits List */}
                   <View style={styles.habitRoutineBox}>
-                    <Text style={styles.habitRoutineTitle}>KHUNG GIỜ NHẬN DIỆN & LÊN LỊCH</Text>
+                    <Text style={styles.habitRoutineTitle}>
+                      THÓI QUEN ĐÃ NHẬN DIỆN TỰ ĐỘNG ({discoveredHabits.length})
+                    </Text>
 
-                    <View style={styles.habitRoutineRow}>
-                      <View style={styles.habitRoutineLeft}>
-                        <Ionicons name="restaurant-outline" size={16} color="#B45309" />
-                        <Text style={styles.habitRoutineLabel}>Bữa trưa:</Text>
+                    {discoveredHabits.map((habit, index) => (
+                      <View
+                        key={habit.id}
+                        style={[
+                          styles.habitItemContainer,
+                          index === discoveredHabits.length - 1 && { borderBottomWidth: 0 },
+                        ]}
+                      >
+                        <View
+                          style={[
+                            styles.habitItemIconBox,
+                            { backgroundColor: habit.categoryColor || THEME.primary },
+                          ]}
+                        >
+                          <Ionicons
+                            name={(habit.categoryIcon as any) || 'alarm-outline'}
+                            size={16}
+                            color="#000000"
+                          />
+                        </View>
+                        <View style={{ flex: 1, marginRight: 8 }}>
+                          <Text style={styles.habitItemTitle}>{habit.title}</Text>
+                          <Text style={styles.habitItemSubtitle}>{habit.subtitle}</Text>
+                        </View>
+                        <Switch
+                          value={habit.isEnabled}
+                          onValueChange={() => handleToggleSingleHabit(habit.id, habit.isEnabled)}
+                          trackColor={{ false: '#E5E7EB', true: THEME.primary }}
+                          thumbColor="#000000"
+                        />
                       </View>
-                      <Text style={styles.habitRoutineValue}>
-                        {habitConfig.detectedLunchPeak ? `Đỉnh ~${habitConfig.detectedLunchPeak} -> ` : ''}Nhắc lúc {habitConfig.lunchTime}
-                      </Text>
-                    </View>
-
-                    <View style={styles.habitRoutineRow}>
-                      <View style={styles.habitRoutineLeft}>
-                        <Ionicons name="pizza-outline" size={16} color="#B91C1C" />
-                        <Text style={styles.habitRoutineLabel}>Bữa tối:</Text>
-                      </View>
-                      <Text style={styles.habitRoutineValue}>
-                        {habitConfig.detectedDinnerPeak ? `Đỉnh ~${habitConfig.detectedDinnerPeak} -> ` : ''}Nhắc lúc {habitConfig.dinnerTime}
-                      </Text>
-                    </View>
-
-                    <View style={styles.habitRoutineRow}>
-                      <View style={styles.habitRoutineLeft}>
-                        <Ionicons name="moon-outline" size={16} color="#4338CA" />
-                        <Text style={styles.habitRoutineLabel}>Chốt sổ ngày:</Text>
-                      </View>
-                      <Text style={styles.habitRoutineValue}>Nhắc lúc {habitConfig.dailyWrapUpTime}</Text>
-                    </View>
+                    ))}
                   </View>
 
                   {/* Test Notification Button */}
@@ -992,7 +1013,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
         <View style={styles.footerContainer}>
           <Text style={styles.footerAppName}>Ví Của Tôi • Multi-Wallet Manager</Text>
           <Text style={styles.footerNote}>
-            Phiên bản 1.1.0 • SQLite Offline Local Storage
+            Phiên bản 1.1.1 • SQLite Offline Local Storage
           </Text>
           <Text style={styles.footerPrivacy}>
             100% dữ liệu được lưu trữ trên thiết bị của bạn, hoàn toàn riêng tư và không tải lên máy chủ ngoài.
@@ -1618,26 +1639,33 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 8,
   },
-  habitRoutineRow: {
+  habitItemContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 4,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
   },
-  habitRoutineLeft: {
-    flexDirection: 'row',
+  habitItemIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#000000',
     alignItems: 'center',
-    gap: 6,
+    justifyContent: 'center',
+    marginRight: 10,
   },
-  habitRoutineLabel: {
-    fontSize: 12,
+  habitItemTitle: {
+    fontSize: 13,
     fontWeight: '800',
     color: '#000000',
   },
-  habitRoutineValue: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#1D4ED8',
+  habitItemSubtitle: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#4B5563',
+    marginTop: 2,
   },
   actionBtnTestNotification: {
     flexDirection: 'row',

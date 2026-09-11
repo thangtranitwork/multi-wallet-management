@@ -3,8 +3,9 @@ import * as Notifications from 'expo-notifications';
 import { File, Paths } from 'expo-file-system';
 import dayjs from 'dayjs';
 import { Transaction, Category } from '../types';
+import { detectRecurringBills, RecurringBillPattern } from './predictionService';
 
-// Cấu hình thông báo cho phép hiển thị banner, âm thanh khi app đang mở
+// Cấu hình hiển thị thông báo cục bộ
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -16,26 +17,37 @@ Notifications.setNotificationHandler({
 });
 
 export const HABIT_CHANNEL_ID = 'habit-reminders';
-export const NOTIFICATION_ID_LUNCH = 'habit-reminder-lunch';
-export const NOTIFICATION_ID_DINNER = 'habit-reminder-dinner';
-export const NOTIFICATION_ID_DAILY = 'habit-reminder-daily';
+
+export interface LearnedHabit {
+  id: string;
+  type: 'daily_time' | 'monthly_bill' | 'daily_wrapup';
+  categoryId?: string;
+  categoryName: string;
+  categoryIcon: string;
+  categoryColor: string;
+  title: string;
+  subtitle: string;
+  triggerTimeStr: string; // e.g. "13:15" hoặc "Ngày 15 hàng tháng (09:00)"
+  triggerHour: number;
+  triggerMinute: number;
+  dayOfMonth?: number;
+  suggestedNote: string;
+  occurrences: number;
+  isLoggedTodayOrThisMonth?: boolean;
+  isEnabled: boolean;
+}
 
 export interface HabitReminderConfig {
   enabled: boolean;
   autoLearn: boolean;
-  lunchTime: string; // HH:mm, e.g. "13:15"
-  dinnerTime: string; // HH:mm, e.g. "20:00"
+  disabledHabitIds: string[];
   dailyWrapUpTime: string; // HH:mm, e.g. "21:30"
-  detectedLunchPeak?: string; // e.g. "12:15"
-  detectedDinnerPeak?: string; // e.g. "18:45"
-  lastAbsenceCheckDate?: string;
 }
 
 export const DEFAULT_HABIT_CONFIG: HabitReminderConfig = {
   enabled: true,
   autoLearn: true,
-  lunchTime: '13:15',
-  dinnerTime: '20:00',
+  disabledHabitIds: [],
   dailyWrapUpTime: '21:30',
 };
 
@@ -52,7 +64,13 @@ export async function loadHabitConfig(): Promise<HabitReminderConfig> {
     if (file.exists) {
       const content = await file.text();
       const parsed = JSON.parse(content);
-      return { ...DEFAULT_HABIT_CONFIG, ...parsed };
+      return {
+        ...DEFAULT_HABIT_CONFIG,
+        ...parsed,
+        disabledHabitIds: Array.isArray(parsed.disabledHabitIds)
+          ? parsed.disabledHabitIds
+          : [],
+      };
     }
   } catch (e) {
     console.warn('Lỗi đọc cấu hình nhắc nhở thói quen:', e);
@@ -79,7 +97,26 @@ export async function saveHabitConfig(
 }
 
 /**
- * Đăng ký Notification Channel trên Android và xin quyền thông báo
+ * Bật/Tắt một thói quen cụ thể
+ */
+export async function toggleHabitItem(
+  habitId: string,
+  enabled: boolean
+): Promise<HabitReminderConfig> {
+  const current = await loadHabitConfig();
+  let disabledIds = current.disabledHabitIds || [];
+  if (enabled) {
+    disabledIds = disabledIds.filter((id) => id !== habitId);
+  } else {
+    if (!disabledIds.includes(habitId)) {
+      disabledIds = [...disabledIds, habitId];
+    }
+  }
+  return await saveHabitConfig({ disabledHabitIds: disabledIds });
+}
+
+/**
+ * Đăng ký Notification Channel trên Android và kiểm tra quyền thông báo
  */
 export async function setupNotificationChannelAsync(): Promise<boolean> {
   try {
@@ -109,259 +146,373 @@ export async function setupNotificationChannelAsync(): Promise<boolean> {
   }
 }
 
-/**
- * Danh sách thông điệp dí dỏm bằng tiếng Việt (100% KHÔNG DÙNG EMOJI)
- */
-const LUNCH_MESSAGES = [
-  {
-    title: 'Ví Của Tôi: Trưa nay ăn gì ngon không bạn ơi?',
-    body: 'Ví chưa thấy bạn ghi lại bữa trưa. Mải làm quên ăn hay quên ghi thế? Vào ghi ngay 2 giây kẻo chiều lại quên mất nha!',
-  },
-  {
-    title: 'Ví Của Tôi: Bữa trưa nay bao nhiêu cành thế?',
-    body: 'Chiếc ví đang đợi bạn điểm danh cơm trưa đây. Mở app ghi nhanh một chạm để số dư luôn chuẩn chỉnh nào!',
-  },
-  {
-    title: 'Ví Của Tôi: Nạp năng lượng buổi trưa chưa bạn?',
-    body: 'Đừng để chiếc ví đói thông tin. Vào khai báo bữa trưa ngay với ví bạn thân nhé!',
-  },
-];
-
-const DINNER_MESSAGES = [
-  {
-    title: 'Ví Của Tôi: Tối nay ăn gì ngon không bạn ơi?',
-    body: 'Ví chưa thấy bạn ghi lại bữa tối này. Vào gõ nhẹ vài số tiền để ví quản lý tài chính chuẩn chỉ cho bạn nha!',
-  },
-  {
-    title: 'Ví Của Tôi: Đi ăn tối về chưa bạn ơi?',
-    body: 'Chiếc ví đang ngóng bạn vào chốt bữa tối đây. Mở app điểm danh ngay trong 2 giây nào!',
-  },
-  {
-    title: 'Ví Của Tôi: Bữa tối hôm nay thế nào rồi?',
-    body: 'Dù tự nấu hay đi ăn ngoài, đừng quên ghé qua ví ghi lại nhé. Quản lý chi tiêu đều đặn để ví luôn đầy đặn!',
-  },
-];
-
-const DAILY_WRAP_UP_MESSAGES = [
-  {
-    title: 'Ví Của Tôi: Giờ chốt sổ cuối ngày rồi!',
-    body: 'Hôm nay bạn quản lý tài chính rất tốt. Kiểm tra lại ví xem còn khoản lặt vặt nào phát sinh chưa kịp ghi không nhé!',
-  },
-  {
-    title: 'Ví Của Tôi: Nhìn lại chi tiêu hôm nay nào!',
-    body: 'Dành 10 giây cùng ví rà soát lại số dư hôm nay trước khi đi ngủ nhé. Chúc bạn ngủ ngon và tài chính vững vàng!',
-  },
-];
-
-const ZERO_TX_DAILY_MESSAGES = [
-  {
-    title: 'Ví Của Tôi: Hôm nay bạn bận lắm đúng không?',
-    body: 'Cả ngày hôm nay chưa thấy bạn ghé thăm ví. Một ngày tiết kiệm tuyệt đối hay bận quá chưa kịp ghi chép thế?',
-  },
-  {
-    title: 'Ví Của Tôi: Ví nhớ bạn rồi đấy!',
-    body: 'Hôm nay có phát sinh khoản chi tiêu nào chưa ghi lại không bạn ơi? Vào ghi chép ngay kẻo mai lại quên mất nhé!',
-  },
-];
-
-function getRandomItem<T>(items: T[]): T {
-  return items[Math.floor(Math.random() * items.length)];
+// Cấu trúc khung giờ sinh hoạt trong ngày
+interface TimeWindowDef {
+  key: string;
+  name: string;
+  startHour: number;
+  endHour: number;
+  defaultReminderTime: string; // HH:mm
+  defaultCategoryNamePart: string;
+  defaultNote: string;
 }
 
+const TIME_WINDOWS: TimeWindowDef[] = [
+  {
+    key: 'morning',
+    name: 'Buổi sáng',
+    startHour: 6,
+    endHour: 10,
+    defaultReminderTime: '09:15',
+    defaultCategoryNamePart: 'cà phê',
+    defaultNote: 'Cà phê sáng / Ăn sáng',
+  },
+  {
+    key: 'lunch',
+    name: 'Bữa trưa',
+    startHour: 11,
+    endHour: 14,
+    defaultReminderTime: '13:15',
+    defaultCategoryNamePart: 'ăn uống',
+    defaultNote: 'Cơm trưa',
+  },
+  {
+    key: 'afternoon',
+    name: 'Buổi chiều',
+    startHour: 14,
+    endHour: 17.5,
+    defaultReminderTime: '16:15',
+    defaultCategoryNamePart: 'đồ uống',
+    defaultNote: 'Trà chiều / Ăn vặt',
+  },
+  {
+    key: 'dinner',
+    name: 'Bữa tối',
+    startHour: 17.5,
+    endHour: 21,
+    defaultReminderTime: '20:00',
+    defaultCategoryNamePart: 'ăn uống',
+    defaultNote: 'Bữa tối',
+  },
+];
+
 /**
- * Phân tích lịch sử giao dịch SQLite để học giờ đỉnh (Peak Hours) của các bữa ăn
+ * Tạo nội dung thông báo dí dỏm bằng tiếng Việt theo ngữ cảnh (100% KHÔNG DÙNG EMOJI)
  */
-export function analyzeHabitPeakHours(
-  transactions: Transaction[],
-  categories: Category[]
-): {
-  detectedLunchPeak?: string;
-  suggestedLunchTime: string;
-  detectedDinnerPeak?: string;
-  suggestedDinnerTime: string;
-} {
-  // Tìm các ID danh mục thuộc nhóm Ăn uống / Cà phê
-  const foodCatIds = new Set<string>();
-  categories.forEach((cat) => {
-    const nameLower = cat.name.toLowerCase();
-    if (
-      cat.type === 'expense' &&
-      (nameLower.includes('ăn') ||
-        nameLower.includes('uống') ||
-        nameLower.includes('cơm') ||
-        nameLower.includes('food') ||
-        cat.id === 'cat_food' ||
-        cat.id === 'cat_coffee')
-    ) {
-      foodCatIds.add(cat.id);
+function generateHabitMessage(
+  habitType: string,
+  categoryName: string,
+  suggestedNote: string
+): { title: string; body: string } {
+  const catLower = categoryName.toLowerCase();
+
+  // 1. Cà phê & Đồ uống
+  if (catLower.includes('cà phê') || catLower.includes('đồ uống') || catLower.includes('cafe')) {
+    if (habitType === 'morning') {
+      return {
+        title: 'Ví Của Tôi: Cốc cà phê sáng nay thế nào bạn ơi?',
+        body: 'Ví chưa thấy bạn ghi lại khoản cà phê nạp năng lượng sáng nay. Vào ghi nhanh 2 giây cho ví nhé!',
+      };
     }
-  });
-
-  const lunchMinutes: number[] = [];
-  const dinnerMinutes: number[] = [];
-
-  transactions.forEach((tx) => {
-    if (tx.type !== 'expense' || !tx.category_id || !foodCatIds.has(tx.category_id)) {
-      return;
-    }
-
-    const date = dayjs(tx.transacted_at);
-    if (!date.isValid()) return;
-
-    const hour = date.hour();
-    const minute = date.minute();
-    const totalMinutes = hour * 60 + minute;
-
-    // Khung giờ trưa: 11:00 - 13:59 (660 - 839 phút)
-    if (totalMinutes >= 660 && totalMinutes <= 839) {
-      lunchMinutes.push(totalMinutes);
-    }
-    // Khung giờ tối: 17:30 - 21:00 (1050 - 1260 phút)
-    else if (totalMinutes >= 1050 && totalMinutes <= 1260) {
-      dinnerMinutes.push(totalMinutes);
-    }
-  });
-
-  let detectedLunchPeak: string | undefined;
-  let suggestedLunchTime = DEFAULT_HABIT_CONFIG.lunchTime;
-
-  if (lunchMinutes.length >= 3) {
-    lunchMinutes.sort((a, b) => a - b);
-    const medianLunchMin = lunchMinutes[Math.floor(lunchMinutes.length / 2)];
-    const peakH = Math.floor(medianLunchMin / 60);
-    const peakM = medianLunchMin % 60;
-    detectedLunchPeak = `${String(peakH).padStart(2, '0')}:${String(peakM).padStart(2, '0')}`;
-
-    // Nhắc sau đỉnh khoảng 50 phút
-    const reminderMin = Math.min(medianLunchMin + 50, 14 * 60); // không quá 14:00
-    const remH = Math.floor(reminderMin / 60);
-    const remM = reminderMin % 60;
-    suggestedLunchTime = `${String(remH).padStart(2, '0')}:${String(remM).padStart(2, '0')}`;
+    return {
+      title: 'Ví Của Tôi: Nạp năng lượng buổi chiều chưa bạn?',
+      body: 'Chiếc ví đang đợi bạn điểm danh cốc trà chiều hoặc cà phê đây. Mở app gõ nhẹ vài số tiền nào!',
+    };
   }
 
-  let detectedDinnerPeak: string | undefined;
-  let suggestedDinnerTime = DEFAULT_HABIT_CONFIG.dinnerTime;
-
-  if (dinnerMinutes.length >= 3) {
-    dinnerMinutes.sort((a, b) => a - b);
-    const medianDinnerMin = dinnerMinutes[Math.floor(dinnerMinutes.length / 2)];
-    const peakH = Math.floor(medianDinnerMin / 60);
-    const peakM = medianDinnerMin % 60;
-    detectedDinnerPeak = `${String(peakH).padStart(2, '0')}:${String(peakM).padStart(2, '0')}`;
-
-    // Nhắc sau đỉnh khoảng 65 phút
-    const reminderMin = Math.min(medianDinnerMin + 65, 21 * 60); // không quá 21:00
-    const remH = Math.floor(reminderMin / 60);
-    const remM = reminderMin % 60;
-    suggestedDinnerTime = `${String(remH).padStart(2, '0')}:${String(remM).padStart(2, '0')}`;
+  // 2. Ăn uống / Cơm
+  if (catLower.includes('ăn') || catLower.includes('cơm') || catLower.includes('food')) {
+    if (habitType === 'lunch') {
+      return {
+        title: 'Ví Của Tôi: Trưa nay ăn gì ngon không bạn ơi?',
+        body: 'Ví chưa thấy bạn ghi lại bữa trưa. Mải làm quên ăn hay quên ghi thế? Vào ghi ngay 2 giây kẻo chiều lại quên mất nha!',
+      };
+    }
+    return {
+      title: 'Ví Của Tôi: Tối nay ăn gì ngon không bạn ơi?',
+      body: 'Chiếc ví đang đợi bạn điểm danh bữa tối đây. Vào cập nhật ngay để số dư luôn chuẩn chỉnh nhé!',
+    };
   }
 
+  // 3. Đi lại / Xăng xe
+  if (catLower.includes('xăng') || catLower.includes('đi lại') || catLower.includes('transport')) {
+    return {
+      title: 'Ví Của Tôi: Hôm nay có phát sinh đi lại không bạn?',
+      body: 'Ví chưa thấy bạn ghi lại chi phí xăng xe hoặc di chuyển. Vào cập nhật ngay kẻo trôi mất khoản tiền lẻ nhé!',
+    };
+  }
+
+  // 4. Mua sắm / Siêu thị
+  if (catLower.includes('mua sắm') || catLower.includes('siêu thị') || catLower.includes('shopping')) {
+    return {
+      title: 'Ví Của Tôi: Hôm nay có ghé sắm gì không bạn ơi?',
+      body: 'Nếu vừa đi chợ hoặc mua đồ về, đừng quên mở ví ghi lại ngay để kiểm soát ngân sách tháng này nha!',
+    };
+  }
+
+  // 5. Thể thao / Gym / Sức khỏe
+  if (catLower.includes('sức khỏe') || catLower.includes('thể thao') || catLower.includes('gym')) {
+    return {
+      title: 'Ví Của Tôi: Rèn luyện sức khỏe hôm nay thế nào?',
+      body: 'Ví nhắc nhẹ bạn ghi lại chi phí thể thao, bơi lội hoặc thuốc men nếu có phát sinh hôm nay nhé!',
+    };
+  }
+
+  // Mặc định cho các danh mục khác
   return {
-    detectedLunchPeak,
-    suggestedLunchTime,
-    detectedDinnerPeak,
-    suggestedDinnerTime,
+    title: `Ví Của Tôi: Đã ghi chép mục ${categoryName} chưa?`,
+    body: `Ví nhận thấy bạn thường có chi tiêu cho ${suggestedNote || categoryName} vào khung giờ này. Vào ghi nhanh 2 giây bạn nhé!`,
   };
 }
 
 /**
- * Kiểm tra xem hôm nay đã ghi chép danh mục ăn uống trong khung giờ trưa / tối chưa (Smart Absence Check)
+ * Phân tích và phát hiện toàn bộ thói quen hành vi từ SQLite:
+ * 1. Thói quen theo khung giờ hàng ngày (Cà phê sáng, Cơm trưa, Trà chiều, Bữa tối, v.v.)
+ * 2. Hóa đơn định kỳ theo ngày trong tháng (Điện, Nước, Internet, Tiền nhà)
+ * 3. Chốt sổ chi tiêu cuối ngày
  */
-export function checkDailyMealAbsence(
+export function discoverLearnedHabits(
   transactions: Transaction[],
-  categories: Category[]
-): {
-  hasLoggedLunchToday: boolean;
-  hasLoggedDinnerToday: boolean;
-  totalTransactionsToday: number;
-} {
+  categories: Category[],
+  config: HabitReminderConfig
+): LearnedHabit[] {
+  const catMap = new Map<string, Category>(categories.map((c) => [c.id, c]));
+  const expenseTxs = transactions.filter(
+    (t) => t.type === 'expense' && t.category_id && t.amount > 0
+  );
+
+  const disabledSet = new Set(config.disabledHabitIds || []);
+  const habits: LearnedHabit[] = [];
+
+  // ==========================================
+  // PHẦN 1: THÓI QUEN THEO KHUNG GIỜ HÀNG NGÀY
+  // ==========================================
+  TIME_WINDOWS.forEach((win) => {
+    // Lọc các giao dịch rơi vào khung giờ này
+    const windowTxs: { tx: Transaction; minuteOfDay: number }[] = [];
+
+    expenseTxs.forEach((tx) => {
+      const d = dayjs(tx.transacted_at);
+      if (!d.isValid()) return;
+      const h = d.hour() + d.minute() / 60;
+      if (h >= win.startHour && h < win.endHour) {
+        windowTxs.push({ tx, minuteOfDay: d.hour() * 60 + d.minute() });
+      }
+    });
+
+    // Đếm tần suất theo danh mục trong khung giờ
+    const catCountMap = new Map<string, { count: number; minutes: number[]; notes: string[] }>();
+
+    windowTxs.forEach(({ tx, minuteOfDay }) => {
+      const catId = tx.category_id!;
+      const cur = catCountMap.get(catId) || { count: 0, minutes: [], notes: [] };
+      cur.count += 1;
+      cur.minutes.push(minuteOfDay);
+      if (tx.note) cur.notes.push(tx.note);
+      catCountMap.set(catId, cur);
+    });
+
+    // Chọn danh mục nổi bật nhất
+    let topCatId: string | null = null;
+    let maxCount = 0;
+
+    catCountMap.forEach((data, cId) => {
+      if (data.count > maxCount) {
+        maxCount = data.count;
+        topCatId = cId;
+      }
+    });
+
+    // Nếu không đủ dữ liệu (dưới 2 giao dịch), tìm danh mục mặc định phù hợp
+    let chosenCat: Category | undefined;
+    let reminderHour: number;
+    let reminderMinute: number;
+    let detectedPeakStr = '';
+    let occurrences = maxCount;
+    let suggestedNote = win.defaultNote;
+
+    if (topCatId && maxCount >= 2) {
+      chosenCat = catMap.get(topCatId);
+      const data = catCountMap.get(topCatId)!;
+      data.minutes.sort((a, b) => a - b);
+      const medianMin = data.minutes[Math.floor(data.minutes.length / 2)];
+
+      const peakH = Math.floor(medianMin / 60);
+      const peakM = medianMin % 60;
+      detectedPeakStr = `${String(peakH).padStart(2, '0')}:${String(peakM).padStart(2, '0')}`;
+
+      // Giờ nhắc = Đỉnh + 45 phút (không vượt quá giờ kết thúc khung)
+      const remMin = Math.min(medianMin + 45, Math.floor(win.endHour * 60));
+      reminderHour = Math.floor(remMin / 60);
+      reminderMinute = remMin % 60;
+
+      // Note phổ biến nhất
+      if (data.notes.length > 0) {
+        const noteCounts: Record<string, number> = {};
+        data.notes.forEach((n) => (noteCounts[n] = (noteCounts[n] || 0) + 1));
+        suggestedNote = Object.entries(noteCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || suggestedNote;
+      }
+    } else {
+      // Fallback danh mục mặc định
+      chosenCat = categories.find(
+        (c) =>
+          c.type === 'expense' &&
+          c.name.toLowerCase().includes(win.defaultCategoryNamePart)
+      ) || categories.find((c) => c.type === 'expense');
+
+      const [defH, defM] = win.defaultReminderTime.split(':').map((s) => parseInt(s, 10));
+      reminderHour = defH;
+      reminderMinute = defM;
+    }
+
+    if (chosenCat) {
+      const habitId = `habit_daily_${win.key}`;
+      const timeStr = `${String(reminderHour).padStart(2, '0')}:${String(reminderMinute).padStart(2, '0')}`;
+      const subtitle = detectedPeakStr
+        ? `Nhận diện giờ quen thuộc ~${detectedPeakStr} • Nhắc lúc ${timeStr}`
+        : `Khung giờ vàng chuẩn • Nhắc lúc ${timeStr}`;
+
+      habits.push({
+        id: habitId,
+        type: 'daily_time',
+        categoryId: chosenCat.id,
+        categoryName: chosenCat.name,
+        categoryIcon: chosenCat.icon,
+        categoryColor: chosenCat.color,
+        title: `${win.name}: ${chosenCat.name}`,
+        subtitle,
+        triggerTimeStr: timeStr,
+        triggerHour: reminderHour,
+        triggerMinute: reminderMinute,
+        suggestedNote,
+        occurrences,
+        isEnabled: !disabledSet.has(habitId),
+      });
+    }
+  });
+
+  // ==========================================
+  // PHẦN 2: HÓA ĐƠN ĐỊNH KỲ HÀNG THÁNG
+  // ==========================================
+  try {
+    const billPatterns: RecurringBillPattern[] = detectRecurringBills(transactions, categories);
+    // Lấy tối đa 3 hóa đơn định kỳ rõ nét nhất
+    billPatterns.slice(0, 3).forEach((bill) => {
+      const habitId = `habit_bill_${bill.categoryId}_day_${bill.approxDayOfMonth}`;
+      const dayStr = String(bill.approxDayOfMonth).padStart(2, '0');
+      const timeStr = `Ngày ${dayStr} hàng tháng (09:00)`;
+
+      habits.push({
+        id: habitId,
+        type: 'monthly_bill',
+        categoryId: bill.categoryId,
+        categoryName: bill.categoryName,
+        categoryIcon: bill.categoryIcon,
+        categoryColor: bill.categoryColor,
+        title: `Hóa đơn định kỳ: ${bill.categoryName}`,
+        subtitle: `Khoản chi lặp lại (~${bill.averageAmount.toLocaleString('vi-VN')} đ) • ${timeStr}`,
+        triggerTimeStr: timeStr,
+        triggerHour: 9,
+        triggerMinute: 0,
+        dayOfMonth: bill.approxDayOfMonth,
+        suggestedNote: bill.mostCommonNote,
+        occurrences: bill.occurrences,
+        isLoggedTodayOrThisMonth: bill.isPaidThisMonth,
+        isEnabled: !disabledSet.has(habitId),
+      });
+    });
+  } catch (e) {
+    console.warn('Lỗi phân tích hóa đơn định kỳ:', e);
+  }
+
+  // ==========================================
+  // PHẦN 3: CHỐT SỔ CHI TIÊU CUỐI NGÀY
+  // ==========================================
+  const dailyWrapId = 'habit_daily_wrapup';
+  const [wrapH, wrapM] = (config.dailyWrapUpTime || '21:30')
+    .split(':')
+    .map((s) => parseInt(s, 10));
+
+  habits.push({
+    id: dailyWrapId,
+    type: 'daily_wrapup',
+    categoryName: 'Chốt sổ ngày',
+    categoryIcon: 'calendar-outline',
+    categoryColor: '#8B5CF6',
+    title: 'Chốt sổ chi tiêu cuối ngày',
+    subtitle: `Rà soát số dư & khoản chi phát sinh • Nhắc lúc ${config.dailyWrapUpTime || '21:30'}`,
+    triggerTimeStr: config.dailyWrapUpTime || '21:30',
+    triggerHour: wrapH || 21,
+    triggerMinute: wrapM || 30,
+    suggestedNote: 'Chốt sổ cuối ngày',
+    occurrences: 0,
+    isEnabled: !disabledSet.has(dailyWrapId),
+  });
+
+  return habits;
+}
+
+/**
+ * Kiểm tra xem hôm nay đã ghi giao dịch cho một thói quen cụ thể chưa (Smart Absence Check động)
+ */
+export function checkHabitAbsenceToday(
+  habit: LearnedHabit,
+  transactions: Transaction[]
+): boolean {
   const todayStr = dayjs().format('YYYY-MM-DD');
 
-  const foodCatIds = new Set<string>();
-  categories.forEach((cat) => {
-    const nameLower = cat.name.toLowerCase();
-    if (
-      cat.type === 'expense' &&
-      (nameLower.includes('ăn') ||
-        nameLower.includes('uống') ||
-        nameLower.includes('cơm') ||
-        cat.id === 'cat_food' ||
-        cat.id === 'cat_coffee')
-    ) {
-      foodCatIds.add(cat.id);
+  if (habit.type === 'monthly_bill') {
+    // Hóa đơn hàng tháng: xem tháng này đã chi mục đó chưa
+    return Boolean(habit.isLoggedTodayOrThisMonth);
+  }
+
+  if (habit.type === 'daily_wrapup') {
+    // Chốt sổ cuối ngày luôn hợp lệ để lên lịch
+    return false;
+  }
+
+  // Thói quen theo giờ trong ngày: kiểm tra giao dịch của category đó trong ngày hôm nay
+  const hasLogged = transactions.some((tx) => {
+    if (tx.type !== 'expense' || tx.category_id !== habit.categoryId) {
+      return false;
     }
-  });
-
-  let hasLoggedLunchToday = false;
-  let hasLoggedDinnerToday = false;
-  let totalTransactionsToday = 0;
-
-  transactions.forEach((tx) => {
     const txDate = dayjs(tx.transacted_at);
     if (!txDate.isValid() || txDate.format('YYYY-MM-DD') !== todayStr) {
-      return;
+      return false;
     }
 
-    totalTransactionsToday++;
-
-    if (tx.type === 'expense' && tx.category_id && foodCatIds.has(tx.category_id)) {
-      const hour = txDate.hour();
-      const minute = txDate.minute();
-      const totalMin = hour * 60 + minute;
-
-      // Khoảng ăn trưa: 10:45 - 14:30
-      if (totalMin >= 645 && totalMin <= 870) {
-        hasLoggedLunchToday = true;
-      }
-      // Khoảng ăn tối: 17:00 - 21:30
-      if (totalMin >= 1020 && totalMin <= 1290) {
-        hasLoggedDinnerToday = true;
-      }
-    }
+    // Nếu là thói quen theo giờ, kiểm tra thêm giờ giao dịch có gần mốc không (trong vòng ±2 tiếng)
+    const txHour = txDate.hour() + txDate.minute() / 60;
+    return Math.abs(txHour - habit.triggerHour) <= 2.5;
   });
 
-  return {
-    hasLoggedLunchToday,
-    hasLoggedDinnerToday,
-    totalTransactionsToday,
-  };
+  return hasLogged;
 }
 
 /**
- * Tính toán thời điểm Date kế tiếp cho một mốc giờ HH:mm
- * Nếu targetDate đã qua trong ngày hôm nay hoặc conditionForToday = false, lên lịch cho ngày mai
+ * Lập lịch thông báo cho một thời điểm Date cụ thể
  */
-function getNextTriggerDate(timeHHmm: string, scheduleForToday: boolean): Date {
-  const [hStr, mStr] = timeHHmm.split(':');
-  const h = parseInt(hStr, 10) || 12;
-  const m = parseInt(mStr, 10) || 0;
-
-  let target = dayjs().hour(h).minute(m).second(0).millisecond(0);
+function getNextTriggerDateForHabit(habit: LearnedHabit, isAlreadyLoggedToday: boolean): Date {
   const now = dayjs();
 
-  if (!scheduleForToday || target.isBefore(now)) {
-    // Chuyển sang ngày mai
-    target = target.add(1, 'day');
+  if (habit.type === 'monthly_bill' && habit.dayOfMonth) {
+    let target = dayjs().date(habit.dayOfMonth).hour(habit.triggerHour).minute(habit.triggerMinute).second(0).millisecond(0);
+    if (target.isBefore(now) || isAlreadyLoggedToday) {
+      target = target.add(1, 'month');
+    }
+    return target.toDate();
   }
 
+  // Daily time
+  let target = dayjs().hour(habit.triggerHour).minute(habit.triggerMinute).second(0).millisecond(0);
+  if (isAlreadyLoggedToday || target.isBefore(now)) {
+    target = target.add(1, 'day');
+  }
   return target.toDate();
 }
 
 /**
- * Tìm ID danh mục ăn uống chính để điền sẵn vào QuickAddModal khi bấm thông báo
- */
-function findDefaultFoodCategoryId(categories: Category[]): string {
-  const cat = categories.find(
-    (c) =>
-      c.id === 'cat_food' ||
-      (c.type === 'expense' && c.name.toLowerCase().includes('ăn uống'))
-  );
-  return cat ? cat.id : 'cat_food';
-}
-
-/**
- * Làm mới toàn bộ lịch thông báo nhắc nhở thông minh
- * Gọi hàm này mỗi khi mở app, thay đổi cấu hình, hoặc khi thêm/sửa/xóa giao dịch
+ * Làm mới toàn bộ lịch nhắc nhở thông minh dựa trên toàn bộ thói quen đã học
  */
 export async function refreshHabitReminders(
   transactions: Transaction[],
@@ -370,128 +521,80 @@ export async function refreshHabitReminders(
   try {
     const config = await loadHabitConfig();
     if (!config.enabled) {
-      // Hủy mọi lịch nhắc nếu tính năng đang tắt
-      await Notifications.cancelScheduledNotificationAsync(NOTIFICATION_ID_LUNCH);
-      await Notifications.cancelScheduledNotificationAsync(NOTIFICATION_ID_DINNER);
-      await Notifications.cancelScheduledNotificationAsync(NOTIFICATION_ID_DAILY);
+      await Notifications.cancelAllScheduledNotificationsAsync();
       return;
     }
 
-    // Tự động phân tích giờ nếu bật autoLearn
-    let lunchTime = config.lunchTime;
-    let dinnerTime = config.dinnerTime;
-    let detectedLunchPeak = config.detectedLunchPeak;
-    let detectedDinnerPeak = config.detectedDinnerPeak;
+    const habits = discoverLearnedHabits(transactions, categories, config);
 
-    if (config.autoLearn) {
-      const analysis = analyzeHabitPeakHours(transactions, categories);
-      lunchTime = analysis.suggestedLunchTime;
-      dinnerTime = analysis.suggestedDinnerTime;
-      detectedLunchPeak = analysis.detectedLunchPeak;
-      detectedDinnerPeak = analysis.detectedDinnerPeak;
+    // Hủy các lịch thông báo cũ để đồng bộ danh sách mới nhất
+    await Notifications.cancelAllScheduledNotificationsAsync();
 
-      // Lưu lại thông tin nhận diện
-      await saveHabitConfig({
-        lunchTime,
-        dinnerTime,
-        detectedLunchPeak,
-        detectedDinnerPeak,
+    const todayTxs = transactions.filter((t) => dayjs(t.transacted_at).isSame(dayjs(), 'day'));
+
+    for (const habit of habits) {
+      if (!habit.isEnabled) continue;
+
+      const isAlreadyLogged = checkHabitAbsenceToday(habit, transactions);
+      const triggerDate = getNextTriggerDateForHabit(habit, isAlreadyLogged);
+
+      let title = '';
+      let body = '';
+
+      if (habit.type === 'daily_wrapup') {
+        if (todayTxs.length === 0) {
+          title = 'Ví Của Tôi: Hôm nay bạn bận lắm đúng không?';
+          body = 'Cả ngày chưa thấy bạn ghé thăm ví. Không biết hôm nay có chi tiêu gì không hay một ngày tiết kiệm tuyệt đối đây?';
+        } else {
+          title = 'Ví Của Tôi: Giờ chốt sổ cuối ngày rồi!';
+          body = 'Hôm nay bạn quản lý tài chính rất tốt. Kiểm tra lại ví xem còn khoản lặt vặt nào phát sinh chưa kịp ghi không nhé!';
+        }
+      } else if (habit.type === 'monthly_bill') {
+        title = `Ví Của Tôi: Đến hạn ${habit.categoryName} rồi!`;
+        body = `Hôm nay là mốc thanh toán định kỳ cho ${habit.suggestedNote || habit.categoryName}. Bạn đã hoàn tất chưa? Vào ghi nhận ngay nhé!`;
+      } else {
+        const msg = generateHabitMessage(
+          habit.id.replace('habit_daily_', ''),
+          habit.categoryName,
+          habit.suggestedNote
+        );
+        title = msg.title;
+        body = msg.body;
+      }
+
+      await Notifications.scheduleNotificationAsync({
+        identifier: `habit-reminder-${habit.id}`,
+        content: {
+          title,
+          body,
+          sound: true,
+          data: {
+            action: 'QUICK_ADD',
+            categoryId: habit.categoryId,
+            type: 'expense',
+            suggestedNote: habit.suggestedNote,
+          },
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DATE,
+          date: triggerDate,
+          channelId: HABIT_CHANNEL_ID,
+        },
       });
     }
-
-    // Kiểm tra vắng mặt hôm nay (Smart Absence Check)
-    const { hasLoggedLunchToday, hasLoggedDinnerToday, totalTransactionsToday } =
-      checkDailyMealAbsence(transactions, categories);
-
-    const defaultFoodCatId = findDefaultFoodCategoryId(categories);
-
-    // 1. Lập lịch nhắc BỮA TRƯA
-    // Nếu hôm nay ĐÃ ghi bữa trưa rồi -> Chỉ lên lịch cho ngày mai
-    // Nếu hôm nay CHƯA ghi -> Lên lịch cho hôm nay (nếu chưa quá giờ) hoặc ngày mai
-    await Notifications.cancelScheduledNotificationAsync(NOTIFICATION_ID_LUNCH);
-    const lunchTriggerDate = getNextTriggerDate(lunchTime, !hasLoggedLunchToday);
-    const lunchMsg = getRandomItem(LUNCH_MESSAGES);
-
-    await Notifications.scheduleNotificationAsync({
-      identifier: NOTIFICATION_ID_LUNCH,
-      content: {
-        title: lunchMsg.title,
-        body: lunchMsg.body,
-        sound: true,
-        data: {
-          action: 'QUICK_ADD',
-          categoryId: defaultFoodCatId,
-          type: 'expense',
-          suggestedNote: 'Cơm trưa',
-        },
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DATE,
-        date: lunchTriggerDate,
-        channelId: HABIT_CHANNEL_ID,
-      },
-    });
-
-    // 2. Lập lịch nhắc BỮA TỐI
-    // Nếu hôm nay ĐÃ ghi bữa tối rồi -> Chỉ lên lịch cho ngày mai
-    // Nếu hôm nay CHƯA ghi -> Lên lịch cho hôm nay (nếu chưa quá giờ) hoặc ngày mai
-    await Notifications.cancelScheduledNotificationAsync(NOTIFICATION_ID_DINNER);
-    const dinnerTriggerDate = getNextTriggerDate(dinnerTime, !hasLoggedDinnerToday);
-    const dinnerMsg = getRandomItem(DINNER_MESSAGES);
-
-    await Notifications.scheduleNotificationAsync({
-      identifier: NOTIFICATION_ID_DINNER,
-      content: {
-        title: dinnerMsg.title,
-        body: dinnerMsg.body,
-        sound: true,
-        data: {
-          action: 'QUICK_ADD',
-          categoryId: defaultFoodCatId,
-          type: 'expense',
-          suggestedNote: 'Bữa tối',
-        },
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DATE,
-        date: dinnerTriggerDate,
-        channelId: HABIT_CHANNEL_ID,
-      },
-    });
-
-    // 3. Lập lịch CHỐT SỔ CUỐI NGÀY
-    await Notifications.cancelScheduledNotificationAsync(NOTIFICATION_ID_DAILY);
-    const dailyTriggerDate = getNextTriggerDate(config.dailyWrapUpTime, true);
-    const dailyMsg =
-      totalTransactionsToday === 0
-        ? getRandomItem(ZERO_TX_DAILY_MESSAGES)
-        : getRandomItem(DAILY_WRAP_UP_MESSAGES);
-
-    await Notifications.scheduleNotificationAsync({
-      identifier: NOTIFICATION_ID_DAILY,
-      content: {
-        title: dailyMsg.title,
-        body: dailyMsg.body,
-        sound: true,
-        data: {
-          action: 'DAILY_WRAP_UP',
-        },
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DATE,
-        date: dailyTriggerDate,
-        channelId: HABIT_CHANNEL_ID,
-      },
-    });
   } catch (e) {
-    console.warn('Lỗi khi lập lịch nhắc nhở thói quen:', e);
+    console.warn('Lỗi khi lập lịch nhắc nhở thói quen tổng quát:', e);
   }
 }
 
 /**
  * Gửi một thông báo thử nghiệm sau 2 giây (được kích hoạt từ nút bấm trong Cài đặt)
  */
-export async function sendTestHabitNotificationAsync(categoryId?: string): Promise<boolean> {
+export async function sendTestHabitNotificationAsync(
+  categoryId?: string,
+  customTitle?: string,
+  customBody?: string
+): Promise<boolean> {
   try {
     const isGranted = await setupNotificationChannelAsync();
     if (!isGranted) {
@@ -500,14 +603,16 @@ export async function sendTestHabitNotificationAsync(categoryId?: string): Promi
 
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: 'Ví Của Tôi: Thử nghiệm thông báo thành công!',
-        body: 'Chiếc ví hoạt động hoàn hảo. Chạm vào thông báo này để trải nghiệm tính năng ghi chép nhanh trong 2 giây nhé!',
+        title: customTitle || 'Ví Của Tôi: Thử nghiệm thông báo thành công!',
+        body:
+          customBody ||
+          'Chiếc ví hoạt động hoàn hảo. Chạm vào thông báo này để trải nghiệm tính năng ghi chép nhanh trong 2 giây nhé!',
         sound: true,
         data: {
           action: 'QUICK_ADD',
           categoryId: categoryId || 'cat_food',
           type: 'expense',
-          suggestedNote: 'Ăn uống thử nghiệm',
+          suggestedNote: 'Chi tiêu thử nghiệm',
         },
       },
       trigger: {
