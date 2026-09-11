@@ -952,6 +952,167 @@ export async function getAnalyticsByRange(
   };
 }
 
+// ==================== DAILY BREAKDOWN & ADVANCED ANALYTICS ====================
+
+export interface DailyStatItem {
+  date: string;        // 'YYYY-MM-DD'
+  income: number;
+  expense: number;
+  net: number;
+  txCount: number;
+}
+
+export interface LargestTransaction {
+  id: string;
+  amount: number;
+  note: string | null;
+  transacted_at: string;
+  category_name: string | null;
+  category_icon: string | null;
+  category_color: string | null;
+}
+
+export interface AdvancedAnalyticsMetrics {
+  dailyStats: DailyStatItem[];
+  peakExpenseDay: DailyStatItem | null;
+  peakIncomeDay: DailyStatItem | null;
+  largestExpense: LargestTransaction | null;
+  noSpendDays: number;
+  totalDaysWithExpense: number;
+  avgExpenseOnSpendDays: number;
+  topSpendingDays: DailyStatItem[];   // Top 5 ngày chi nhiều nhất
+}
+
+export async function getDailyBreakdown(
+  db: SQLite.SQLiteDatabase,
+  startDateIso?: string | null,
+  endDateIso?: string | null
+): Promise<DailyStatItem[]> {
+  let whereClause = "WHERE type IN ('income', 'expense')";
+  const params: any[] = [];
+
+  if (startDateIso) {
+    whereClause += ' AND transacted_at >= ?';
+    params.push(startDateIso);
+  }
+  if (endDateIso) {
+    whereClause += ' AND transacted_at <= ?';
+    params.push(endDateIso);
+  }
+
+  const rows = await db.getAllAsync<{
+    date: string;
+    income: number;
+    expense: number;
+    txCount: number;
+  }>(
+    `SELECT
+       substr(transacted_at, 1, 10) as date,
+       SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) as income,
+       SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as expense,
+       COUNT(*) as txCount
+     FROM transactions
+     ${whereClause}
+     GROUP BY substr(transacted_at, 1, 10)
+     ORDER BY date ASC`,
+    params
+  );
+
+  return rows.map(r => ({
+    date: r.date,
+    income: r.income,
+    expense: r.expense,
+    net: r.income - r.expense,
+    txCount: r.txCount,
+  }));
+}
+
+export async function getAdvancedAnalyticsMetrics(
+  db: SQLite.SQLiteDatabase,
+  startDateIso?: string | null,
+  endDateIso?: string | null
+): Promise<AdvancedAnalyticsMetrics> {
+  const dailyStats = await getDailyBreakdown(db, startDateIso, endDateIso);
+
+  // Ngày chi tiêu đỉnh điểm
+  let peakExpenseDay: DailyStatItem | null = null;
+  let peakIncomeDay: DailyStatItem | null = null;
+  let noSpendDays = 0;
+  let totalDaysWithExpense = 0;
+  let totalExpenseOnSpendDays = 0;
+
+  for (const day of dailyStats) {
+    if (day.expense === 0) {
+      noSpendDays++;
+    } else {
+      totalDaysWithExpense++;
+      totalExpenseOnSpendDays += day.expense;
+    }
+    if (!peakExpenseDay || day.expense > peakExpenseDay.expense) {
+      peakExpenseDay = day;
+    }
+    if (!peakIncomeDay || day.income > peakIncomeDay.income) {
+      peakIncomeDay = day;
+    }
+  }
+
+  // Giao dịch chi tiêu lớn nhất
+  let whereExpense = "WHERE t.type = 'expense'";
+  const paramsExp: any[] = [];
+  if (startDateIso) {
+    whereExpense += ' AND t.transacted_at >= ?';
+    paramsExp.push(startDateIso);
+  }
+  if (endDateIso) {
+    whereExpense += ' AND t.transacted_at <= ?';
+    paramsExp.push(endDateIso);
+  }
+
+  const largestExpenseRow = await db.getFirstAsync<{
+    id: string;
+    amount: number;
+    note: string | null;
+    transacted_at: string;
+    category_name: string | null;
+    category_icon: string | null;
+    category_color: string | null;
+  }>(
+    `SELECT
+       t.id, t.amount, t.note, t.transacted_at,
+       c.name as category_name, c.icon as category_icon, c.color as category_color
+     FROM transactions t
+     LEFT JOIN categories c ON t.category_id = c.id
+     ${whereExpense}
+     ORDER BY t.amount DESC
+     LIMIT 1`,
+    paramsExp
+  );
+
+  const largestExpense: LargestTransaction | null = largestExpenseRow ?? null;
+
+  // Top 5 ngày chi nhiều nhất
+  const topSpendingDays = [...dailyStats]
+    .filter(d => d.expense > 0)
+    .sort((a, b) => b.expense - a.expense)
+    .slice(0, 5);
+
+  const avgExpenseOnSpendDays =
+    totalDaysWithExpense > 0
+      ? Math.round(totalExpenseOnSpendDays / totalDaysWithExpense)
+      : 0;
+
+  return {
+    dailyStats,
+    peakExpenseDay: peakExpenseDay && peakExpenseDay.expense > 0 ? peakExpenseDay : null,
+    peakIncomeDay: peakIncomeDay && peakIncomeDay.income > 0 ? peakIncomeDay : null,
+    largestExpense,
+    noSpendDays,
+    totalDaysWithExpense,
+    avgExpenseOnSpendDays,
+    topSpendingDays,
+  };
+}
+
 // ==================== PLANNED EXPENSES QUERIES ====================
 
 export async function getPlannedExpenses(

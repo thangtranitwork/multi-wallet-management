@@ -16,8 +16,9 @@ import dayjs from 'dayjs';
 import { useWallet } from '../context/WalletContext';
 import { THEME, formatVND } from '../constants';
 import * as queries from '../database/queries';
-import { RangeAnalytics } from '../database/queries';
+import { RangeAnalytics, AdvancedAnalyticsMetrics } from '../database/queries';
 import { hapticLight } from '../utils/haptics';
+import { DailyCashFlowChart } from '../components/DailyCashFlowChart';
 
 type TimeRangeKey = 'week' | 'month' | 'last_month' | 'year' | 'all';
 
@@ -46,6 +47,7 @@ export const AnalyticsScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
 
   const [selectedRange, setSelectedRange] = useState<TimeRangeKey>('month');
   const [rangeData, setRangeData] = useState<RangeAnalytics | null>(null);
+  const [advancedData, setAdvancedData] = useState<AdvancedAnalyticsMetrics | null>(null);
   const [loadingRange, setLoadingRange] = useState<boolean>(true);
 
   // Tính khoảng ngày dựa trên filter
@@ -83,8 +85,12 @@ export const AnalyticsScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
     try {
       setLoadingRange(true);
       const { start, end } = getDateBounds(selectedRange);
-      const data = await queries.getAnalyticsByRange(db, start, end);
+      const [data, advanced] = await Promise.all([
+        queries.getAnalyticsByRange(db, start, end),
+        queries.getAdvancedAnalyticsMetrics(db, start, end),
+      ]);
       setRangeData(data);
+      setAdvancedData(advanced);
     } catch (err) {
       console.warn('Lỗi tải dữ liệu phân tích:', err);
     } finally {
@@ -288,6 +294,178 @@ export const AnalyticsScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
                 </View>
               </View>
             </View>
+
+            {/* Daily Cash Flow Chart */}
+            <View style={styles.cardShadow}>
+              <View style={styles.cardInner}>
+                <View style={[styles.folderTab, { backgroundColor: THEME.popBlue }]}>
+                  <Text style={styles.folderTabText}>BIỂU ĐỒ THEO NGÀY</Text>
+                </View>
+                <View style={styles.cardBody}>
+                  <DailyCashFlowChart
+                    dailyStats={advancedData?.dailyStats ?? []}
+                    isBalanceHidden={isBalanceHidden}
+                    avgDailyExpense={dailyAverage}
+                  />
+                </View>
+              </View>
+            </View>
+
+            {/* Smart Insights */}
+            {advancedData && (
+              <View style={styles.cardShadow}>
+                <View style={styles.cardInner}>
+                  <View style={[styles.folderTab, { backgroundColor: THEME.popPink }]}>
+                    <Text style={styles.folderTabText}>INSIGHTS CHI TIÊU</Text>
+                  </View>
+                  <View style={styles.cardBody}>
+                    <View style={styles.insightGrid}>
+                      {/* Peak Expense Day */}
+                      <View style={[styles.insightCard, styles.insightCardBorder]}>
+                        <Text style={styles.insightIcon}>🔥</Text>
+                        <Text style={styles.insightLabel}>NGÀY CHI NHIỀU NHẤT</Text>
+                        {advancedData.peakExpenseDay ? (
+                          <>
+                            <Text style={[styles.insightValue, { color: '#E11D48' }]}>
+                              {isBalanceHidden ? '••••••' : formatVND(advancedData.peakExpenseDay.expense)}
+                            </Text>
+                            <Text style={styles.insightSub}>
+                              {dayjs(advancedData.peakExpenseDay.date).format('DD/MM/YYYY')}
+                            </Text>
+                          </>
+                        ) : (
+                          <Text style={styles.insightValueEmpty}>—</Text>
+                        )}
+                      </View>
+
+                      {/* Peak Income Day */}
+                      <View style={[styles.insightCard, styles.insightCardBorder]}>
+                        <Text style={styles.insightIcon}>💵</Text>
+                        <Text style={styles.insightLabel}>NGÀY THU NHIỀU NHẤT</Text>
+                        {advancedData.peakIncomeDay ? (
+                          <>
+                            <Text style={[styles.insightValue, { color: '#15803D' }]}>
+                              {isBalanceHidden ? '••••••' : formatVND(advancedData.peakIncomeDay.income)}
+                            </Text>
+                            <Text style={styles.insightSub}>
+                              {dayjs(advancedData.peakIncomeDay.date).format('DD/MM/YYYY')}
+                            </Text>
+                          </>
+                        ) : (
+                          <Text style={styles.insightValueEmpty}>—</Text>
+                        )}
+                      </View>
+
+                      {/* No-spend days */}
+                      <View style={[styles.insightCard, styles.insightCardBorder]}>
+                        <Text style={styles.insightIcon}>🛡️</Text>
+                        <Text style={styles.insightLabel}>NGÀY KHÔNG TIÊU TIỀN</Text>
+                        <Text style={[styles.insightValue, { color: '#059669' }]}>
+                          {advancedData.noSpendDays}
+                        </Text>
+                        <Text style={styles.insightSub}>ngày trong kỳ</Text>
+                      </View>
+
+                      {/* Avg on spend days */}
+                      <View style={[styles.insightCard, styles.insightCardBorder]}>
+                        <Text style={styles.insightIcon}>📊</Text>
+                        <Text style={styles.insightLabel}>TB KHI RÚT VÍ</Text>
+                        <Text style={styles.insightValue}>
+                          {isBalanceHidden ? '••••••' : formatVND(advancedData.avgExpenseOnSpendDays)}
+                        </Text>
+                        <Text style={styles.insightSub}>mỗi ngày có chi</Text>
+                      </View>
+                    </View>
+
+                    {/* Largest transaction */}
+                    {advancedData.largestExpense && (
+                      <View style={styles.largestTxCard}>
+                        <View style={styles.largestTxLeft}>
+                          <View
+                            style={[
+                              styles.largestTxIcon,
+                              { backgroundColor: advancedData.largestExpense.category_color || THEME.popPink },
+                            ]}
+                          >
+                            <Ionicons
+                              name={(advancedData.largestExpense.category_icon as any) || 'pricetag-outline'}
+                              size={16}
+                              color="#FFFFFF"
+                            />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.largestTxTitle}>🏷️ Khoản chi lớn nhất</Text>
+                            <Text style={styles.largestTxNote} numberOfLines={1}>
+                              {advancedData.largestExpense.note ||
+                                advancedData.largestExpense.category_name ||
+                                'Không có ghi chú'}
+                            </Text>
+                            <Text style={styles.largestTxDate}>
+                              {dayjs(advancedData.largestExpense.transacted_at).format('DD/MM/YYYY')}
+                            </Text>
+                          </View>
+                        </View>
+                        <Text style={[styles.largestTxAmount, { color: '#E11D48' }]}>
+                          {isBalanceHidden ? '••••••' : formatVND(advancedData.largestExpense.amount)}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              </View>
+            )}
+
+            {/* Top Spending Days */}
+            {advancedData && advancedData.topSpendingDays.length > 0 && (
+              <View style={styles.cardShadow}>
+                <View style={styles.cardInner}>
+                  <View style={[styles.folderTab, { backgroundColor: THEME.popOrange }]}>
+                    <Text style={styles.folderTabText}>TOP NGÀY CHI NHIỀU NHẤT</Text>
+                  </View>
+                  <View style={styles.cardBody}>
+                    <Text style={styles.sectionHeaderTitle}>5 ngày chi tiêu tốn kém nhất</Text>
+                    {advancedData.topSpendingDays.map((day, idx) => {
+                      const maxSpend = advancedData.topSpendingDays[0].expense;
+                      const pct = maxSpend > 0 ? Math.round((day.expense / maxSpend) * 100) : 0;
+                      const rankColors = ['#E11D48', '#FB7185', '#FB923C', '#FACC15', '#A3A3A3'];
+                      return (
+                        <View key={day.date} style={styles.topDayRow}>
+                          <View
+                            style={[
+                              styles.topDayRankBadge,
+                              { backgroundColor: rankColors[idx] ?? '#A3A3A3' },
+                            ]}
+                          >
+                            <Text style={styles.topDayRankText}>#{idx + 1}</Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <View style={styles.topDayHeader}>
+                              <Text style={styles.topDayDate}>
+                                {dayjs(day.date).format('DD/MM/YYYY')}
+                              </Text>
+                              <Text style={[styles.topDayAmount, { color: '#E11D48' }]}>
+                                {isBalanceHidden ? '••••••' : formatVND(day.expense)}
+                              </Text>
+                            </View>
+                            <View style={styles.topDayTrack}>
+                              <View
+                                style={[
+                                  styles.topDayFill,
+                                  {
+                                    width: `${pct}%`,
+                                    backgroundColor: rankColors[idx] ?? '#A3A3A3',
+                                  },
+                                ]}
+                              />
+                            </View>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                </View>
+              </View>
+            )}
 
             {/* Category Spending Breakdown */}
             <View style={styles.cardShadow}>
@@ -763,6 +941,151 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   allocFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+
+  // Smart insights grid
+  insightGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 14,
+  },
+  insightCard: {
+    width: '47%',
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: '#F9FAFB',
+    alignItems: 'flex-start',
+    gap: 2,
+  },
+  insightCardBorder: {
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+  },
+  insightIcon: {
+    fontSize: 18,
+    marginBottom: 2,
+  },
+  insightLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#6B7280',
+    letterSpacing: 0.3,
+  },
+  insightValue: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#000000',
+    marginTop: 4,
+  },
+  insightValueEmpty: {
+    fontSize: 18,
+    fontWeight: '300',
+    color: '#D1D5DB',
+    marginTop: 4,
+  },
+  insightSub: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#9CA3AF',
+    marginTop: 1,
+  },
+
+  // Largest transaction card
+  largestTxCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    backgroundColor: '#FFF1F2',
+    gap: 10,
+  },
+  largestTxLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  largestTxIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  largestTxTitle: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#6B7280',
+    marginBottom: 1,
+  },
+  largestTxNote: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  largestTxDate: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#9CA3AF',
+    marginTop: 1,
+  },
+  largestTxAmount: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
+
+  // Top spending days
+  topDayRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 12,
+  },
+  topDayRankBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  topDayRankText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
+  topDayHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  topDayDate: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  topDayAmount: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  topDayTrack: {
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    overflow: 'hidden',
+  },
+  topDayFill: {
     height: '100%',
     borderRadius: 4,
   },
