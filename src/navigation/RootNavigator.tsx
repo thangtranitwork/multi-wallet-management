@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, StyleSheet, Pressable, Platform, Text } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, StyleSheet, Pressable, Platform, Text, Linking } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { DashboardScreen } from '../screens/DashboardScreen';
@@ -17,7 +17,38 @@ const NullComponent = () => null;
 
 export const RootNavigator: React.FC = () => {
   const [quickAddVisible, setQuickAddVisible] = useState(false);
+  const [quickAddType, setQuickAddType] = useState<'expense' | 'income' | 'transfer'>('expense');
   const [centerPressed, setCenterPressed] = useState(false);
+
+  useEffect(() => {
+    const handleDeepLink = (url: string | null) => {
+      if (!url) return;
+      try {
+        if (url.includes('type=income')) {
+          setQuickAddType('income');
+          setQuickAddVisible(true);
+        } else if (url.includes('type=expense')) {
+          setQuickAddType('expense');
+          setQuickAddVisible(true);
+        } else if (url.includes('quick-add')) {
+          setQuickAddType('expense');
+          setQuickAddVisible(true);
+        }
+      } catch (e) {
+        console.error('Error handling widget deep link:', e);
+      }
+    };
+
+    Linking.getInitialURL().then(handleDeepLink);
+
+    const subscription = Linking.addEventListener('url', (event) => {
+      handleDeepLink(event.url);
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
 
   return (
     <>
@@ -84,6 +115,7 @@ export const RootNavigator: React.FC = () => {
                     onPressOut={() => setCenterPressed(false)}
                     onPress={() => {
                       hapticMedium();
+                      setQuickAddType('expense');
                       setQuickAddVisible(true);
                     }}
                     style={styles.centerShadowBox}
@@ -164,6 +196,7 @@ export const RootNavigator: React.FC = () => {
       <QuickAddModal
         visible={quickAddVisible}
         onClose={() => setQuickAddVisible(false)}
+        defaultType={quickAddType}
       />
     </>
   );

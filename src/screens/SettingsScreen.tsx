@@ -23,6 +23,7 @@ import { useWallet } from '../context/WalletContext';
 import { useSecurity } from '../context/SecurityContext';
 import { CategoryManagementModal } from '../components/CategoryManagementModal';
 import { GoogleDriveSyncModal } from '../components/GoogleDriveSyncModal';
+import { syncWidgetData } from '../services/widgetSyncService';
 import { loadCloudBackupConfig } from '../services/cloudBackupStorage';
 import { useSQLiteContext } from 'expo-sqlite';
 import { THEME } from '../constants';
@@ -35,6 +36,7 @@ interface SettingsScreenProps {
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
   const {
     wallets,
+    summary,
     transactions,
     debts,
     categories,
@@ -782,6 +784,44 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
 
               <View style={styles.divider} />
 
+              {/* Home Screen Widget Settings */}
+              <View style={styles.settingRow}>
+                <View style={styles.settingRowLeft}>
+                  <View style={[styles.settingRowIconBox, { backgroundColor: THEME.popYellow }]}>
+                    <Ionicons name="apps-outline" size={18} color="#000000" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.settingRowTitle}>Tiện ích màn hình chính (Widget 4x2)</Text>
+                    <Text style={styles.settingRowDesc}>
+                      Xem nhanh số dư, thu/chi tháng, bấm mắt ẩn/hiện và tạo nhanh giao dịch (+/-).
+                    </Text>
+                  </View>
+                </View>
+                <Pressable
+                  style={styles.widgetSyncBtn}
+                  onPress={async () => {
+                    hapticSuccess();
+                    if (summary) {
+                      await syncWidgetData({
+                        totalAssets: summary.totalAssets,
+                        monthlyIncome: summary.monthIncome,
+                        monthlyExpense: summary.monthExpense,
+                        walletCount: wallets.length,
+                      });
+                      Alert.alert(
+                        'Đã đồng bộ Widget',
+                        'Dữ liệu tài chính mới nhất đã được gửi ra tiện ích ngoài màn hình chính.'
+                      );
+                    }
+                  }}
+                >
+                  <Ionicons name="refresh-outline" size={14} color="#000000" />
+                  <Text style={styles.widgetSyncBtnText}>Đồng bộ</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.divider} />
+
               {/* Reset Data Button */}
               <Pressable
                 style={styles.dangerResetBtn}
@@ -1392,6 +1432,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '900',
     color: '#E11D48',
+  },
+  widgetSyncBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  widgetSyncBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#000000',
   },
   footerContainer: {
     alignItems: 'center',

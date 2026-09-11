@@ -33,7 +33,27 @@
       "expo-sqlite",
       "expo-sharing",
       "expo-local-authentication",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "WalletWidget",
+              "label": "Ví Của Tôi - Số Dư & Thu Chi",
+              "minWidth": "250dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "maxResizeWidth": "380dp",
+              "maxResizeHeight": "180dp",
+              "resizeMode": "horizontal|vertical",
+              "description": "Xem số dư, thu chi tháng và tạo nhanh giao dịch (+/-)",
+              "updatePeriodMillis": 1800000
+            }
+          ]
+        }
+      ]
     ],
     "extra": {
       "eas": {

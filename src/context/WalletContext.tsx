@@ -16,6 +16,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import { hapticLight, hapticSuccess, hapticError } from '../utils/haptics';
 import { loadCloudBackupConfig, saveCloudBackupConfig } from '../services/cloudBackupStorage';
 import { uploadBackupToDrive } from '../services/googleDriveService';
+import { syncWidgetData } from '../services/widgetSyncService';
 
 interface WalletContextType {
   wallets: Wallet[];
@@ -175,6 +176,16 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setPlannedExpenses(fetchedPlanned);
       setSummary(fetchedSummary);
       setCategorySpendings(fetchedSpendings);
+
+      // Tự động đồng bộ số dư ra Android Home Screen Widget
+      if (fetchedSummary) {
+        syncWidgetData({
+          totalAssets: fetchedSummary.totalAssets,
+          monthlyIncome: fetchedSummary.monthIncome,
+          monthlyExpense: fetchedSummary.monthExpense,
+          walletCount: fetchedWallets.length,
+        });
+      }
     } catch (error) {
       console.error('Lỗi tải dữ liệu SQLite:', error);
     } finally {
