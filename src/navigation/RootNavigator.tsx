@@ -11,6 +11,7 @@ import { SettingsScreen } from '../screens/SettingsScreen';
 import { QuickAddModal } from '../components/QuickAddModal';
 import { THEME } from '../constants';
 import { hapticMedium } from '../utils/haptics';
+import { saveWidgetData, syncWidgetData } from '../services/widgetSyncService';
 
 const Tab = createBottomTabNavigator();
 const NullComponent = () => null;
@@ -24,7 +25,19 @@ export const RootNavigator: React.FC = () => {
     const handleDeepLink = (url: string | null) => {
       if (!url) return;
       try {
-        if (url.includes('type=income')) {
+        if (url.includes('unlock-widget')) {
+          // Mở app yêu cầu xác thực vân tay/PIN (qua LockScreenOverlay)
+          // Khi app được mở, hiển thị số dư trên widget
+          saveWidgetData({ isHidden: false }).then(async (updated) => {
+            await syncWidgetData({
+              totalAssets: updated.totalAssets,
+              monthlyIncome: updated.monthlyIncome,
+              monthlyExpense: updated.monthlyExpense,
+              isHidden: false,
+              isAppLockEnabled: true,
+            });
+          });
+        } else if (url.includes('type=income')) {
           setQuickAddType('income');
           setQuickAddVisible(true);
         } else if (url.includes('type=expense')) {

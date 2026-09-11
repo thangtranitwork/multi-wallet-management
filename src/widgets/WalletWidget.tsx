@@ -10,6 +10,7 @@ export interface WalletWidgetProps {
   monthlyIncome?: number;
   monthlyExpense?: number;
   isHidden?: boolean;
+  isAppLockEnabled?: boolean;
   lastUpdated?: string;
 }
 
@@ -36,10 +37,21 @@ export function WalletWidget({
   monthlyIncome = 0,
   monthlyExpense = 0,
   isHidden = true,
+  isAppLockEnabled = false,
 }: WalletWidgetProps) {
   const formattedAssets = isHidden ? '•••••••• ₫' : formatWidgetVND(totalAssets);
-  const formattedIncome = isHidden ? '••••••' : formatWidgetVND(monthlyIncome);
-  const formattedExpense = isHidden ? '••••••' : formatWidgetVND(monthlyExpense);
+  const formattedIncome = isHidden ? '••••••' : `+ ${formatWidgetVND(monthlyIncome)}`;
+  const formattedExpense = isHidden ? '••••••' : `- ${formatWidgetVND(monthlyExpense)}`;
+
+  // Khi số dư đang ẩn (isHidden == true):
+  // Nút Mắt LUÔN LUÔN mở app (OPEN_URI) để vào app xác thực/xem số dư,
+  // tuyệt đối KHÔNG cho phép tự ý hiển thị số dư ngầm ngoài launcher khi app đang tắt/đóng!
+  // Khi số dư đang hiển thị (isHidden == false):
+  // Nút Mắt cho phép ẩn ngay lập tức (TOGGLE_BALANCE) ngoài Home Screen để bảo vệ thông tin.
+  const eyeClickAction = isHidden ? 'OPEN_URI' : 'TOGGLE_BALANCE';
+  const eyeClickActionData = isHidden
+    ? { uri: 'com.thang.multiwallet://unlock-widget' }
+    : undefined;
 
   return (
     <FlexWidget
@@ -47,10 +59,10 @@ export function WalletWidget({
         height: 'match_parent',
         width: 'match_parent',
         backgroundColor: '#FAF8F5',
-        borderRadius: 16,
-        borderWidth: 2,
+        borderRadius: 18,
+        borderWidth: 2.5,
         borderColor: '#000000',
-        padding: 12,
+        padding: 10,
         justifyContent: 'space-between',
       }}
       clickAction="OPEN_APP"
@@ -64,7 +76,7 @@ export function WalletWidget({
           width: 'match_parent',
         }}
       >
-        {/* Nhãn thương hiệu Neo-brutalism */}
+        {/* Nhãn thương hiệu Neo-brutalism Vàng */}
         <FlexWidget
           style={{
             flexDirection: 'row',
@@ -73,7 +85,7 @@ export function WalletWidget({
             paddingHorizontal: 8,
             paddingVertical: 3,
             borderRadius: 6,
-            borderWidth: 1.5,
+            borderWidth: 2,
             borderColor: '#000000',
           }}
         >
@@ -88,27 +100,28 @@ export function WalletWidget({
           />
         </FlexWidget>
 
-        {/* Nút thao tác nhanh bên phải: [Ẩn/Hiện] [- Chi tiêu] [+ Thu nhập] */}
+        {/* Nút thao tác nhanh bên phải: [Mắt] [- Chi tiêu] [+ Thu nhập] */}
         <FlexWidget
           style={{
             flexDirection: 'row',
             alignItems: 'center',
           }}
         >
-          {/* Nút Bật/Tắt ẩn số dư trực tiếp trên Widget (Headless task) */}
+          {/* Nút Bật/Tắt ẩn số dư trực tiếp trên Widget */}
           <FlexWidget
             style={{
               width: 32,
               height: 32,
               backgroundColor: '#FFFFFF',
               borderRadius: 8,
-              borderWidth: 1.5,
+              borderWidth: 2,
               borderColor: '#000000',
               justifyContent: 'center',
               alignItems: 'center',
               marginRight: 6,
             }}
-            clickAction="TOGGLE_BALANCE"
+            clickAction={eyeClickAction}
+            clickActionData={eyeClickActionData}
           >
             <SvgWidget
               svg={isHidden ? EYE_OFF_SVG : EYE_OPEN_SVG}
@@ -123,7 +136,7 @@ export function WalletWidget({
               height: 32,
               backgroundColor: '#FEE2E2',
               borderRadius: 8,
-              borderWidth: 1.5,
+              borderWidth: 2,
               borderColor: '#000000',
               justifyContent: 'center',
               alignItems: 'center',
@@ -145,7 +158,7 @@ export function WalletWidget({
               height: 32,
               backgroundColor: '#DCFCE7',
               borderRadius: 8,
-              borderWidth: 1.5,
+              borderWidth: 2,
               borderColor: '#000000',
               justifyContent: 'center',
               alignItems: 'center',
@@ -161,22 +174,78 @@ export function WalletWidget({
         </FlexWidget>
       </FlexWidget>
 
-      {/* Thân giữa: Tổng tài sản (Khổ rộng 4 cột) */}
+      {/* Thân giữa: Khối VÀNG Tổng tài sản Neo-brutalist */}
       <FlexWidget
         style={{
           width: 'match_parent',
+          backgroundColor: '#FEF08A',
+          borderRadius: 12,
+          borderWidth: 2,
+          borderColor: '#000000',
+          paddingHorizontal: 12,
+          paddingVertical: 7,
           marginVertical: 4,
         }}
       >
-        <TextWidget
-          text="TỔNG TÀI SẢN"
+        <FlexWidget
           style={{
-            fontSize: 9,
-            fontWeight: '800',
-            color: '#6B7280',
-            letterSpacing: 0.5,
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            width: 'match_parent',
           }}
-        />
+        >
+          <TextWidget
+            text="TỔNG TÀI SẢN"
+            style={{
+              fontSize: 9,
+              fontWeight: '800',
+              color: '#713F12',
+              letterSpacing: 0.5,
+            }}
+          />
+
+          {isAppLockEnabled && isHidden ? (
+            <FlexWidget
+              style={{
+                backgroundColor: '#000000',
+                paddingHorizontal: 6,
+                paddingVertical: 2,
+                borderRadius: 4,
+              }}
+            >
+              <TextWidget
+                text="CHẠM MẮT ĐỂ MỞ"
+                style={{
+                  fontSize: 7,
+                  fontWeight: '900',
+                  color: '#FEF08A',
+                }}
+              />
+            </FlexWidget>
+          ) : (
+            <FlexWidget
+              style={{
+                backgroundColor: '#FFFFFF',
+                borderWidth: 1,
+                borderColor: '#000000',
+                paddingHorizontal: 5,
+                paddingVertical: 1,
+                borderRadius: 4,
+              }}
+            >
+              <TextWidget
+                text="VND"
+                style={{
+                  fontSize: 8,
+                  fontWeight: '900',
+                  color: '#000000',
+                }}
+              />
+            </FlexWidget>
+          )}
+        </FlexWidget>
+
         <TextWidget
           text={formattedAssets}
           style={{
@@ -188,65 +257,76 @@ export function WalletWidget({
         />
       </FlexWidget>
 
-      {/* Khung đáy: Thu & Chi tháng này */}
+      {/* Khung đáy: Hai Khối Bento Màu Sắc (Xanh lá Thu & Đỏ hồng Chi) */}
       <FlexWidget
         style={{
           flexDirection: 'row',
           justifyContent: 'space-between',
           alignItems: 'center',
           width: 'match_parent',
-          backgroundColor: '#FFFFFF',
-          paddingHorizontal: 10,
-          paddingVertical: 6,
-          borderRadius: 8,
-          borderWidth: 1.5,
-          borderColor: '#000000',
+          flexGap: 8,
         }}
       >
+        {/* Khối Thu Tháng (Xanh pastel) */}
         <FlexWidget
           style={{
-            flexDirection: 'row',
-            alignItems: 'center',
+            flex: 1,
+            backgroundColor: '#DCFCE7',
+            borderRadius: 10,
+            borderWidth: 2,
+            borderColor: '#000000',
+            paddingHorizontal: 10,
+            paddingVertical: 6,
           }}
         >
           <TextWidget
-            text="Thu tháng: "
+            text="THU THÁNG"
             style={{
-              fontSize: 10,
-              fontWeight: '700',
-              color: '#6B7280',
+              fontSize: 8,
+              fontWeight: '800',
+              color: '#166534',
+              letterSpacing: 0.5,
             }}
           />
           <TextWidget
             text={formattedIncome}
             style={{
-              fontSize: 11,
+              fontSize: 12,
               fontWeight: '900',
-              color: '#15803D',
+              color: '#14532D',
+              marginTop: 2,
             }}
           />
         </FlexWidget>
 
+        {/* Khối Chi Tháng (Hồng đỏ pastel) */}
         <FlexWidget
           style={{
-            flexDirection: 'row',
-            alignItems: 'center',
+            flex: 1,
+            backgroundColor: '#FEE2E2',
+            borderRadius: 10,
+            borderWidth: 2,
+            borderColor: '#000000',
+            paddingHorizontal: 10,
+            paddingVertical: 6,
           }}
         >
           <TextWidget
-            text="Chi tháng: "
+            text="CHI THÁNG"
             style={{
-              fontSize: 10,
-              fontWeight: '700',
-              color: '#6B7280',
+              fontSize: 8,
+              fontWeight: '800',
+              color: '#991B1B',
+              letterSpacing: 0.5,
             }}
           />
           <TextWidget
             text={formattedExpense}
             style={{
-              fontSize: 11,
+              fontSize: 12,
               fontWeight: '900',
-              color: '#E11D48',
+              color: '#991B1B',
+              marginTop: 2,
             }}
           />
         </FlexWidget>

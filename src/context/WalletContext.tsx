@@ -116,6 +116,14 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       // Đang hiển thị -> Muốn che: che ngay lập tức
       hapticLight();
       setIsBalanceHidden(true);
+      if (summary) {
+        await syncWidgetData({
+          totalAssets: summary.totalAssets,
+          monthlyIncome: summary.monthIncome,
+          monthlyExpense: summary.monthExpense,
+          isHidden: true,
+        });
+      }
       return;
     }
 
@@ -135,6 +143,14 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (result.success) {
           hapticSuccess();
           setIsBalanceHidden(false);
+          if (summary) {
+            await syncWidgetData({
+              totalAssets: summary.totalAssets,
+              monthlyIncome: summary.monthIncome,
+              monthlyExpense: summary.monthExpense,
+              isHidden: false,
+            });
+          }
         } else {
           hapticError();
         }
@@ -142,11 +158,19 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         // Thiết bị không có vân tay / chưa cài vân tay -> mở trực tiếp
         hapticLight();
         setIsBalanceHidden(false);
+        if (summary) {
+          await syncWidgetData({
+            totalAssets: summary.totalAssets,
+            monthlyIncome: summary.monthIncome,
+            monthlyExpense: summary.monthExpense,
+            isHidden: false,
+          });
+        }
       }
     } catch {
       setIsBalanceHidden(false);
     }
-  }, [isBalanceHidden]);
+  }, [isBalanceHidden, summary]);
 
   const refreshData = useCallback(async () => {
     try {
@@ -179,10 +203,12 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       // Tự động đồng bộ số dư ra Android Home Screen Widget
       if (fetchedSummary) {
-        syncWidgetData({
+        const lockVal = await queries.getAppSetting(db, 'is_app_lock_enabled', 'false');
+        await syncWidgetData({
           totalAssets: fetchedSummary.totalAssets,
           monthlyIncome: fetchedSummary.monthIncome,
           monthlyExpense: fetchedSummary.monthExpense,
+          isAppLockEnabled: lockVal === 'true',
           walletCount: fetchedWallets.length,
         });
       }

@@ -8,6 +8,7 @@ export interface WidgetData {
   monthlyIncome: number;
   monthlyExpense: number;
   isHidden: boolean;
+  isAppLockEnabled?: boolean;
   walletCount: number;
   lastUpdated: string;
 }
@@ -17,6 +18,7 @@ const DEFAULT_WIDGET_DATA: WidgetData = {
   monthlyIncome: 0,
   monthlyExpense: 0,
   isHidden: true,
+  isAppLockEnabled: false,
   walletCount: 0,
   lastUpdated: '',
 };
@@ -82,6 +84,7 @@ export async function syncWidgetData(data: {
   monthlyIncome?: number;
   monthlyExpense?: number;
   isHidden?: boolean;
+  isAppLockEnabled?: boolean;
   walletCount?: number;
 }): Promise<void> {
   try {
@@ -96,6 +99,7 @@ export async function syncWidgetData(data: {
           monthlyIncome: updated.monthlyIncome,
           monthlyExpense: updated.monthlyExpense,
           isHidden: updated.isHidden,
+          isAppLockEnabled: updated.isAppLockEnabled,
           lastUpdated: updated.lastUpdated,
         })
       ),

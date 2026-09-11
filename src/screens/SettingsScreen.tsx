@@ -806,6 +806,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                         totalAssets: summary.totalAssets,
                         monthlyIncome: summary.monthIncome,
                         monthlyExpense: summary.monthExpense,
+                        isAppLockEnabled,
                         walletCount: wallets.length,
                       });
                       Alert.alert(

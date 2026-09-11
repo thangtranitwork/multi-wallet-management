@@ -11,6 +11,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as queries from '../database/queries';
 import { setHapticsEnabled as setGlobalHaptics } from '../utils/haptics';
+import { saveWidgetData, syncWidgetData } from '../services/widgetSyncService';
 
 interface SecurityContextType {
   isLocked: boolean;
@@ -91,8 +92,29 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     loadSettings();
 
-    // Lắng nghe trạng thái ứng dụng (Background -> Active)
+    // Lắng nghe trạng thái ứng dụng (Background -> Active và ngược lại)
     const subscription = AppState.addEventListener('change', (nextAppState) => {
+      // Khi người dùng thoát app / tắt app sang background
+      if (
+        appStateRef.current === 'active' &&
+        nextAppState.match(/inactive|background/)
+      ) {
+        queries.getAppSetting(db, 'is_app_lock_enabled', 'false').then((val) => {
+          if (val === 'true') {
+            // Tự động ẩn số dư trên widget khi app tắt/đóng để đảm bảo an toàn tuyệt đối
+            saveWidgetData({ isHidden: true }).then((updated) => {
+              syncWidgetData({
+                totalAssets: updated.totalAssets,
+                monthlyIncome: updated.monthlyIncome,
+                monthlyExpense: updated.monthlyExpense,
+                isHidden: true,
+                isAppLockEnabled: true,
+              });
+            });
+          }
+        });
+      }
+
       if (
         appStateRef.current.match(/inactive|background/) &&
         nextAppState === 'active'
@@ -171,6 +193,7 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (!enabled) {
         setIsLocked(false);
       }
+      syncWidgetData({ isAppLockEnabled: enabled });
     },
     [db]
   );
