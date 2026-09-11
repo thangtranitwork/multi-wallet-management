@@ -92,34 +92,13 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     loadSettings();
 
-    // Lắng nghe trạng thái ứng dụng (Background -> Active và ngược lại)
+    // Lắng nghe trạng thái ứng dụng (Background -> Active)
     const subscription = AppState.addEventListener('change', (nextAppState) => {
-      // Khi người dùng thoát app / tắt app sang background
-      if (
-        appStateRef.current === 'active' &&
-        nextAppState.match(/inactive|background/)
-      ) {
-        queries.getAppSetting(db, 'is_app_lock_enabled', 'false').then((val) => {
-          if (val === 'true') {
-            // Tự động ẩn số dư trên widget khi app tắt/đóng để đảm bảo an toàn tuyệt đối
-            saveWidgetData({ isHidden: true }).then((updated) => {
-              syncWidgetData({
-                totalAssets: updated.totalAssets,
-                monthlyIncome: updated.monthlyIncome,
-                monthlyExpense: updated.monthlyExpense,
-                isHidden: true,
-                isAppLockEnabled: true,
-              });
-            });
-          }
-        });
-      }
-
       if (
         appStateRef.current.match(/inactive|background/) &&
         nextAppState === 'active'
       ) {
-        // App quay trở lại màn hình chính
+        // App quay trở lại màn hình chính -> Khóa lại màn hình nếu có bật mã PIN/vân tay
         queries.getAppSetting(db, 'is_app_lock_enabled', 'false').then((val) => {
           if (val === 'true') {
             setIsLocked(true);
