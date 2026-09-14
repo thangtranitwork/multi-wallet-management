@@ -7,10 +7,10 @@ import {
   Pressable,
   ScrollView,
   TextInput,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useCustomAlert } from './CustomAlertModal';
 import { useWallet } from '../context/WalletContext';
 import { Category } from '../types';
 import { THEME } from '../constants';
@@ -68,6 +68,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
   onClose,
 }) => {
   const { categories, addCategory, editCategory, removeCategory } = useWallet();
+  const { showAlert, showConfirm, AlertModalComponent } = useCustomAlert(false);
 
   const [activeTab, setActiveTab] = useState<'expense' | 'income'>('expense');
 
@@ -101,7 +102,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
   const handleSaveCategory = async () => {
     if (!nameInput.trim()) {
       hapticError();
-      Alert.alert('Thiếu thông tin', 'Vui lòng nhập tên danh mục');
+      showAlert('Thiếu thông tin', 'Vui lòng nhập tên danh mục');
       return;
     }
 
@@ -126,26 +127,20 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
       setEditorVisible(false);
     } catch (err: any) {
       hapticError();
-      Alert.alert('Lỗi', err?.message || 'Không thể lưu danh mục');
+      showAlert('Lỗi', err?.message || 'Không thể lưu danh mục');
     }
   };
 
   const handleDeleteCategory = (cat: Category) => {
     hapticLight();
-    Alert.alert(
+    showConfirm(
       'Xóa danh mục',
       `Bạn có chắc chắn muốn xóa danh mục "${cat.name}"? Các giao dịch thuộc danh mục này sẽ chuyển về "Chưa phân loại".`,
-      [
-        { text: 'Hủy', style: 'cancel' },
-        {
-          text: 'Xóa',
-          style: 'destructive',
-          onPress: async () => {
-            await removeCategory(cat.id);
-            hapticSuccess();
-          },
-        },
-      ]
+      async () => {
+        await removeCategory(cat.id);
+        hapticSuccess();
+      },
+      { destructive: true, confirmText: 'Xóa danh mục' }
     );
   };
 
@@ -391,6 +386,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
             </View>
           </View>
         </Modal>
+        {AlertModalComponent}
       </SafeAreaView>
     </Modal>
   );

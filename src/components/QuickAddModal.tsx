@@ -7,9 +7,9 @@ import {
   Pressable,
   ScrollView,
   TextInput,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useCustomAlert } from './CustomAlertModal';
 import dayjs from 'dayjs';
 import { useWallet } from '../context/WalletContext';
 import { NeoDropdown } from './NeoDropdown';
@@ -24,6 +24,9 @@ interface QuickAddModalProps {
   prefillCategoryId?: string;
   prefillAmount?: number;
   prefillNote?: string;
+  prefillWalletId?: string;
+  prefillToWalletId?: string;
+  prefillDate?: Date;
 }
 
 export const QuickAddModal: React.FC<QuickAddModalProps> = ({
@@ -33,8 +36,12 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
   prefillCategoryId,
   prefillAmount,
   prefillNote,
+  prefillWalletId,
+  prefillToWalletId,
+  prefillDate,
 }) => {
   const { wallets, categories, transactions, addTransaction } = useWallet();
+  const { showAlert, AlertModalComponent } = useCustomAlert(false);
 
   const [type, setType] = useState<'expense' | 'income' | 'transfer'>(defaultType);
   const [prediction, setPrediction] = useState<PredictionResult | null>(null);
@@ -56,14 +63,23 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
       const initialNote = prefillNote || '';
       setAmountStr(initialAmt);
       setNote(initialNote);
-      setSelectedDate(new Date());
+      if (prefillDate) {
+        setSelectedDate(prefillDate);
+        setPickerMonth(prefillDate);
+      } else {
+        setSelectedDate(new Date());
+        setPickerMonth(new Date());
+      }
       setIsPickerExpanded(false);
-      setPickerMonth(new Date());
-      if (wallets.length > 0) {
+      if (prefillWalletId) {
+        setSelectedWalletId(prefillWalletId);
+      } else if (wallets.length > 0) {
         setSelectedWalletId(wallets[0].id);
-        if (wallets.length > 1) {
-          setSelectedToWalletId(wallets[1].id);
-        }
+      }
+      if (prefillToWalletId) {
+        setSelectedToWalletId(prefillToWalletId);
+      } else if (wallets.length > 1) {
+        setSelectedToWalletId(wallets[1].id);
       }
 
       // Run smart category prediction
@@ -294,23 +310,23 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
   const handleSave = async () => {
     if (amountNumber <= 0) {
       hapticError();
-      Alert.alert('Số tiền không hợp lệ', 'Vui lòng nhập số tiền lớn hơn 0');
+      showAlert('Số tiền không hợp lệ', 'Vui lòng nhập số tiền lớn hơn 0');
       return;
     }
     if (!selectedWalletId) {
       hapticError();
-      Alert.alert('Chưa chọn ví', 'Vui lòng chọn nguồn tiền');
+      showAlert('Chưa chọn ví', 'Vui lòng chọn nguồn tiền');
       return;
     }
     if (type === 'transfer') {
       if (!selectedToWalletId) {
         hapticError();
-        Alert.alert('Chưa chọn ví đích', 'Vui lòng chọn ví nhận tiền');
+        showAlert('Chưa chọn ví đích', 'Vui lòng chọn ví nhận tiền');
         return;
       }
       if (selectedWalletId === selectedToWalletId) {
         hapticError();
-        Alert.alert('Ví trùng nhau', 'Ví nguồn và ví đích không được trùng nhau');
+        showAlert('Ví trùng nhau', 'Ví nguồn và ví đích không được trùng nhau');
         return;
       }
     }
@@ -329,7 +345,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
       onClose();
     } catch (error: any) {
       hapticError();
-      Alert.alert('Lỗi lưu giao dịch', error?.message || 'Đã có lỗi xảy ra');
+      showAlert('Lỗi lưu giao dịch', error?.message || 'Đã có lỗi xảy ra');
     }
   };
 
@@ -935,6 +951,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
             </Pressable>
           </ScrollView>
         </View>
+        {AlertModalComponent}
       </View>
     </Modal>
   );

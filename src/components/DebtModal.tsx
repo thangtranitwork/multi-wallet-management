@@ -7,9 +7,9 @@ import {
   Pressable,
   ScrollView,
   TextInput,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useCustomAlert } from './CustomAlertModal';
 import { useWallet } from '../context/WalletContext';
 import { Debt } from '../types';
 import { THEME, formatVND } from '../constants';
@@ -31,6 +31,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({
   defaultType = 'lend',
 }) => {
   const { wallets, addDebt, payOrCollectDebt, isBalanceHidden } = useWallet();
+  const { showAlert, AlertModalComponent } = useCustomAlert(false);
   const effectiveDebt = debtToPay || targetDebt;
   const isPaymentMode = !!effectiveDebt;
 
@@ -93,12 +94,12 @@ export const DebtModal: React.FC<DebtModalProps> = ({
     const amount = parseInt(amountStr, 10) || 0;
     if (!personName.trim()) {
       hapticError();
-      Alert.alert('Thiếu thông tin', 'Vui lòng nhập tên người');
+      showAlert('Thiếu thông tin', 'Vui lòng nhập tên người');
       return;
     }
     if (amount <= 0) {
       hapticError();
-      Alert.alert('Số tiền không hợp lệ', 'Vui lòng nhập số tiền lớn hơn 0');
+      showAlert('Số tiền không hợp lệ', 'Vui lòng nhập số tiền lớn hơn 0');
       return;
     }
 
@@ -119,7 +120,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({
       onClose();
     } catch (err: any) {
       hapticError();
-      Alert.alert('Lỗi', err?.message || 'Không thể tạo khoản nợ');
+      showAlert('Lỗi', err?.message || 'Không thể tạo khoản nợ');
     }
   };
 
@@ -128,12 +129,12 @@ export const DebtModal: React.FC<DebtModalProps> = ({
     const payAmount = parseInt(payAmountStr, 10) || 0;
     if (payAmount <= 0) {
       hapticError();
-      Alert.alert('Số tiền không hợp lệ', 'Vui lòng nhập số tiền lớn hơn 0');
+      showAlert('Số tiền không hợp lệ', 'Vui lòng nhập số tiền lớn hơn 0');
       return;
     }
     if (!selectedWalletId) {
       hapticError();
-      Alert.alert('Chưa chọn ví', 'Vui lòng chọn ví biến động');
+      showAlert('Chưa chọn ví', 'Vui lòng chọn ví biến động');
       return;
     }
 
@@ -148,7 +149,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({
       onClose();
     } catch (err: any) {
       hapticError();
-      Alert.alert('Lỗi thanh toán', err?.message || 'Đã có lỗi xảy ra');
+      showAlert('Lỗi thanh toán', err?.message || 'Đã có lỗi xảy ra');
     }
   };
 
@@ -404,6 +405,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({
             </Pressable>
           </ScrollView>
         </View>
+        {AlertModalComponent}
       </View>
     </Modal>
   );

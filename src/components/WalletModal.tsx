@@ -8,9 +8,9 @@ import {
   ScrollView,
   TextInput,
   Switch,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useCustomAlert } from './CustomAlertModal';
 import { useWallet } from '../context/WalletContext';
 import { Wallet, WalletType } from '../types';
 import { THEME, WALLET_TYPES, WALLET_COLORS, WALLET_ICONS, formatVND } from '../constants';
@@ -33,6 +33,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   mode,
 }) => {
   const { addWallet, editWallet, adjustBalance, removeWallet } = useWallet();
+  const { showAlert, showConfirm, AlertModalComponent } = useCustomAlert(false);
 
   const currentWallet = wallet || targetWallet || null;
   const isAdjust = mode === 'adjust' || isAdjustMode;
@@ -83,20 +84,20 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     if (isAdjust && currentWallet) {
       const newBal = parseInt(adjustBalanceStr.replace(/[^0-9-]/g, ''), 10);
       if (isNaN(newBal)) {
-        Alert.alert('Thiếu thông tin', 'Vui lòng nhập số dư thực tế mới hợp lệ');
+        showAlert('Thiếu thông tin', 'Vui lòng nhập số dư thực tế mới hợp lệ');
         return;
       }
       try {
         await adjustBalance(currentWallet.id, newBal, adjustNote.trim());
         onClose();
       } catch (err: any) {
-        Alert.alert('Lỗi', err?.message || 'Không thể điều chỉnh số dư');
+        showAlert('Lỗi', err?.message || 'Không thể điều chỉnh số dư');
       }
       return;
     }
 
     if (!name.trim()) {
-      Alert.alert('Thiếu thông tin', 'Vui lòng nhập tên nguồn tiền / ví');
+      showAlert('Thiếu thông tin', 'Vui lòng nhập tên nguồn tiền / ví');
       return;
     }
 
@@ -130,26 +131,20 @@ export const WalletModal: React.FC<WalletModalProps> = ({
       }
       onClose();
     } catch (err: any) {
-      Alert.alert('Lỗi', err?.message || 'Không thể lưu ví');
+      showAlert('Lỗi', err?.message || 'Không thể lưu ví');
     }
   };
 
   const handleDelete = () => {
     if (!currentWallet) return;
-    Alert.alert(
+    showConfirm(
       'Xóa nguồn tiền',
       `Ngài có chắc chắn muốn xóa "${currentWallet.name}"? Toàn bộ giao dịch liên quan sẽ bị xóa.`,
-      [
-        { text: 'Hủy', style: 'cancel' },
-        {
-          text: 'Xóa',
-          style: 'destructive',
-          onPress: async () => {
-            await removeWallet(currentWallet.id);
-            onClose();
-          },
-        },
-      ]
+      async () => {
+        await removeWallet(currentWallet.id);
+        onClose();
+      },
+      { destructive: true, confirmText: 'Xóa vĩnh viễn' }
     );
   };
 
@@ -413,6 +408,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
             )}
           </ScrollView>
         </View>
+        {AlertModalComponent}
       </View>
     </Modal>
   );

@@ -7,7 +7,6 @@ import {
   Pressable,
   TextInput,
   RefreshControl,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,6 +17,7 @@ import { QuickAddModal } from '../components/QuickAddModal';
 import { SplitTransactionModal } from '../components/SplitTransactionModal';
 import { TransactionDetailModal } from '../components/TransactionDetailModal';
 import { NeoDropdown } from '../components/NeoDropdown';
+import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
 import { Transaction } from '../types';
 import { THEME, formatVND } from '../constants';
 
@@ -39,6 +39,15 @@ export const TransactionsScreen: React.FC = () => {
   const [quickAddVisible, setQuickAddVisible] = useState(false);
   const [splitTargetTx, setSplitTargetTx] = useState<Transaction | null>(null);
   const [selectedDetailTx, setSelectedDetailTx] = useState<Transaction | null>(null);
+  const [recreateTx, setRecreateTx] = useState<{
+    defaultType?: 'expense' | 'income' | 'transfer';
+    amount?: number;
+    categoryId?: string;
+    walletId?: string;
+    toWalletId?: string;
+    note?: string;
+    date?: Date;
+  } | null>(null);
 
   // Filter transactions
   const filteredTransactions = transactions.filter(t => {
@@ -89,22 +98,7 @@ export const TransactionsScreen: React.FC = () => {
 
   const dateKeys = Object.keys(groupedTransactions).sort((a, b) => b.localeCompare(a));
 
-  const handleDelete = (tx: Transaction) => {
-    Alert.alert(
-      'Xóa giao dịch',
-      `Ngài có chắc muốn xóa giao dịch ${formatVND(tx.amount)}? Số dư ví sẽ được hoàn tác tự động.`,
-      [
-        { text: 'Hủy', style: 'cancel' },
-        {
-          text: 'Xóa',
-          style: 'destructive',
-          onPress: async () => {
-            await removeTransaction(tx.id);
-          },
-        },
-      ]
-    );
-  };
+  const [txToDelete, setTxToDelete] = useState<Transaction | null>(null);
 
   const typeFilterOptions = [
     { id: 'all', label: 'Tất cả loại', icon: 'apps-outline' },
@@ -275,7 +269,7 @@ export const TransactionsScreen: React.FC = () => {
                     transaction={tx}
                     isBalanceHidden={isBalanceHidden}
                     onPress={() => setSelectedDetailTx(tx)}
-                    onDelete={() => handleDelete(tx)}
+                    onDelete={() => setTxToDelete(tx)}
                   />
                 ))}
               </View>
@@ -301,7 +295,17 @@ export const TransactionsScreen: React.FC = () => {
       {/* Quick Add Modal */}
       <QuickAddModal
         visible={quickAddVisible}
-        onClose={() => setQuickAddVisible(false)}
+        onClose={() => {
+          setQuickAddVisible(false);
+          setRecreateTx(null);
+        }}
+        defaultType={recreateTx?.defaultType || 'expense'}
+        prefillAmount={recreateTx?.amount}
+        prefillCategoryId={recreateTx?.categoryId}
+        prefillWalletId={recreateTx?.walletId}
+        prefillToWalletId={recreateTx?.toWalletId}
+        prefillNote={recreateTx?.note}
+        prefillDate={recreateTx?.date}
       />
 
       {/* Transaction Detail Modal */}
@@ -317,7 +321,22 @@ export const TransactionsScreen: React.FC = () => {
           setSelectedDetailTx(null);
           setSplitTargetTx(tx);
         }}
-        onDelete={handleDelete}
+        onRecreate={tx => {
+          setSelectedDetailTx(null);
+          const tType = tx.type === 'expense' || tx.type === 'income' || tx.type === 'transfer'
+            ? tx.type
+            : 'expense';
+          setRecreateTx({
+            defaultType: tType,
+            amount: tx.amount,
+            categoryId: tx.category_id || undefined,
+            walletId: tx.wallet_id,
+            toWalletId: tx.to_wallet_id || undefined,
+            note: tx.note || undefined,
+            date: new Date(tx.transacted_at),
+          });
+          setQuickAddVisible(true);
+        }}
       />
 
       {/* Split Transaction Modal */}
@@ -325,6 +344,35 @@ export const TransactionsScreen: React.FC = () => {
         visible={!!splitTargetTx}
         onClose={() => setSplitTargetTx(null)}
         transaction={splitTargetTx}
+      />
+
+      {/* Delete Confirmation Modal (NO system Alert) */}
+      <DeleteConfirmModal
+        visible={!!txToDelete}
+        transaction={txToDelete}
+        isBalanceHidden={isBalanceHidden}
+        onClose={() => setTxToDelete(null)}
+        onConfirmDelete={async tx => {
+          await removeTransaction(tx.id);
+          setTxToDelete(null);
+        }}
+        onRecreate={tx => {
+          setTxToDelete(null);
+          const tType =
+            tx.type === 'expense' || tx.type === 'income' || tx.type === 'transfer'
+              ? tx.type
+              : 'expense';
+          setRecreateTx({
+            defaultType: tType,
+            amount: tx.amount,
+            categoryId: tx.category_id || undefined,
+            walletId: tx.wallet_id,
+            toWalletId: tx.to_wallet_id || undefined,
+            note: tx.note || undefined,
+            date: new Date(tx.transacted_at),
+          });
+          setQuickAddVisible(true);
+        }}
       />
     </SafeAreaView>
   );

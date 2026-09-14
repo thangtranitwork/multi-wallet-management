@@ -5,10 +5,10 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  Alert,
   Share,
   ActivityIndicator,
 } from 'react-native';
+import { useCustomAlert } from '../components/CustomAlertModal';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useSQLiteContext } from 'expo-sqlite';
@@ -19,6 +19,7 @@ import * as queries from '../database/queries';
 import { RangeAnalytics, AdvancedAnalyticsMetrics } from '../database/queries';
 import { hapticLight } from '../utils/haptics';
 import { DailyCashFlowChart } from '../components/DailyCashFlowChart';
+import { CategoryPieChart } from '../components/CategoryPieChart';
 
 type TimeRangeKey = 'week' | 'month' | 'last_month' | 'year' | 'all';
 
@@ -37,13 +38,9 @@ const TIME_RANGES: TimeRangeOption[] = [
 
 export const AnalyticsScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
   const db = useSQLiteContext();
-  const {
-    wallets,
-    transactions,
-    debts,
-    summary,
-    isBalanceHidden,
-  } = useWallet();
+  const { wallets, transactions, debts, summary, categories, isBalanceHidden, toggleHideBalance } =
+    useWallet();
+  const { showAlert, AlertModalComponent } = useCustomAlert(true);
 
   const [selectedRange, setSelectedRange] = useState<TimeRangeKey>('month');
   const [rangeData, setRangeData] = useState<RangeAnalytics | null>(null);
@@ -140,7 +137,7 @@ export const AnalyticsScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
         title: `MultiWallet_Backup_${new Date().toISOString().slice(0, 10)}.json`,
       });
     } catch (err: any) {
-      Alert.alert('Lỗi xuất dữ liệu', err?.message || 'Không thể chia sẻ file sao lưu');
+      showAlert('Lỗi xuất dữ liệu', err?.message || 'Không thể chia sẻ file sao lưu');
     }
   };
 
@@ -518,49 +515,57 @@ export const AnalyticsScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
                   <Text style={styles.sectionHeaderTitle}>Chi tiết theo từng danh mục</Text>
 
                   {rangeData && rangeData.categorySpendings.length > 0 ? (
-                    rangeData.categorySpendings.map(cat => (
-                      <View key={cat.category_id} style={styles.categorySpendItem}>
-                        <View style={styles.catSpendHeader}>
-                          <View style={styles.catTitleLeft}>
+                    rangeData.categorySpendings.length < 6 ? (
+                      <CategoryPieChart
+                        data={rangeData.categorySpendings}
+                        totalAmount={rangeData.expense}
+                        isBalanceHidden={isBalanceHidden}
+                      />
+                    ) : (
+                      rangeData.categorySpendings.map(cat => (
+                        <View key={cat.category_id} style={styles.categorySpendItem}>
+                          <View style={styles.catSpendHeader}>
+                            <View style={styles.catTitleLeft}>
+                              <View
+                                style={[
+                                  styles.catIconBox,
+                                  { backgroundColor: cat.category_color || THEME.popPink },
+                                ]}
+                              >
+                                <Ionicons
+                                  name={(cat.category_icon as any) || 'pricetag-outline'}
+                                  size={15}
+                                  color="#FFFFFF"
+                                />
+                              </View>
+                              <Text style={styles.catNameText}>{cat.category_name}</Text>
+                            </View>
+
+                            <View style={styles.catAmountRight}>
+                              <Text style={styles.catAmountText}>
+                                {isBalanceHidden ? '••••••' : formatVND(cat.total_amount)}
+                              </Text>
+                              <View style={styles.percentBadge}>
+                                <Text style={styles.catPercentText}>{cat.percentage}%</Text>
+                              </View>
+                            </View>
+                          </View>
+
+                          {/* Progress bar */}
+                          <View style={styles.barTrack}>
                             <View
                               style={[
-                                styles.catIconBox,
-                                { backgroundColor: cat.category_color || THEME.popPink },
+                                styles.barFill,
+                                {
+                                  width: `${cat.percentage}%`,
+                                  backgroundColor: cat.category_color || THEME.primary,
+                                },
                               ]}
-                            >
-                              <Ionicons
-                                name={(cat.category_icon as any) || 'pricetag-outline'}
-                                size={15}
-                                color="#FFFFFF"
-                              />
-                            </View>
-                            <Text style={styles.catNameText}>{cat.category_name}</Text>
-                          </View>
-
-                          <View style={styles.catAmountRight}>
-                            <Text style={styles.catAmountText}>
-                              {isBalanceHidden ? '••••••' : formatVND(cat.total_amount)}
-                            </Text>
-                            <View style={styles.percentBadge}>
-                              <Text style={styles.catPercentText}>{cat.percentage}%</Text>
-                            </View>
+                            />
                           </View>
                         </View>
-
-                        {/* Progress bar */}
-                        <View style={styles.barTrack}>
-                          <View
-                            style={[
-                              styles.barFill,
-                              {
-                                width: `${cat.percentage}%`,
-                                backgroundColor: cat.category_color || THEME.primary,
-                              },
-                            ]}
-                          />
-                        </View>
-                      </View>
-                    ))
+                      ))
+                    )
                   ) : (
                     <View style={styles.noDataBox}>
                       <Ionicons name="pie-chart-outline" size={32} color="#9CA3AF" />
@@ -625,6 +630,7 @@ export const AnalyticsScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
 
         <View style={{ height: 60 }} />
       </ScrollView>
+      {AlertModalComponent}
     </SafeAreaView>
   );
 };

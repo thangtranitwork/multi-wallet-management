@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,14 +6,15 @@ import {
   Modal,
   Pressable,
   ScrollView,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import dayjs from 'dayjs';
 import { useWallet } from '../context/WalletContext';
-import { Transaction, Category } from '../types';
+import { Transaction, Category, Wallet } from '../types';
 import { THEME, formatVND } from '../constants';
 import { hapticLight, hapticSuccess, hapticError } from '../utils/haptics';
+import { DeleteConfirmModal } from './DeleteConfirmModal';
+import { useCustomAlert } from './CustomAlertModal';
 
 interface TransactionDetailModalProps {
   visible: boolean;
@@ -21,6 +22,7 @@ interface TransactionDetailModalProps {
   transaction: Transaction | null;
   onSplit?: (tx: Transaction) => void;
   onDelete?: (tx: Transaction) => void;
+  onRecreate?: (tx: Transaction) => void;
 }
 
 export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
@@ -29,10 +31,40 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   transaction,
   onSplit,
   onDelete,
+  onRecreate,
 }) => {
-  const { categories, updateTransactionCategory, removeTransaction, isBalanceHidden } = useWallet();
+  const {
+    wallets,
+    categories,
+    updateTransactionCategory,
+    updateTransactionWallet,
+    updateTransactionTime,
+    removeTransaction,
+    isBalanceHidden,
+  } = useWallet();
+  const { showAlert, showConfirm, AlertModalComponent } = useCustomAlert(false);
+
   const [isChangingCategory, setIsChangingCategory] = useState(false);
+  const [isChangingWallet, setIsChangingWallet] = useState(false);
+  const [transferWalletTarget, setTransferWalletTarget] = useState<'source' | 'destination'>('source');
+  const [isChangingTime, setIsChangingTime] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [pickerMonth, setPickerMonth] = useState<Date>(new Date());
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+
+  useEffect(() => {
+    if (transaction) {
+      const parsed = dayjs(transaction.transacted_at);
+      const initialDate = parsed.isValid() ? parsed.toDate() : new Date();
+      setSelectedDate(initialDate);
+      setPickerMonth(initialDate);
+    }
+    setIsChangingCategory(false);
+    setIsChangingWallet(false);
+    setIsChangingTime(false);
+    setShowDeleteConfirm(false);
+  }, [transaction?.id, visible]);
 
   if (!transaction) return null;
 
@@ -97,6 +129,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
     typeIcon = 'refresh-circle';
   }
 
+  // --- Category Change ---
   const handleSelectCategory = async (cat: Category) => {
     if (isUpdating) return;
     hapticLight();
@@ -107,44 +140,201 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
       setIsChangingCategory(false);
     } catch (err: any) {
       hapticError();
-      Alert.alert('Lỗi', err?.message || 'Không thể cập nhật danh mục');
+      showAlert('Lỗi', err?.message || 'Không thể cập nhật danh mục');
     } finally {
       setIsUpdating(false);
     }
   };
 
-  const handleDelete = () => {
+  // --- Wallet Change ---
+  const handleSelectWallet = (w: Wallet) => {
+    if (isUpdating) return;
     hapticLight();
-    Alert.alert(
-      'Xóa giao dịch',
-      `Ngài có chắc muốn xóa giao dịch ${formatVND(transaction.amount)}? Số dư ví sẽ được hoàn tác tự động.`,
-      [
-        { text: 'Hủy', style: 'cancel' },
-        {
-          text: 'Xóa',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              if (onDelete) {
-                onDelete(transaction);
-              } else {
-                await removeTransaction(transaction.id);
-              }
-              hapticSuccess();
-              onClose();
-            } catch (err: any) {
-              hapticError();
-              Alert.alert('Lỗi', err?.message || 'Không thể xóa giao dịch');
-            }
-          },
-        },
-      ]
+
+    if (isTransfer) {
+      if (transferWalletTarget === 'source') {
+        if (w.id === transaction.to_wallet_id) {
+          hapticError();
+          showAlert('Không hợp lệ', 'Ví gửi không thể trùng với ví nhận');
+          return;
+        }
+      } else {
+        if (w.id === transaction.wallet_id) {
+          hapticError();
+          showAlert('Không hợp lệ', 'Ví nhận không thể trùng với ví gửi');
+          return;
+        }
+      }
+    }
+
+    const targetLabel = isTransfer
+      ? transferWalletTarget === 'source'
+        ? 'ví gửi'
+        : 'ví nhận'
+      : 'nguồn tiền (ví)';
+
+    showConfirm(
+      'Đổi nguồn tiền',
+      `Ngài có muốn đổi ${targetLabel} sang "${w.name}"? Số dư các ví sẽ được tự động điều chỉnh.`,
+      async () => {
+        setIsUpdating(true);
+        try {
+          if (isTransfer && transferWalletTarget === 'destination') {
+            await updateTransactionWallet(transaction.id, transaction.wallet_id, w.id);
+          } else {
+            await updateTransactionWallet(transaction.id, w.id, transaction.to_wallet_id);
+          }
+          hapticSuccess();
+          setIsChangingWallet(false);
+        } catch (err: any) {
+          hapticError();
+          showAlert('Lỗi', err?.message || 'Không thể cập nhật nguồn tiền');
+        } finally {
+          setIsUpdating(false);
+        }
+      },
+      { confirmText: 'Đồng ý', cancelText: 'Hủy' }
     );
   };
+
+  // --- Date & Time Controls ---
+  const getFormattedDateLabel = (date: Date) => {
+    const d = dayjs(date);
+    const now = dayjs();
+    const timeStr = d.format('HH:mm');
+    if (d.isSame(now, 'day')) {
+      return `Hôm nay • ${timeStr}`;
+    }
+    if (d.isSame(now.subtract(1, 'day'), 'day')) {
+      return `Hôm qua • ${timeStr}`;
+    }
+    if (d.isSame(now.subtract(2, 'day'), 'day')) {
+      return `2 ngày trước • ${timeStr}`;
+    }
+    return `${d.format('DD/MM/YYYY')} • ${timeStr}`;
+  };
+
+  const isSelectedToday = dayjs(selectedDate).isSame(dayjs(), 'day');
+  const isSelectedYesterday = dayjs(selectedDate).isSame(dayjs().subtract(1, 'day'), 'day');
+  const isSelectedTwoDaysAgo = dayjs(selectedDate).isSame(dayjs().subtract(2, 'day'), 'day');
+
+  const setToday = () => {
+    const now = new Date();
+    setSelectedDate(prev => {
+      const next = new Date(now);
+      next.setHours(prev.getHours(), prev.getMinutes(), 0, 0);
+      return next;
+    });
+    setPickerMonth(new Date());
+  };
+
+  const setYesterday = () => {
+    const y = dayjs().subtract(1, 'day').toDate();
+    setSelectedDate(prev => {
+      const next = new Date(y);
+      next.setHours(prev.getHours(), prev.getMinutes(), 0, 0);
+      return next;
+    });
+    setPickerMonth(y);
+  };
+
+  const setTwoDaysAgo = () => {
+    const d = dayjs().subtract(2, 'day').toDate();
+    setSelectedDate(prev => {
+      const next = new Date(d);
+      next.setHours(prev.getHours(), prev.getMinutes(), 0, 0);
+      return next;
+    });
+    setPickerMonth(d);
+  };
+
+  const selectDay = (dayNum: number) => {
+    const d = dayjs(pickerMonth).date(dayNum).toDate();
+    setSelectedDate(prev => {
+      const next = new Date(d);
+      next.setHours(prev.getHours(), prev.getMinutes(), 0, 0);
+      return next;
+    });
+  };
+
+  const adjustHour = (delta: number) => {
+    setSelectedDate(prev => {
+      const next = new Date(prev);
+      let h = (next.getHours() + delta) % 24;
+      if (h < 0) h += 24;
+      next.setHours(h);
+      return next;
+    });
+  };
+
+  const adjustMinute = (delta: number) => {
+    setSelectedDate(prev => {
+      const next = new Date(prev);
+      let m = (next.getMinutes() + delta) % 60;
+      if (m < 0) m += 60;
+      next.setMinutes(m);
+      return next;
+    });
+  };
+
+  const setPresetTime = (hour: number, minute: number) => {
+    setSelectedDate(prev => {
+      const next = new Date(prev);
+      next.setHours(hour, minute, 0, 0);
+      return next;
+    });
+  };
+
+  const setNowTime = () => {
+    const now = new Date();
+    setSelectedDate(prev => {
+      const next = new Date(prev);
+      next.setHours(now.getHours(), now.getMinutes(), 0, 0);
+      return next;
+    });
+  };
+
+  const getCalendarDays = () => {
+    const startOfMonth = dayjs(pickerMonth).startOf('month');
+    const daysInMonth = startOfMonth.daysInMonth();
+    const startDayOfWeek = (startOfMonth.day() + 6) % 7;
+    const days: Array<{ dayNum: number | null }> = [];
+
+    for (let i = 0; i < startDayOfWeek; i++) {
+      days.push({ dayNum: null });
+    }
+    for (let i = 1; i <= daysInMonth; i++) {
+      days.push({ dayNum: i });
+    }
+    return days;
+  };
+
+  const handleSaveTime = async () => {
+    if (isUpdating) return;
+    hapticLight();
+    setIsUpdating(true);
+    try {
+      await updateTransactionTime(transaction.id, selectedDate.toISOString());
+      hapticSuccess();
+      setIsChangingTime(false);
+    } catch (err: any) {
+      hapticError();
+      showAlert('Lỗi', err?.message || 'Không thể cập nhật thời gian giao dịch');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+
 
   const txDate = dayjs(transaction.transacted_at);
   const formattedDate = txDate.format('dddd, DD/MM/YYYY');
   const formattedTime = txDate.format('HH:mm');
+
+  const currentWallet = wallets.find(w => w.id === transaction.wallet_id);
+  const currentToWallet = transaction.to_wallet_id
+    ? wallets.find(w => w.id === transaction.to_wallet_id)
+    : null;
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -189,75 +379,382 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
               </Text>
             </View>
 
-            {/* Info Table */}
-            <View style={styles.infoSection}>
-              {/* Wallet Row */}
-              <View style={styles.infoRow}>
-                <View style={styles.infoLabelGroup}>
+            {/* Wallet Section with Change Wallet Feature */}
+            <View style={styles.sectionCard}>
+              <View style={styles.sectionHeaderRow}>
+                <View style={styles.sectionTitleGroup}>
                   <Ionicons name="wallet-outline" size={18} color="#000000" />
-                  <Text style={styles.infoLabel}>
-                    {isTransfer ? 'Ví gửi' : 'Nguồn tiền (Ví)'}
+                  <Text style={styles.sectionTitle}>
+                    {isTransfer ? 'Nguồn tiền (Ví chuyển / nhận)' : 'Nguồn tiền (Ví)'}
                   </Text>
                 </View>
-                <View style={styles.infoValueBadge}>
-                  <Text style={styles.infoValueText}>
-                    {transaction.wallet_name || 'Ví không xác định'}
+                <Pressable
+                  style={styles.actionToggleBtn}
+                  onPress={() => {
+                    hapticLight();
+                    setIsChangingWallet(!isChangingWallet);
+                  }}
+                >
+                  <Ionicons
+                    name={isChangingWallet ? 'chevron-up' : 'create-outline'}
+                    size={15}
+                    color="#000000"
+                  />
+                  <Text style={styles.actionToggleText}>
+                    {isChangingWallet ? 'Thu gọn' : 'Đổi ví'}
+                  </Text>
+                </Pressable>
+              </View>
+
+              {/* Current Wallet Info */}
+              <View style={styles.walletDisplayBox}>
+                <View style={styles.walletItemRow}>
+                  <View style={[styles.walletDot, { backgroundColor: currentWallet?.color || THEME.primary }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.walletRoleLabel}>
+                      {isTransfer ? 'Ví gửi (Trừ tiền):' : 'Ví giao dịch:'}
+                    </Text>
+                    <Text style={styles.walletNameText}>
+                      {transaction.wallet_name || 'Ví không xác định'}
+                    </Text>
+                  </View>
+                  <Text style={styles.walletBalanceBadge}>
+                    {isBalanceHidden ? '••••••' : formatVND(currentWallet?.balance || 0)}
+                  </Text>
+                </View>
+
+                {isTransfer && (
+                  <View style={[styles.walletItemRow, { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#E5E7EB' }]}>
+                    <View style={[styles.walletDot, { backgroundColor: currentToWallet?.color || '#0284C7' }]} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.walletRoleLabel}>Ví nhận (Cộng tiền):</Text>
+                      <Text style={styles.walletNameText}>
+                        {transaction.to_wallet_name || 'Ví không xác định'}
+                      </Text>
+                    </View>
+                    <Text style={[styles.walletBalanceBadge, { color: '#0284C7' }]}>
+                      {isBalanceHidden ? '••••••' : formatVND(currentToWallet?.balance || 0)}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Wallet Picker List */}
+              {isChangingWallet && (
+                <View style={styles.pickerContainer}>
+                  {isTransfer && (
+                    <View style={styles.transferTargetTabs}>
+                      <Pressable
+                        style={[
+                          styles.transferTargetTab,
+                          transferWalletTarget === 'source' && styles.transferTargetTabActive,
+                        ]}
+                        onPress={() => setTransferWalletTarget('source')}
+                      >
+                        <Text
+                          style={[
+                            styles.transferTargetTabText,
+                            transferWalletTarget === 'source' && styles.transferTargetTabTextActive,
+                          ]}
+                        >
+                          Đổi ví gửi
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        style={[
+                          styles.transferTargetTab,
+                          transferWalletTarget === 'destination' && styles.transferTargetTabActive,
+                        ]}
+                        onPress={() => setTransferWalletTarget('destination')}
+                      >
+                        <Text
+                          style={[
+                            styles.transferTargetTabText,
+                            transferWalletTarget === 'destination' && styles.transferTargetTabTextActive,
+                          ]}
+                        >
+                          Đổi ví nhận
+                        </Text>
+                      </Pressable>
+                    </View>
+                  )}
+
+                  <Text style={styles.pickerLabel}>
+                    {isTransfer
+                      ? transferWalletTarget === 'source'
+                        ? 'Chọn ví gửi mới:'
+                        : 'Chọn ví nhận mới:'
+                      : 'Chọn nguồn tiền mới để chuyển sang:'}
+                  </Text>
+
+                  <View style={styles.walletsGrid}>
+                    {wallets.map(w => {
+                      const isSelected = isTransfer
+                        ? transferWalletTarget === 'source'
+                          ? transaction.wallet_id === w.id
+                          : transaction.to_wallet_id === w.id
+                        : transaction.wallet_id === w.id;
+
+                      const isOtherTransferWallet = isTransfer && (
+                        transferWalletTarget === 'source'
+                          ? transaction.to_wallet_id === w.id
+                          : transaction.wallet_id === w.id
+                      );
+
+                      return (
+                        <Pressable
+                          key={w.id}
+                          style={[
+                            styles.walletChip,
+                            isSelected && styles.walletChipSelected,
+                            isOtherTransferWallet && styles.walletChipDisabled,
+                          ]}
+                          onPress={() => handleSelectWallet(w)}
+                          disabled={isUpdating || isSelected || isOtherTransferWallet}
+                        >
+                          <View style={[styles.walletChipIconBox, { backgroundColor: w.color || THEME.primary }]}>
+                            <Ionicons name={(w.icon as any) || 'wallet-outline'} size={16} color="#000000" />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.walletChipName, isSelected && styles.walletChipNameSelected]} numberOfLines={1}>
+                              {w.name}
+                            </Text>
+                            <Text style={styles.walletChipSub}>
+                              {isBalanceHidden ? '••••••' : formatVND(w.balance)}
+                            </Text>
+                          </View>
+                          {isSelected ? (
+                            <Ionicons name="checkmark-circle" size={18} color="#000000" />
+                          ) : isOtherTransferWallet ? (
+                            <Text style={styles.disabledChipTag}>Đang dùng</Text>
+                          ) : (
+                            <Ionicons name="chevron-forward" size={16} color="#9CA3AF" />
+                          )}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+            </View>
+
+            {/* Time Section with Change Time Feature */}
+            <View style={styles.sectionCard}>
+              <View style={styles.sectionHeaderRow}>
+                <View style={styles.sectionTitleGroup}>
+                  <Ionicons name="time-outline" size={18} color="#000000" />
+                  <Text style={styles.sectionTitle}>Thời gian ghi nhận</Text>
+                </View>
+                <Pressable
+                  style={styles.actionToggleBtn}
+                  onPress={() => {
+                    hapticLight();
+                    if (!isChangingTime) {
+                      const d = dayjs(transaction.transacted_at).toDate();
+                      setSelectedDate(d);
+                      setPickerMonth(d);
+                    }
+                    setIsChangingTime(!isChangingTime);
+                  }}
+                >
+                  <Ionicons
+                    name={isChangingTime ? 'chevron-up' : 'calendar-outline'}
+                    size={15}
+                    color="#000000"
+                  />
+                  <Text style={styles.actionToggleText}>
+                    {isChangingTime ? 'Thu gọn' : 'Đổi ngày/giờ'}
+                  </Text>
+                </Pressable>
+              </View>
+
+              {/* Current Date Display */}
+              <View style={styles.timeDisplayBanner}>
+                <View style={styles.timeIconBox}>
+                  <Ionicons name="calendar" size={18} color="#000000" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.timeMainText}>{getFormattedDateLabel(selectedDate)}</Text>
+                  <Text style={styles.timeSubText}>
+                    {dayjs(selectedDate).format('DD/MM/YYYY - HH:mm')}
                   </Text>
                 </View>
               </View>
 
-              {/* Destination Wallet if Transfer */}
-              {isTransfer && (
-                <View style={styles.infoRow}>
-                  <View style={styles.infoLabelGroup}>
-                    <Ionicons name="enter-outline" size={18} color="#0284C7" />
-                    <Text style={styles.infoLabel}>Ví nhận</Text>
+              {/* Expandable Time Picker */}
+              {isChangingTime && (
+                <View style={styles.pickerContainer}>
+                  {/* Quick Date Chips */}
+                  <View style={styles.quickDateChipsRow}>
+                    <Pressable
+                      style={[styles.quickChip, isSelectedToday && styles.quickChipActive]}
+                      onPress={setToday}
+                    >
+                      <Text style={[styles.quickChipText, isSelectedToday && styles.quickChipTextActive]}>
+                        Hôm nay
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.quickChip, isSelectedYesterday && styles.quickChipActive]}
+                      onPress={setYesterday}
+                    >
+                      <Text style={[styles.quickChipText, isSelectedYesterday && styles.quickChipTextActive]}>
+                        Hôm qua
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.quickChip, isSelectedTwoDaysAgo && styles.quickChipActive]}
+                      onPress={setTwoDaysAgo}
+                    >
+                      <Text style={[styles.quickChipText, isSelectedTwoDaysAgo && styles.quickChipTextActive]}>
+                        2 ngày trước
+                      </Text>
+                    </Pressable>
                   </View>
-                  <View style={[styles.infoValueBadge, { backgroundColor: '#E0F2FE' }]}>
-                    <Text style={[styles.infoValueText, { color: '#0369A1' }]}>
-                      {transaction.to_wallet_name || 'Ví không xác định'}
+
+                  {/* Calendar Month Navigation */}
+                  <View style={styles.monthNavRow}>
+                    <Pressable
+                      style={styles.monthNavBtn}
+                      onPress={() => setPickerMonth(prev => dayjs(prev).subtract(1, 'month').toDate())}
+                    >
+                      <Ionicons name="chevron-back" size={16} color="#000000" />
+                    </Pressable>
+                    <Text style={styles.monthNavTitle}>
+                      Tháng {dayjs(pickerMonth).format('M, YYYY')}
                     </Text>
+                    <Pressable
+                      style={styles.monthNavBtn}
+                      onPress={() => setPickerMonth(prev => dayjs(prev).add(1, 'month').toDate())}
+                    >
+                      <Ionicons name="chevron-forward" size={16} color="#000000" />
+                    </Pressable>
                   </View>
+
+                  {/* Weekday Labels */}
+                  <View style={styles.weekHeaderRow}>
+                    {['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map((w, idx) => (
+                      <Text
+                        key={idx}
+                        style={[styles.weekHeaderText, idx === 6 && { color: '#E11D48' }]}
+                      >
+                        {w}
+                      </Text>
+                    ))}
+                  </View>
+
+                  {/* Days Grid */}
+                  <View style={styles.daysGrid}>
+                    {getCalendarDays().map((slot, idx) => {
+                      if (slot.dayNum === null) {
+                        return <View key={idx} style={styles.dayCellEmpty} />;
+                      }
+                      const cellDate = dayjs(pickerMonth).date(slot.dayNum);
+                      const isSelected = dayjs(selectedDate).isSame(cellDate, 'day');
+                      const isToday = cellDate.isSame(dayjs(), 'day');
+
+                      return (
+                        <Pressable
+                          key={idx}
+                          style={[
+                            styles.dayCell,
+                            isSelected && styles.dayCellSelected,
+                            isToday && !isSelected && styles.dayCellToday,
+                          ]}
+                          onPress={() => selectDay(slot.dayNum!)}
+                        >
+                          <Text
+                            style={[
+                              styles.dayCellText,
+                              isSelected && styles.dayCellTextSelected,
+                              isToday && !isSelected && styles.dayCellTextToday,
+                            ]}
+                          >
+                            {slot.dayNum}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+
+                  {/* Time Presets */}
+                  <Text style={styles.timeSectionLabel}>Khung giờ thông dụng:</Text>
+                  <View style={styles.timePresetsRow}>
+                    <Pressable style={styles.timePresetChip} onPress={() => setPresetTime(8, 0)}>
+                      <Text style={styles.timePresetText}>08:00</Text>
+                    </Pressable>
+                    <Pressable style={styles.timePresetChip} onPress={() => setPresetTime(12, 30)}>
+                      <Text style={styles.timePresetText}>12:30</Text>
+                    </Pressable>
+                    <Pressable style={styles.timePresetChip} onPress={() => setPresetTime(18, 0)}>
+                      <Text style={styles.timePresetText}>18:00</Text>
+                    </Pressable>
+                    <Pressable style={styles.timePresetChip} onPress={() => setPresetTime(20, 30)}>
+                      <Text style={styles.timePresetText}>20:30</Text>
+                    </Pressable>
+                    <Pressable style={[styles.timePresetChip, { backgroundColor: THEME.popYellow }]} onPress={setNowTime}>
+                      <Text style={styles.timePresetText}>Bây giờ</Text>
+                    </Pressable>
+                  </View>
+
+                  {/* Hour & Minute Steppers */}
+                  <View style={styles.stepperContainer}>
+                    <View style={styles.stepperBox}>
+                      <Text style={styles.stepperLabel}>GIỜ</Text>
+                      <View style={styles.stepperControlRow}>
+                        <Pressable style={styles.stepperBtn} onPress={() => adjustHour(-1)}>
+                          <Ionicons name="remove" size={16} color="#000000" />
+                        </Pressable>
+                        <Text style={styles.stepperValue}>
+                          {String(selectedDate.getHours()).padStart(2, '0')}
+                        </Text>
+                        <Pressable style={styles.stepperBtn} onPress={() => adjustHour(1)}>
+                          <Ionicons name="add" size={16} color="#000000" />
+                        </Pressable>
+                      </View>
+                    </View>
+
+                    <Text style={styles.stepperColon}>:</Text>
+
+                    <View style={styles.stepperBox}>
+                      <Text style={styles.stepperLabel}>PHÚT</Text>
+                      <View style={styles.stepperControlRow}>
+                        <Pressable style={styles.stepperBtn} onPress={() => adjustMinute(-5)}>
+                          <Ionicons name="remove" size={16} color="#000000" />
+                        </Pressable>
+                        <Text style={styles.stepperValue}>
+                          {String(selectedDate.getMinutes()).padStart(2, '0')}
+                        </Text>
+                        <Pressable style={styles.stepperBtn} onPress={() => adjustMinute(5)}>
+                          <Ionicons name="add" size={16} color="#000000" />
+                        </Pressable>
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* Save Time Button */}
+                  <Pressable
+                    style={styles.saveTimeBtn}
+                    onPress={handleSaveTime}
+                    disabled={isUpdating}
+                  >
+                    <Ionicons name="checkmark-done" size={18} color="#000000" />
+                    <Text style={styles.saveTimeBtnText}>Lưu thời gian mới</Text>
+                  </Pressable>
                 </View>
               )}
-
-              {/* Person Name if Debt */}
-              {isDebt && transaction.person_name && (
-                <View style={styles.infoRow}>
-                  <View style={styles.infoLabelGroup}>
-                    <Ionicons name="person-outline" size={18} color="#D97706" />
-                    <Text style={styles.infoLabel}>Đối tác / Người liên quan</Text>
-                  </View>
-                  <View style={[styles.infoValueBadge, { backgroundColor: '#FEF3C7' }]}>
-                    <Text style={[styles.infoValueText, { color: '#92400E', fontWeight: '800' }]}>
-                      {transaction.person_name}
-                    </Text>
-                  </View>
-                </View>
-              )}
-
-              {/* Note Row */}
-              {transaction.note ? (
-                <View style={styles.infoRow}>
-                  <View style={styles.infoLabelGroup}>
-                    <Ionicons name="chatbubble-ellipses-outline" size={18} color="#6B7280" />
-                    <Text style={styles.infoLabel}>Ghi chú</Text>
-                  </View>
-                  <Text style={styles.noteValueText}>{transaction.note}</Text>
-                </View>
-              ) : null}
             </View>
 
             {/* Category Section with Change Category Feature */}
             {canChangeCategory && (
-              <View style={styles.categorySection}>
-                <View style={styles.categoryHeaderRow}>
-                  <View style={styles.categoryTitleGroup}>
+              <View style={styles.sectionCard}>
+                <View style={styles.sectionHeaderRow}>
+                  <View style={styles.sectionTitleGroup}>
                     <Ionicons name="pricetags-outline" size={18} color="#000000" />
-                    <Text style={styles.categorySectionTitle}>Danh mục</Text>
+                    <Text style={styles.sectionTitle}>Danh mục</Text>
                   </View>
                   <Pressable
-                    style={styles.changeCategoryToggleBtn}
+                    style={styles.actionToggleBtn}
                     onPress={() => {
                       hapticLight();
                       setIsChangingCategory(!isChangingCategory);
@@ -268,7 +765,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                       size={15}
                       color="#000000"
                     />
-                    <Text style={styles.changeCategoryToggleText}>
+                    <Text style={styles.actionToggleText}>
                       {isChangingCategory ? 'Thu gọn' : 'Đổi danh mục'}
                     </Text>
                   </Pressable>
@@ -293,7 +790,9 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                       {transaction.category_name || 'Chưa phân loại'}
                     </Text>
                     <Text style={styles.currentCategorySub}>
-                      {isChangingCategory ? 'Chọn danh mục mới bên dưới:' : 'Chạm "Đổi danh mục" nếu muốn phân loại lại'}
+                      {isChangingCategory
+                        ? 'Chọn danh mục mới bên dưới:'
+                        : 'Chạm "Đổi danh mục" nếu muốn phân loại lại'}
                     </Text>
                   </View>
                 </View>
@@ -348,7 +847,36 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
               </View>
             )}
 
-            {/* Actions: Split Bill (for expense) & Delete */}
+            {/* Note & Debt Partner Info */}
+            {(transaction.note || (isDebt && transaction.person_name)) && (
+              <View style={styles.sectionCard}>
+                {isDebt && transaction.person_name && (
+                  <View style={styles.infoDetailRow}>
+                    <View style={styles.infoLabelGroup}>
+                      <Ionicons name="person-outline" size={17} color="#D97706" />
+                      <Text style={styles.infoDetailLabel}>Đối tác / Người liên quan:</Text>
+                    </View>
+                    <View style={[styles.infoValueBadge, { backgroundColor: '#FEF3C7' }]}>
+                      <Text style={[styles.infoValueText, { color: '#92400E', fontWeight: '800' }]}>
+                        {transaction.person_name}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+                {transaction.note && (
+                  <View style={[styles.infoDetailRow, isDebt && transaction.person_name && { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#E5E7EB' }]}>
+                    <View style={styles.infoLabelGroup}>
+                      <Ionicons name="chatbubble-ellipses-outline" size={17} color="#6B7280" />
+                      <Text style={styles.infoDetailLabel}>Ghi chú:</Text>
+                    </View>
+                    <Text style={styles.noteValueText}>{transaction.note}</Text>
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* Actions: Split Bill & Delete */}
             <View style={styles.actionsSection}>
               {transaction.type === 'expense' && onSplit && (
                 <Pressable
@@ -372,7 +900,14 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                 </Pressable>
               )}
 
-              <Pressable style={styles.deleteActionBtn} onPress={handleDelete}>
+              {/* Custom Delete Trigger */}
+              <Pressable
+                style={styles.deleteActionBtn}
+                onPress={() => {
+                  hapticLight();
+                  setShowDeleteConfirm(true);
+                }}
+              >
                 <Ionicons name="trash-outline" size={18} color="#EF4444" />
                 <Text style={styles.deleteActionText}>Xóa giao dịch này</Text>
               </Pressable>
@@ -382,6 +917,26 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
           </ScrollView>
         </View>
       </View>
+
+      {/* Custom Neo-brutalist Delete Confirmation Modal (NO system Alert) */}
+      <DeleteConfirmModal
+        visible={showDeleteConfirm}
+        transaction={transaction}
+        isBalanceHidden={isBalanceHidden}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirmDelete={async (tx) => {
+          await removeTransaction(tx.id);
+          onDelete?.(tx);
+          setShowDeleteConfirm(false);
+          onClose();
+        }}
+        onRecreate={onRecreate ? (tx) => {
+          setShowDeleteConfirm(false);
+          onClose();
+          onRecreate(tx);
+        } : undefined}
+      />
+      {AlertModalComponent}
     </Modal>
   );
 };
@@ -486,77 +1041,31 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#6B7280',
   },
-  infoSection: {
+  sectionCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
     borderWidth: 2,
     borderColor: '#000000',
     padding: 14,
-    marginBottom: 16,
-    gap: 12,
+    marginBottom: 14,
   },
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 4,
-  },
-  infoLabelGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  infoLabel: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#000000',
-  },
-  infoValueBadge: {
-    backgroundColor: '#F3F4F6',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: '#000000',
-  },
-  infoValueText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#000000',
-  },
-  noteValueText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#374151',
-    flex: 1,
-    textAlign: 'right',
-    marginLeft: 12,
-  },
-  categorySection: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    borderWidth: 2,
-    borderColor: '#000000',
-    padding: 14,
-    marginBottom: 16,
-  },
-  categoryHeaderRow: {
+  sectionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
   },
-  categoryTitleGroup: {
+  sectionTitleGroup: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  categorySectionTitle: {
+  sectionTitle: {
     fontSize: 15,
     fontWeight: '900',
     color: '#000000',
   },
-  changeCategoryToggleBtn: {
+  actionToggleBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
@@ -567,9 +1076,334 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: '#000000',
   },
-  changeCategoryToggleText: {
+  actionToggleText: {
     fontSize: 12,
     fontWeight: '800',
+    color: '#000000',
+  },
+  walletDisplayBox: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    padding: 12,
+  },
+  walletItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  walletDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#000000',
+  },
+  walletRoleLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6B7280',
+  },
+  walletNameText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  walletBalanceBadge: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  transferTargetTabs: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  transferTargetTab: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    backgroundColor: '#F3F4F6',
+  },
+  transferTargetTabActive: {
+    backgroundColor: THEME.primary,
+  },
+  transferTargetTabText: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#4B5563',
+  },
+  transferTargetTabTextActive: {
+    color: '#000000',
+  },
+  walletsGrid: {
+    gap: 8,
+  },
+  walletChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#F9FAFB',
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+  },
+  walletChipSelected: {
+    backgroundColor: '#FEF08A',
+  },
+  walletChipDisabled: {
+    opacity: 0.5,
+    borderColor: '#D1D5DB',
+  },
+  walletChipIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  walletChipName: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  walletChipNameSelected: {
+    fontWeight: '900',
+  },
+  walletChipSub: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  disabledChipTag: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#9CA3AF',
+  },
+  timeDisplayBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#F9FAFB',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+  },
+  timeIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    backgroundColor: THEME.popYellow,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  timeMainText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  timeSubText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  quickDateChipsRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 12,
+  },
+  quickChip: {
+    flex: 1,
+    paddingVertical: 7,
+    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    backgroundColor: '#F3F4F6',
+  },
+  quickChipActive: {
+    backgroundColor: '#000000',
+  },
+  quickChipText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  quickChipTextActive: {
+    color: '#FFFFFF',
+  },
+  monthNavRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  monthNavBtn: {
+    padding: 6,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    backgroundColor: '#F3F4F6',
+  },
+  monthNavTitle: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  weekHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 6,
+  },
+  weekHeaderText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#6B7280',
+    width: 32,
+    textAlign: 'center',
+  },
+  daysGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
+    gap: 4,
+    marginBottom: 12,
+  },
+  dayCellEmpty: {
+    width: 34,
+    height: 34,
+  },
+  dayCell: {
+    width: 34,
+    height: 34,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+  },
+  dayCellSelected: {
+    backgroundColor: THEME.popYellow,
+    borderColor: '#000000',
+    borderWidth: 1.5,
+  },
+  dayCellToday: {
+    borderColor: '#000000',
+    borderWidth: 1.5,
+  },
+  dayCellText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  dayCellTextSelected: {
+    fontWeight: '900',
+  },
+  dayCellTextToday: {
+    fontWeight: '900',
+  },
+  timeSectionLabel: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#6B7280',
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
+  timePresetsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 14,
+  },
+  timePresetChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    backgroundColor: '#F3F4F6',
+  },
+  timePresetText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  stepperContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 14,
+  },
+  stepperBox: {
+    alignItems: 'center',
+  },
+  stepperLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#6B7280',
+    marginBottom: 4,
+  },
+  stepperControlRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    padding: 3,
+  },
+  stepperBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  stepperValue: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#000000',
+    minWidth: 32,
+    textAlign: 'center',
+  },
+  stepperColon: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#000000',
+    marginTop: 14,
+  },
+  saveTimeBtn: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: THEME.popYellow,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#000000',
+  },
+  saveTimeBtnText: {
+    fontSize: 13,
+    fontWeight: '900',
     color: '#000000',
   },
   currentCategoryCard: {
@@ -603,17 +1437,17 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   pickerContainer: {
-    marginTop: 14,
+    marginTop: 12,
     borderTopWidth: 1.5,
     borderTopColor: '#E5E7EB',
     paddingTop: 12,
   },
   pickerLabel: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '800',
     color: '#6B7280',
     textTransform: 'uppercase',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   categoriesGrid: {
     flexDirection: 'row',
@@ -652,9 +1486,46 @@ const styles = StyleSheet.create({
   catChipTextSelected: {
     fontWeight: '900',
   },
+  infoDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  infoLabelGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  infoDetailLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  infoValueBadge: {
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+  },
+  infoValueText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  noteValueText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#374151',
+    flex: 1,
+    textAlign: 'right',
+    marginLeft: 12,
+  },
   actionsSection: {
     gap: 10,
-    marginTop: 4,
+    marginTop: 6,
   },
   splitActionBtn: {
     backgroundColor: '#FFFFFF',
@@ -702,4 +1573,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#EF4444',
   },
+
+
 });

@@ -278,6 +278,129 @@ export async function updateTransactionCategory(
   );
 }
 
+export async function updateTransactionWallet(
+  db: SQLite.SQLiteDatabase,
+  transactionId: string,
+  newWalletId: string,
+  newToWalletId?: string | null
+): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    const tx = await db.getFirstAsync<Transaction>(
+      'SELECT * FROM transactions WHERE id = ?',
+      [transactionId]
+    );
+    if (!tx) throw new Error('Không tìm thấy giao dịch');
+
+    const oldWalletId = tx.wallet_id;
+    const oldToWalletId = tx.to_wallet_id;
+
+    const walletChanged = oldWalletId !== newWalletId;
+    const toWalletChanged =
+      tx.type === 'transfer' &&
+      newToWalletId !== undefined &&
+      oldToWalletId !== newToWalletId;
+
+    if (!walletChanged && !toWalletChanged) return;
+
+    if (tx.type === 'transfer') {
+      const finalToWalletId =
+        newToWalletId !== undefined ? newToWalletId : oldToWalletId;
+      if (newWalletId === finalToWalletId) {
+        throw new Error('Ví gửi và ví nhận không được trùng nhau');
+      }
+
+      if (walletChanged) {
+        // Hoàn lại tiền cho ví gửi cũ
+        await db.runAsync(
+          'UPDATE wallets SET balance = balance + ? WHERE id = ?',
+          [tx.amount, oldWalletId]
+        );
+        // Trừ tiền ở ví gửi mới
+        await db.runAsync(
+          'UPDATE wallets SET balance = balance - ? WHERE id = ?',
+          [tx.amount, newWalletId]
+        );
+      }
+
+      if (toWalletChanged && newToWalletId) {
+        if (oldToWalletId) {
+          // Trừ tiền ở ví nhận cũ
+          await db.runAsync(
+            'UPDATE wallets SET balance = balance - ? WHERE id = ?',
+            [tx.amount, oldToWalletId]
+          );
+        }
+        // Cộng tiền vào ví nhận mới
+        await db.runAsync(
+          'UPDATE wallets SET balance = balance + ? WHERE id = ?',
+          [tx.amount, newToWalletId]
+        );
+      }
+
+      await db.runAsync(
+        'UPDATE transactions SET wallet_id = ?, to_wallet_id = ? WHERE id = ?',
+        [newWalletId, finalToWalletId || null, transactionId]
+      );
+    } else {
+      if (
+        tx.type === 'expense' ||
+        tx.type === 'debt_lend' ||
+        tx.type === 'debt_repay'
+      ) {
+        // Ví cũ được hoàn lại tiền
+        await db.runAsync(
+          'UPDATE wallets SET balance = balance + ? WHERE id = ?',
+          [tx.amount, oldWalletId]
+        );
+        // Ví mới bị trừ tiền
+        await db.runAsync(
+          'UPDATE wallets SET balance = balance - ? WHERE id = ?',
+          [tx.amount, newWalletId]
+        );
+      } else if (
+        tx.type === 'income' ||
+        tx.type === 'debt_borrow' ||
+        tx.type === 'debt_collect'
+      ) {
+        // Ví cũ bị trừ tiền lại
+        await db.runAsync(
+          'UPDATE wallets SET balance = balance - ? WHERE id = ?',
+          [tx.amount, oldWalletId]
+        );
+        // Ví mới được cộng tiền
+        await db.runAsync(
+          'UPDATE wallets SET balance = balance + ? WHERE id = ?',
+          [tx.amount, newWalletId]
+        );
+      }
+
+      // Cập nhật debt liên quan nếu có
+      if (tx.debt_id && (tx.type === 'debt_lend' || tx.type === 'debt_borrow')) {
+        await db.runAsync(
+          'UPDATE debts SET wallet_id = ? WHERE id = ?',
+          [newWalletId, tx.debt_id]
+        );
+      }
+
+      await db.runAsync(
+        'UPDATE transactions SET wallet_id = ? WHERE id = ?',
+        [newWalletId, transactionId]
+      );
+    }
+  });
+}
+
+export async function updateTransactionTime(
+  db: SQLite.SQLiteDatabase,
+  transactionId: string,
+  transactedAt: string
+): Promise<void> {
+  await db.runAsync(
+    'UPDATE transactions SET transacted_at = ? WHERE id = ?',
+    [transactedAt, transactionId]
+  );
+}
+
 export interface SplitItem {
   personName: string;
   personPhone?: string | null;

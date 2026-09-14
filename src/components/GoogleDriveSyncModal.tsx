@@ -7,11 +7,11 @@ import {
   Pressable,
   ScrollView,
   ActivityIndicator,
-  Alert,
   Switch,
   TextInput,
   Image,
 } from 'react-native';
+import { useCustomAlert } from './CustomAlertModal';
 import { Ionicons } from '@expo/vector-icons';
 import { useSQLiteContext } from 'expo-sqlite';
 import dayjs from 'dayjs';
@@ -45,6 +45,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
   onClose,
 }) => {
   const db = useSQLiteContext();
+  const { showAlert, showConfirm, AlertModalComponent } = useCustomAlert(false);
   const { exportDataToJsonString, importDataFromJsonString } = useWallet();
 
   const [config, setConfig] = useState<CloudBackupConfig | null>(null);
@@ -110,17 +111,17 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
           customClientId: customClientIdInput.trim(),
         });
         await fetchConfig();
-        Alert.alert(
+        showAlert(
           'Liên kết thành công',
           `Chào mừng ${res.user.name}!\nTài khoản (${res.user.email}) đã được kết nối với Google Drive.`
         );
       } else if (res.error && res.error !== 'Người dùng đã hủy đăng nhập.') {
         hapticError();
-        Alert.alert('Không thể kết nối Google', res.error);
+        showAlert('Không thể kết nối Google', res.error);
       }
     } catch (err: any) {
       hapticError();
-      Alert.alert('Lỗi đăng nhập', err?.message || 'Không thể đăng nhập Google.');
+      showAlert('Lỗi đăng nhập', err?.message || 'Không thể đăng nhập Google.');
     } finally {
       setIsSigningIn(false);
     }
@@ -128,29 +129,23 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
 
   // 2. Xử lý Đăng xuất / Hủy liên kết
   const handleSignOut = () => {
-    Alert.alert(
+    showConfirm(
       'Hủy liên kết Google Drive',
       'Bạn có chắc chắn muốn ngắt kết nối tài khoản Google khỏi ứng dụng không?',
-      [
-        { text: 'Hủy', style: 'cancel' },
-        {
-          text: 'Ngắt kết nối',
-          style: 'destructive',
-          onPress: async () => {
-            hapticMedium();
-            await clearCloudBackupConfig(db);
-            setBackupsList([]);
-            await fetchConfig();
-          },
-        },
-      ]
+      async () => {
+        hapticMedium();
+        await clearCloudBackupConfig(db);
+        setBackupsList([]);
+        await fetchConfig();
+      },
+      { destructive: true, confirmText: 'Ngắt kết nối' }
     );
   };
 
   // 3. Sao lưu lên Google Drive ngay
   const handleUploadBackup = async () => {
     if (!config?.isLinked || !config.accessToken) {
-      Alert.alert('Thông báo', 'Vui lòng liên kết tài khoản Google trước khi sao lưu.');
+      showAlert('Thông báo', 'Vui lòng liên kết tài khoản Google trước khi sao lưu.');
       return;
     }
 
@@ -168,14 +163,14 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
           lastBackupFileName: res.fileName,
         });
         await fetchConfig();
-        Alert.alert('Đã sao lưu lên Google Drive', `Bản sao lưu: ${res.fileName}\nThời gian: ${nowStr}`);
+        showAlert('Đã sao lưu lên Google Drive', `Bản sao lưu: ${res.fileName}\nThời gian: ${nowStr}`);
       } else {
         hapticError();
-        Alert.alert('Lỗi sao lưu', res.error || 'Không thể tải lên Google Drive.');
+        showAlert('Lỗi sao lưu', res.error || 'Không thể tải lên Google Drive.');
       }
     } catch (err: any) {
       hapticError();
-      Alert.alert('Lỗi', err?.message || 'Có lỗi xảy ra khi sao lưu.');
+      showAlert('Lỗi', err?.message || 'Có lỗi xảy ra khi sao lưu.');
     } finally {
       setIsUploading(false);
     }
@@ -183,62 +178,50 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
 
   // 4. Khôi phục từ một bản sao lưu trên Drive
   const handleRestoreBackup = (file: DriveBackupFile) => {
-    Alert.alert(
+    showConfirm(
       'Khôi phục dữ liệu từ Google Drive',
       `Bạn có chắc muốn khôi phục từ bản sao lưu "${file.name}" không?\n\nDữ liệu hiện tại trên thiết bị sẽ được thay thế bằng dữ liệu từ bản sao lưu này.`,
-      [
-        { text: 'Hủy bỏ', style: 'cancel' },
-        {
-          text: 'KHÔI PHỤC NGAY',
-          style: 'destructive',
-          onPress: async () => {
-            if (!config?.accessToken) return;
-            try {
-              hapticMedium();
-              setRestoringFileId(file.id);
-              const jsonContent = await downloadDriveBackup(config.accessToken, file.id);
-              const res = await importDataFromJsonString(jsonContent, 'replace');
-              hapticSuccess();
-              Alert.alert(
-                'Khôi phục thành công',
-                `Đã nạp lại:\n• ${res.walletsCount} ví tiền\n• ${res.transactionsCount} giao dịch\n• ${res.debtsCount} khoản nợ`
-              );
-            } catch (err: any) {
-              hapticError();
-              Alert.alert('Lỗi khôi phục', err?.message || 'Không thể nạp dữ liệu từ file này.');
-            } finally {
-              setRestoringFileId(null);
-            }
-          },
-        },
-      ]
+      async () => {
+        if (!config?.accessToken) return;
+        try {
+          hapticMedium();
+          setRestoringFileId(file.id);
+          const jsonContent = await downloadDriveBackup(config.accessToken, file.id);
+          const res = await importDataFromJsonString(jsonContent, 'replace');
+          hapticSuccess();
+          showAlert(
+            'Khôi phục thành công',
+            `Đã nạp lại:\n• ${res.walletsCount} ví tiền\n• ${res.transactionsCount} giao dịch\n• ${res.debtsCount} khoản nợ`
+          );
+        } catch (err: any) {
+          hapticError();
+          showAlert('Lỗi khôi phục', err?.message || 'Không thể nạp dữ liệu từ file này.');
+        } finally {
+          setRestoringFileId(null);
+        }
+      },
+      { destructive: true, confirmText: 'KHÔI PHỤC NGAY' }
     );
   };
 
   // 5. Xóa file sao lưu trên Drive
   const handleDeleteBackup = (file: DriveBackupFile) => {
-    Alert.alert(
+    showConfirm(
       'Xóa bản sao lưu trên Drive',
       `Bạn có muốn xóa vĩnh viễn file "${file.name}" trên Google Drive không?`,
-      [
-        { text: 'Hủy', style: 'cancel' },
-        {
-          text: 'Xóa file',
-          style: 'destructive',
-          onPress: async () => {
-            if (!config?.accessToken) return;
-            hapticMedium();
-            const ok = await deleteDriveBackup(config.accessToken, file.id);
-            if (ok) {
-              hapticSuccess();
-              loadDriveFiles(config.accessToken);
-            } else {
-              hapticError();
-              Alert.alert('Lỗi', 'Không thể xóa file trên Google Drive.');
-            }
-          },
-        },
-      ]
+      async () => {
+        if (!config?.accessToken) return;
+        hapticMedium();
+        const ok = await deleteDriveBackup(config.accessToken, file.id);
+        if (ok) {
+          hapticSuccess();
+          loadDriveFiles(config.accessToken);
+        } else {
+          hapticError();
+          showAlert('Lỗi', 'Không thể xóa file trên Google Drive.');
+        }
+      },
+      { destructive: true, confirmText: 'Xóa file' }
     );
   };
 
@@ -530,6 +513,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
             </ScrollView>
           </View>
         </View>
+        {AlertModalComponent}
       </View>
     </Modal>
   );

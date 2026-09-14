@@ -20,6 +20,7 @@ import { WalletModal } from '../components/WalletModal';
 import { PlannedExpensesModal } from '../components/PlannedExpensesModal';
 import { SplitTransactionModal } from '../components/SplitTransactionModal';
 import { TransactionDetailModal } from '../components/TransactionDetailModal';
+import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
 import { SmartForecastCard } from '../components/SmartForecastCard';
 import { getDashboardForecast, DashboardForecast } from '../services/predictionService';
 import { Wallet, Transaction } from '../types';
@@ -54,12 +55,17 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
     categoryId?: string;
     amount?: number;
     note?: string;
+    type?: 'expense' | 'income' | 'transfer';
+    walletId?: string;
+    toWalletId?: string;
+    date?: Date;
   }>({});
   const [walletModalVisible, setWalletModalVisible] = useState(false);
   const [adjustingWallet, setAdjustingWallet] = useState<Wallet | null>(null);
   const [plannedModalVisible, setPlannedModalVisible] = useState(false);
   const [splitTargetTx, setSplitTargetTx] = useState<Transaction | null>(null);
   const [selectedDetailTx, setSelectedDetailTx] = useState<Transaction | null>(null);
+  const [txToDelete, setTxToDelete] = useState<Transaction | null>(null);
 
   const dashboardForecast = useMemo(() => {
     return getDashboardForecast(transactions, categories);
@@ -625,7 +631,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
                 transaction={tx}
                 isBalanceHidden={isBalanceHidden}
                 onPress={() => setSelectedDetailTx(tx)}
-                onDelete={() => removeTransaction(tx.id)}
+                onDelete={() => setTxToDelete(tx)}
               />
             ))
           )}
@@ -641,9 +647,13 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
           setQuickAddVisible(false);
           setQuickAddPrefill({});
         }}
+        defaultType={quickAddPrefill.type || 'expense'}
         prefillCategoryId={quickAddPrefill.categoryId}
         prefillAmount={quickAddPrefill.amount}
         prefillNote={quickAddPrefill.note}
+        prefillWalletId={quickAddPrefill.walletId}
+        prefillToWalletId={quickAddPrefill.toWalletId}
+        prefillDate={quickAddPrefill.date}
       />
 
       <WalletModal
@@ -674,12 +684,57 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
           setSplitTargetTx(tx);
         }}
         onDelete={tx => removeTransaction(tx.id)}
+        onRecreate={tx => {
+          setSelectedDetailTx(null);
+          const tType = tx.type === 'expense' || tx.type === 'income' || tx.type === 'transfer'
+            ? tx.type
+            : 'expense';
+          setQuickAddPrefill({
+            type: tType,
+            amount: tx.amount,
+            categoryId: tx.category_id || undefined,
+            walletId: tx.wallet_id,
+            toWalletId: tx.to_wallet_id || undefined,
+            note: tx.note || undefined,
+            date: new Date(tx.transacted_at),
+          });
+          setQuickAddVisible(true);
+        }}
       />
 
       <SplitTransactionModal
         visible={!!splitTargetTx}
         onClose={() => setSplitTargetTx(null)}
         transaction={splitTargetTx}
+      />
+
+      {/* Delete Confirmation Modal (NO system Alert) */}
+      <DeleteConfirmModal
+        visible={!!txToDelete}
+        transaction={txToDelete}
+        isBalanceHidden={isBalanceHidden}
+        onClose={() => setTxToDelete(null)}
+        onConfirmDelete={async tx => {
+          await removeTransaction(tx.id);
+          setTxToDelete(null);
+        }}
+        onRecreate={tx => {
+          setTxToDelete(null);
+          const tType =
+            tx.type === 'expense' || tx.type === 'income' || tx.type === 'transfer'
+              ? tx.type
+              : 'expense';
+          setQuickAddPrefill({
+            type: tType,
+            amount: tx.amount,
+            categoryId: tx.category_id || undefined,
+            walletId: tx.wallet_id,
+            toWalletId: tx.to_wallet_id || undefined,
+            note: tx.note || undefined,
+            date: new Date(tx.transacted_at),
+          });
+          setQuickAddVisible(true);
+        }}
       />
     </SafeAreaView>
   );

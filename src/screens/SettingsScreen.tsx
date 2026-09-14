@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  Alert,
   Modal,
   TextInput,
   Share,
@@ -13,6 +12,7 @@ import {
   Switch,
   Animated,
 } from 'react-native';
+import { useCustomAlert } from '../components/CustomAlertModal';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Sharing from 'expo-sharing';
@@ -71,6 +71,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
     updatePinCode,
   } = useSecurity();
 
+  const { showAlert, showConfirm, AlertModalComponent } = useCustomAlert(true);
+
   const db = useSQLiteContext();
   const [googleDriveModalVisible, setGoogleDriveModalVisible] = useState<boolean>(false);
   const [isDriveLinked, setIsDriveLinked] = useState<boolean>(false);
@@ -113,7 +115,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
     if (val) {
       const granted = await setupNotificationChannelAsync();
       if (!granted) {
-        Alert.alert(
+        showAlert(
           'Cần cấp quyền thông báo',
           'Vui lòng bật quyền thông báo trong Cài đặt hệ thống để ứng dụng có thể gửi nhắc nhở thói quen.'
         );
@@ -136,12 +138,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
     hapticSuccess();
     const ok = await sendTestHabitNotificationAsync();
     if (ok) {
-      Alert.alert(
+      showAlert(
         'Đã kích hoạt thử nghiệm',
         'Một thông báo sẽ xuất hiện trên thanh thông báo trong 2 giây tới. Hãy vuốt mở hoặc khóa màn hình để kiểm tra nhé!'
       );
     } else {
-      Alert.alert(
+      showAlert(
         'Chưa thể gửi thông báo',
         'Ứng dụng chưa được cấp quyền gửi thông báo trên thiết bị này.'
       );
@@ -193,7 +195,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
         });
       }
     } catch (err: any) {
-      Alert.alert('Lỗi xuất dữ liệu', err?.message || 'Không thể tạo file sao lưu');
+      showAlert('Lỗi xuất dữ liệu', err?.message || 'Không thể tạo file sao lưu');
     } finally {
       setIsProcessing(false);
     }
@@ -207,7 +209,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
       setJsonContent(jsonStr);
       setJsonPreviewModalVisible(true);
     } catch (err: any) {
-      Alert.alert('Lỗi', err?.message || 'Không thể tải mã JSON');
+      showAlert('Lỗi', err?.message || 'Không thể tải mã JSON');
     } finally {
       setIsProcessing(false);
     }
@@ -235,7 +237,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
       try {
         parsed = JSON.parse(content);
       } catch {
-        Alert.alert('Lỗi file', 'Nội dung file không đúng định dạng JSON.');
+        showAlert('Lỗi file', 'Nội dung file không đúng định dạng JSON.');
         setIsProcessing(false);
         return;
       }
@@ -245,37 +247,34 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
       const tCount = (raw.transactions || []).length;
       const dCount = (raw.debts || []).length;
 
-      Alert.alert(
+      showConfirm(
         'Xác nhận khôi phục',
         `Phát hiện dữ liệu gồm:\n• ${wCount} ví tiền\n• ${tCount} giao dịch\n• ${dCount} khoản nợ\n\nChế độ: ${
           importMode === 'replace'
             ? 'GHI ĐÈ TOÀN BỘ (xóa dữ liệu hiện tại)'
             : 'HỢP NHẤT (bổ sung dữ liệu)'
         }\n\nBạn có muốn tiếp tục?`,
-        [
-          { text: 'Hủy', style: 'cancel' },
-          {
-            text: 'Tiến hành khôi phục',
-            style: importMode === 'replace' ? 'destructive' : 'default',
-            onPress: async () => {
-              try {
-                setIsProcessing(true);
-                const res = await importDataFromJsonString(content, importMode);
-                Alert.alert(
-                  'Thành công',
-                  `Đã khôi phục thành công:\n• ${res.walletsCount} ví tiền\n• ${res.transactionsCount} giao dịch\n• ${res.debtsCount} khoản nợ`
-                );
-              } catch (importErr: any) {
-                Alert.alert('Lỗi khôi phục', importErr?.message || 'Không thể nhập dữ liệu');
-              } finally {
-                setIsProcessing(false);
-              }
-            },
-          },
-        ]
+        async () => {
+          try {
+            setIsProcessing(true);
+            const res = await importDataFromJsonString(content, importMode);
+            showAlert(
+              'Thành công',
+              `Đã khôi phục thành công:\n• ${res.walletsCount} ví tiền\n• ${res.transactionsCount} giao dịch\n• ${res.debtsCount} khoản nợ`
+            );
+          } catch (importErr: any) {
+            showAlert('Lỗi khôi phục', importErr?.message || 'Không thể nhập dữ liệu');
+          } finally {
+            setIsProcessing(false);
+          }
+        },
+        {
+          destructive: importMode === 'replace',
+          confirmText: 'Tiến hành khôi phục',
+        }
       );
     } catch (err: any) {
-      Alert.alert('Lỗi chọn file', err?.message || 'Không thể đọc file đã chọn');
+      showAlert('Lỗi chọn file', err?.message || 'Không thể đọc file đã chọn');
     } finally {
       setIsProcessing(false);
     }
@@ -284,7 +283,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
   // 4. Xử lý nhập JSON dán trực tiếp
   const handleImportPastedJson = async () => {
     if (!pastedJson.trim()) {
-      Alert.alert('Thiếu dữ liệu', 'Vui lòng dán nội dung JSON vào ô.');
+      showAlert('Thiếu dữ liệu', 'Vui lòng dán nội dung JSON vào ô.');
       return;
     }
 
@@ -293,12 +292,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
       const res = await importDataFromJsonString(pastedJson.trim(), importMode);
       setJsonPasteModalVisible(false);
       setPastedJson('');
-      Alert.alert(
+      showAlert(
         'Thành công',
         `Đã khôi phục thành công:\n• ${res.walletsCount} ví tiền\n• ${res.transactionsCount} giao dịch\n• ${res.debtsCount} khoản nợ`
       );
     } catch (err: any) {
-      Alert.alert('Lỗi nhập dữ liệu', err?.message || 'Nội dung JSON không hợp lệ');
+      showAlert('Lỗi nhập dữ liệu', err?.message || 'Nội dung JSON không hợp lệ');
     } finally {
       setIsProcessing(false);
     }
@@ -356,7 +355,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
           await updatePinCode(next);
           await toggleAppLock(true);
           setPinModalVisible(false);
-          Alert.alert('Thành công', 'Đã lưu mã PIN và kích hoạt khóa bảo mật.');
+          showAlert('Thành công', 'Đã lưu mã PIN và kích hoạt khóa bảo mật.');
         } else {
           hapticError();
           triggerPinShake();
@@ -398,27 +397,21 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
 
   // 5. Xử lý Đặt lại dữ liệu gốc (Reset)
   const handleResetApp = () => {
-    Alert.alert(
+    showConfirm(
       'Cảnh báo xóa toàn bộ dữ liệu',
       'Hành động này sẽ xóa vĩnh viễn toàn bộ ví, giao dịch và sổ nợ hiện tại trên máy của bạn. Bạn không thể hoàn tác sau khi đã xóa.\n\nBạn có chắc chắn muốn tiếp tục?',
-      [
-        { text: 'Hủy bỏ', style: 'cancel' },
-        {
-          text: 'XÓA TẤT CẢ',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setIsProcessing(true);
-              await resetAllData();
-              Alert.alert('Đã hoàn tất', 'Ứng dụng đã được đưa về trạng thái dữ liệu ban đầu.');
-            } catch (err: any) {
-              Alert.alert('Lỗi đặt lại', err?.message || 'Không thể xóa dữ liệu');
-            } finally {
-              setIsProcessing(false);
-            }
-          },
-        },
-      ]
+      async () => {
+        try {
+          setIsProcessing(true);
+          await resetAllData();
+          showAlert('Đã hoàn tất', 'Ứng dụng đã được đưa về trạng thái dữ liệu ban đầu.');
+        } catch (err: any) {
+          showAlert('Lỗi đặt lại', err?.message || 'Không thể xóa dữ liệu');
+        } finally {
+          setIsProcessing(false);
+        }
+      },
+      { destructive: true, confirmText: 'XÓA TẤT CẢ' }
     );
   };
 
@@ -878,7 +871,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                         isAppLockEnabled,
                         walletCount: wallets.length,
                       });
-                      Alert.alert(
+                      showAlert(
                         'Đã đồng bộ Widget',
                         'Dữ liệu tài chính mới nhất đã được gửi ra tiện ích ngoài màn hình chính.'
                       );
@@ -1280,6 +1273,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
           </View>
         </View>
       </Modal>
+      {AlertModalComponent}
     </SafeAreaView>
   );
 };

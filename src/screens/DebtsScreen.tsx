@@ -6,9 +6,9 @@ import {
   ScrollView,
   Pressable,
   TextInput,
-  Alert,
   RefreshControl,
 } from 'react-native';
+import { useCustomAlert } from '../components/CustomAlertModal';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import dayjs from 'dayjs';
@@ -28,6 +28,7 @@ export const DebtsScreen: React.FC = () => {
     refreshData,
     removeDebt,
   } = useWallet();
+  const { showAlert, AlertModalComponent } = useCustomAlert(true);
 
   const [activeTab, setActiveTab] = useState<'lend' | 'borrow'>('lend');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'settled'>('all');
@@ -64,7 +65,7 @@ export const DebtsScreen: React.FC = () => {
       ? `Khoản nợ của "${debt.person_name}" còn ${formatVND(debt.remaining_amount)} chưa tất toán.\n\nBạn có muốn hoàn tiền về ví không?`
       : `Bạn có chắc muốn xóa khoản nợ của "${debt.person_name}"?`;
 
-    Alert.alert(
+    showAlert(
       'Xóa khoản nợ',
       message,
       [
@@ -80,6 +81,7 @@ export const DebtsScreen: React.FC = () => {
           ? [
               {
                 text: refundLabel,
+                style: 'primary' as const,
                 onPress: async () => {
                   await removeDebt(debt.id, true);
                 },
@@ -527,6 +529,7 @@ export const DebtsScreen: React.FC = () => {
           debtToPay={targetPaymentDebt}
         />
       )}
+      {AlertModalComponent}
     </SafeAreaView>
   );
 };

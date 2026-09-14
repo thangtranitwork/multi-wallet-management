@@ -7,9 +7,9 @@ import {
   Pressable,
   ScrollView,
   TextInput,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useCustomAlert } from './CustomAlertModal';
 import dayjs from 'dayjs';
 import { useWallet } from '../context/WalletContext';
 import { Transaction } from '../types';
@@ -35,7 +35,8 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
   onClose,
   transaction,
 }) => {
-  const { splitTransaction, categories, updateTransactionCategory } = useWallet();
+  const { categories, splitTransaction, updateTransactionCategory } = useWallet();
+  const { showAlert, AlertModalComponent } = useCustomAlert(false);
 
   const [members, setMembers] = useState<MemberSplit[]>([
     { id: '1', name: '', phone: '', amountStr: '0', note: '' },
@@ -154,13 +155,13 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
   const handleConfirm = async () => {
     if (totalSplitAmount <= 0) {
       hapticError();
-      Alert.alert('Chưa nhập số tiền', 'Vui lòng nhập số tiền tách cho người khác');
+      showAlert('Chưa nhập số tiền', 'Vui lòng nhập số tiền tách cho người khác');
       return;
     }
 
     if (totalSplitAmount > totalAmount) {
       hapticError();
-      Alert.alert(
+      showAlert(
         'Vượt quá số tiền gốc',
         `Tổng tiền tách (${formatVND(totalSplitAmount)}) không được vượt quá số tiền giao dịch gốc (${formatVND(totalAmount)})`
       );
@@ -171,7 +172,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
       const amt = parseInt(m.amountStr, 10) || 0;
       if (amt > 0 && !m.name.trim()) {
         hapticError();
-        Alert.alert('Thiếu tên người', 'Vui lòng nhập tên cho người nhận phần nợ này');
+        showAlert('Thiếu tên người', 'Vui lòng nhập tên cho người nhận phần nợ này');
         return;
       }
     }
@@ -188,14 +189,14 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
 
       await splitTransaction(transaction.id, validSplits);
       hapticSuccess();
-      Alert.alert(
+      showAlert(
         'Tách tiền thành công',
-        `Đã chuyển ${formatVND(totalSplitAmount)} thành khoản nợ trong Sổ nợ.\nChi tiêu của bạn cho giao dịch này giảm còn ${formatVND(remainingForMe)}.`
+        `Đã chuyển ${formatVND(totalSplitAmount)} thành khoản nợ trong Sổ nợ.\nChi tiêu của bạn cho giao dịch này giảm còn ${formatVND(remainingForMe)}.`,
+        () => onClose()
       );
-      onClose();
     } catch (err: any) {
       hapticError();
-      Alert.alert('Lỗi', err?.message || 'Không thể tách giao dịch');
+      showAlert('Lỗi', err?.message || 'Không thể tách giao dịch');
     }
   };
 
@@ -274,7 +275,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
                                 setIsChangingCat(false);
                               } catch (e: any) {
                                 hapticError();
-                                Alert.alert('Lỗi', e?.message || 'Không thể đổi danh mục');
+                                showAlert('Lỗi', e?.message || 'Không thể đổi danh mục');
                               }
                             }}
                           >
@@ -485,6 +486,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
             </Pressable>
           </ScrollView>
         </View>
+        {AlertModalComponent}
       </View>
     </Modal>
   );

@@ -46,6 +46,8 @@ interface WalletContextType {
   }) => Promise<void>;
   removeTransaction: (id: string) => Promise<void>;
   updateTransactionCategory: (transactionId: string, categoryId: string | null) => Promise<void>;
+  updateTransactionWallet: (transactionId: string, walletId: string, toWalletId?: string | null) => Promise<void>;
+  updateTransactionTime: (transactionId: string, transactedAt: string) => Promise<void>;
   splitTransaction: (transactionId: string, splits: queries.SplitItem[]) => Promise<void>;
   addWallet: (wallet: Omit<Wallet, 'id' | 'created_at'>) => Promise<void>;
   editWallet: (wallet: Partial<Wallet> & { id: string }) => Promise<void>;
@@ -298,6 +300,22 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     triggerAutoBackup();
   };
 
+  const updateTransactionWallet = async (
+    transactionId: string,
+    walletId: string,
+    toWalletId?: string | null
+  ) => {
+    await queries.updateTransactionWallet(db, transactionId, walletId, toWalletId);
+    await refreshData();
+    triggerAutoBackup();
+  };
+
+  const updateTransactionTime = async (transactionId: string, transactedAt: string) => {
+    await queries.updateTransactionTime(db, transactionId, transactedAt);
+    await refreshData();
+    triggerAutoBackup();
+  };
+
   const splitTransaction = async (transactionId: string, splits: queries.SplitItem[]) => {
     await queries.splitTransactionIntoDebts(db, transactionId, splits);
     await refreshData();
@@ -473,6 +491,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         addTransaction,
         removeTransaction,
         updateTransactionCategory,
+        updateTransactionWallet,
+        updateTransactionTime,
         splitTransaction,
         addWallet,
         editWallet,

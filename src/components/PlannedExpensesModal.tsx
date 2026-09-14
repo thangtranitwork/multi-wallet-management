@@ -7,10 +7,10 @@ import {
   ScrollView,
   Pressable,
   TextInput,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useCustomAlert } from './CustomAlertModal';
 import dayjs from 'dayjs';
 import { useWallet } from '../context/WalletContext';
 import { PlannedExpense } from '../types';
@@ -38,6 +38,7 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
     executePlannedExpense,
     removePlannedExpense,
   } = useWallet();
+  const { showAlert, showConfirm, AlertModalComponent } = useCustomAlert(false);
 
   const [activeTab, setActiveTab] = useState<'pending' | 'executed' | 'all'>('pending');
 
@@ -118,18 +119,18 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
   const handleSaveExpense = async () => {
     if (!titleInput.trim()) {
       hapticError();
-      Alert.alert('Thiếu thông tin', 'Vui lòng nhập tên khoản dự chi.');
+      showAlert('Thiếu thông tin', 'Vui lòng nhập tên khoản dự chi.');
       return;
     }
     const numAmount = parseFloat(amountInput.replace(/[^0-9]/g, ''));
     if (isNaN(numAmount) || numAmount <= 0) {
       hapticError();
-      Alert.alert('Số tiền không hợp lệ', 'Vui lòng nhập số tiền lớn hơn 0.');
+      showAlert('Số tiền không hợp lệ', 'Vui lòng nhập số tiền lớn hơn 0.');
       return;
     }
     if (!targetDateInput || !dayjs(targetDateInput).isValid()) {
       hapticError();
-      Alert.alert('Ngày không hợp lệ', 'Vui lòng chọn ngày theo định dạng YYYY-MM-DD.');
+      showAlert('Ngày không hợp lệ', 'Vui lòng chọn ngày theo định dạng YYYY-MM-DD.');
       return;
     }
 
@@ -159,7 +160,7 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
       setFormModalVisible(false);
     } catch (err: any) {
       hapticError();
-      Alert.alert('Lỗi', err?.message || 'Không thể lưu khoản dự chi.');
+      showAlert('Lỗi', err?.message || 'Không thể lưu khoản dự chi.');
     }
   };
 
@@ -177,13 +178,13 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
     if (!executingItem) return;
     if (!executeWalletId) {
       hapticError();
-      Alert.alert('Chưa chọn nguồn tiền', 'Vui lòng chọn ví để trừ tiền.');
+      showAlert('Chưa chọn nguồn tiền', 'Vui lòng chọn ví để trừ tiền.');
       return;
     }
     const numActual = parseFloat(actualAmountInput.replace(/[^0-9]/g, ''));
     if (isNaN(numActual) || numActual <= 0) {
       hapticError();
-      Alert.alert('Số tiền không hợp lệ', 'Vui lòng nhập số tiền thực tế lớn hơn 0.');
+      showAlert('Số tiền không hợp lệ', 'Vui lòng nhập số tiền thực tế lớn hơn 0.');
       return;
     }
 
@@ -196,30 +197,24 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
       });
       hapticSuccess();
       setExecutingItem(null);
-      Alert.alert('Thành công', 'Đã ghi nhận giao dịch chi tiêu và cập nhật số dư ví thành công!');
+      showAlert('Thành công', 'Đã ghi nhận giao dịch chi tiêu và cập nhật số dư ví thành công!');
     } catch (err: any) {
       hapticError();
-      Alert.alert('Lỗi khi trừ tiền', err?.message || 'Không thể hoàn thành khoản chi.');
+      showAlert('Lỗi khi trừ tiền', err?.message || 'Không thể hoàn thành khoản chi.');
     }
   };
 
   // Xóa khoản dự chi
   const handleDeleteExpense = (item: PlannedExpense) => {
     hapticLight();
-    Alert.alert(
+    showConfirm(
       'Xóa kế hoạch dự chi',
       `Ngài có chắc chắn muốn xóa "${item.title}"?`,
-      [
-        { text: 'Hủy', style: 'cancel' },
-        {
-          text: 'Xóa ngay',
-          style: 'destructive',
-          onPress: async () => {
-            await removePlannedExpense(item.id);
-            hapticSuccess();
-          },
-        },
-      ]
+      async () => {
+        await removePlannedExpense(item.id);
+        hapticSuccess();
+      },
+      { destructive: true, confirmText: 'Xóa ngay' }
     );
   };
 
@@ -840,6 +835,7 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
             </View>
           </View>
         </Modal>
+        {AlertModalComponent}
       </SafeAreaView>
     </Modal>
   );
