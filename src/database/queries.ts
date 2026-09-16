@@ -1613,4 +1613,62 @@ export async function deletePlannedExpense(
   await db.runAsync('DELETE FROM planned_expenses WHERE id = ?', [id]);
 }
 
+export async function getPlannedExpensesByParentTxId(
+  db: SQLite.SQLiteDatabase,
+  parentTxId: string
+): Promise<PlannedExpense[]> {
+  return await db.getAllAsync<PlannedExpense>(
+    `SELECT pe.*,
+            w.name as wallet_name, w.color as wallet_color, w.icon as wallet_icon,
+            tw.name as to_wallet_name, tw.color as to_wallet_color, tw.icon as to_wallet_icon,
+            c.name as category_name, c.icon as category_icon, c.color as category_color
+     FROM planned_expenses pe
+     LEFT JOIN wallets w ON pe.wallet_id = w.id
+     LEFT JOIN wallets tw ON pe.to_wallet_id = tw.id
+     LEFT JOIN categories c ON pe.category_id = c.id
+     WHERE pe.parent_tx_id = ?
+     ORDER BY pe.installment_current ASC, pe.target_date ASC`,
+    [parentTxId]
+  );
+}
+
+export async function updateCreditTransactionDueDate(
+  db: SQLite.SQLiteDatabase,
+  params: {
+    txId: string;
+    newFirstDueDate: string; // YYYY-MM-DD
+  }
+): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    const plans = await db.getAllAsync<PlannedExpense>(
+      'SELECT * FROM planned_expenses WHERE parent_tx_id = ? ORDER BY installment_current ASC, target_date ASC',
+      [params.txId]
+    );
+    if (plans.length === 0) return;
+
+    const pendingPlans = plans.filter(p => p.status === 'pending');
+    if (pendingPlans.length === 0) return;
+
+    const parts = params.newFirstDueDate.split('-');
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    const d = parseInt(parts[2], 10);
+
+    for (let i = 0; i < pendingPlans.length; i++) {
+      const plan = pendingPlans[i];
+      const targetDateObj = new Date(y, (m - 1) + i, d);
+      const targetDate = [
+        targetDateObj.getFullYear(),
+        String(targetDateObj.getMonth() + 1).padStart(2, '0'),
+        String(targetDateObj.getDate()).padStart(2, '0')
+      ].join('-');
+
+      await db.runAsync(
+        'UPDATE planned_expenses SET target_date = ? WHERE id = ?',
+        [targetDate, plan.id]
+      );
+    }
+  });
+}
+
 

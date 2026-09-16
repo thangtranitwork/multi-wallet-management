@@ -159,14 +159,23 @@ export const AnalyticsScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
           )}
           <View>
             <Text style={styles.screenTitle}>Báo Cáo & Phân Tích</Text>
-            <Text style={styles.screenSubtitle}>Dòng tiền & Cơ cấu tài sản</Text>
           </View>
         </View>
 
-        <Pressable style={styles.shareBtnShadow} onPress={handleExportBackup}>
-          <View style={styles.shareBtnInner}>
-            <Ionicons name="share-outline" size={16} color="#000000" />
-            <Text style={styles.shareBtnText}>Sao lưu</Text>
+        <Pressable
+          style={styles.shareBtnShadow}
+          onPress={() => {
+            hapticLight();
+            toggleHideBalance();
+          }}
+        >
+          <View style={[styles.shareBtnInner, isBalanceHidden && { backgroundColor: THEME.popYellow }]}>
+            <Ionicons
+              name={isBalanceHidden ? 'eye-off-outline' : 'eye-outline'}
+              size={16}
+              color="#000000"
+            />
+            <Text style={styles.shareBtnText}>{isBalanceHidden ? 'Hiện số' : 'Ẩn số'}</Text>
           </View>
         </Pressable>
       </View>

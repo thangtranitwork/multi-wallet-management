@@ -430,7 +430,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
 
         <View style={styles.headerTitleCol}>
           <Text style={styles.screenTitle}>Cài Đặt & Dữ Liệu</Text>
-          <Text style={styles.screenSubtitle}>Sao lưu, nhập xuất & tùy chọn hệ thống</Text>
         </View>
       </View>
 
@@ -447,10 +446,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
             </View>
 
             <View style={styles.cardBody}>
-              <Text style={styles.cardDescText}>
-                Toàn bộ dữ liệu tài chính của bạn được lưu trữ ngoại tuyến an toàn trên SQLite của máy.
-              </Text>
-
               <View style={styles.statsGrid}>
                 <View style={styles.statBox}>
                   <Text style={styles.statVal}>{wallets.length}</Text>
@@ -554,18 +549,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
           </View>
         </View>
 
-        {/* Categories & Analytics Section */}
+        {/* Categories Section */}
         <View style={styles.cardShadow}>
           <View style={styles.cardInner}>
             <View style={[styles.folderTab, { backgroundColor: THEME.popYellow }]}>
-              <Text style={styles.folderTabText}>DANH MỤC & BÁO CÁO</Text>
+              <Text style={styles.folderTabText}>QUẢN LÝ DANH MỤC</Text>
             </View>
 
             <View style={styles.cardBody}>
-              <Text style={styles.cardDescText}>
-                Quản lý các nhóm chi tiêu, nguồn thu nhập hoặc xem các báo cáo phân tích dòng tiền chuyên sâu.
-              </Text>
-
               <View style={styles.actionButtonsCol}>
                 <Pressable
                   style={styles.actionBtnPrimary}
@@ -576,17 +567,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                 >
                   <Ionicons name="pricetags-outline" size={18} color="#000000" />
                   <Text style={styles.actionBtnText}>Quản lý danh mục thu & chi tiêu</Text>
-                </Pressable>
-
-                <Pressable
-                  style={styles.actionBtnSecondary}
-                  onPress={() => {
-                    hapticMedium();
-                    navigation.navigate('Analytics');
-                  }}
-                >
-                  <Ionicons name="pie-chart-outline" size={18} color="#000000" />
-                  <Text style={styles.actionBtnTextSecondary}>Xem báo cáo & phân tích dòng tiền</Text>
+                  <Ionicons name="chevron-forward" size={16} color="#000000" style={{ marginLeft: 'auto' }} />
                 </Pressable>
               </View>
             </View>
@@ -623,12 +604,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                 </View>
               </View>
 
-              <Text style={styles.cardDescText}>
-                {isDriveLinked
-                  ? `Đang liên kết với: ${driveUserEmail || 'Tài khoản Google'}. Dữ liệu được tự động bảo vệ an toàn trên Google Drive cá nhân.`
-                  : 'Liên kết tài khoản Google để tự động sao lưu đám mây và khôi phục chỉ với 1 chạm khi đổi điện thoại.'}
-              </Text>
-
               <Pressable
                 style={styles.actionBtnGoogle}
                 onPress={() => {
@@ -654,11 +629,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
             </View>
 
             <View style={styles.cardBody}>
-              <Text style={styles.cardSectionTitle}>Sao lưu dự phòng</Text>
-              <Text style={styles.cardDescText}>
-                Trích xuất toàn bộ ví, giao dịch, sổ nợ và danh mục thành định dạng chuẩn JSON để lưu giữ an toàn hoặc chuyển sang thiết bị mới.
-              </Text>
-
               <View style={styles.actionButtonsCol}>
                 <Pressable
                   style={styles.actionBtnPrimary}
@@ -690,11 +660,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
             </View>
 
             <View style={styles.cardBody}>
-              <Text style={styles.cardSectionTitle}>Khôi phục dữ liệu</Text>
-              <Text style={styles.cardDescText}>
-                Tải lại toàn bộ dữ liệu từ bản sao lưu .json đã lưu trước đây.
-              </Text>
-
               {/* Mode Switcher */}
               <View style={styles.importModeContainer}>
                 <Text style={styles.importModeTitle}>Chế độ khôi phục:</Text>

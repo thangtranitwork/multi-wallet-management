@@ -47,6 +47,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
     addWallet,
     plannedExpenses,
     totalPendingPlanned,
+    totalAllPendingPlanned,
     safeToSpendBalance,
   } = useWallet();
 
@@ -125,7 +126,6 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
           </View>
           <View style={styles.headerBrandTextCol}>
             <Text style={styles.headerBrandTitle}>Ví Của Tôi</Text>
-            <Text style={styles.headerBrandSubtitle}>Sổ quản lý tài chính</Text>
           </View>
         </View>
 
@@ -134,35 +134,15 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
             style={styles.headerIconBtnShadow}
             onPress={() => {
               hapticMedium();
-              navigation.navigate('Analytics');
+              toggleHideBalance();
             }}
           >
-            <View style={[styles.headerIconBtnInner, { backgroundColor: THEME.popYellow }]}>
-              <Ionicons name="pie-chart-outline" size={19} color="#000000" />
-            </View>
-          </Pressable>
-
-          <Pressable
-            style={styles.headerIconBtnShadow}
-            onPress={() => {
-              hapticMedium();
-              setWalletModalVisible(true);
-            }}
-          >
-            <View style={styles.headerIconBtnInner}>
-              <Ionicons name="folder-outline" size={19} color="#000000" />
-            </View>
-          </Pressable>
-
-          <Pressable
-            style={styles.headerIconBtnShadow}
-            onPress={() => {
-              hapticMedium();
-              navigation.navigate('Transactions');
-            }}
-          >
-            <View style={styles.headerIconBtnInner}>
-              <Ionicons name="search-outline" size={20} color="#000000" />
+            <View style={[styles.headerIconBtnInner, isBalanceHidden && { backgroundColor: THEME.popYellow }]}>
+              <Ionicons
+                name={isBalanceHidden ? 'eye-off-outline' : 'eye-outline'}
+                size={19}
+                color="#000000"
+              />
             </View>
           </Pressable>
 
@@ -174,7 +154,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
             }}
           >
             <View style={styles.headerIconBtnInner}>
-              <Ionicons name="settings-outline" size={20} color="#000000" />
+              <Ionicons name="settings-outline" size={19} color="#000000" />
             </View>
           </Pressable>
         </View>
@@ -192,13 +172,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
           />
         }
       >
-        {/* Large Punchy Headline (Đúng kiểu typography to bản trong ảnh của Ngài) */}
-        <View style={styles.headlineSection}>
-          <Text style={styles.headlineMain}>Tài chính trong tay.</Text>
-          <Text style={styles.headlineSub}>Tự do từng ngày.</Text>
-        </View>
-
-        {/* Quick Add / Search Bar + Pop Yellow (+) Button (Y hệt thanh nhập và nút vàng trong ảnh mẫu) */}
+        {/* Quick Add / Search Bar + Pop Yellow (+) Button */}
         <View style={styles.quickBarRow}>
           <Pressable
             style={styles.quickSearchInputShadow}
@@ -225,13 +199,13 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
           </Pressable>
         </View>
 
-        {/* Smart Forecast & Reminder Card (Tự học hành vi 11h ăn uống, ngày 10 tiền trọ) */}
+        {/* Smart Forecast & Reminder Card */}
         <SmartForecastCard
           forecast={dashboardForecast}
           onQuickAction={handleForecastAction}
         />
 
-        {/* Hero Card: Net Worth Overview (Thẻ Folder Tab Xanh Lá viền đen dập nổi) */}
+        {/* Hero Card: Net Worth Overview */}
         <View style={styles.netWorthCardShadow}>
           <View style={styles.netWorthCardInner}>
             {/* Folder Tab trên cùng */}
@@ -241,7 +215,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
 
             <View style={styles.netWorthContent}>
               <View style={styles.netWorthHeaderRow}>
-                <Text style={styles.netWorthSubtitle}>TÀI SẢN RÒNG THỰC TẾ</Text>
+                <View style={{ flex: 1 }} />
                 <Pressable
                   onPress={toggleHideBalance}
                   style={styles.eyeToggleBtn}
@@ -376,8 +350,34 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
                 </Text>
                 <Text style={styles.plannedDetailText}>
                   {totalPendingPlanned > 0
-                    ? `Đã bảo lưu ${isBalanceHidden ? '••••••' : formatVND(totalPendingPlanned)} cho ${plannedExpenses.filter(p => p.status === 'pending').length} khoản dự chi`
-                    : 'Chưa có khoản dự chi nào đang chờ'}
+                    ? `Đã bảo lưu ${isBalanceHidden ? '••••••' : formatVND(totalPendingPlanned)} cho ${
+                        plannedExpenses.filter(
+                          p =>
+                            p.status === 'pending' &&
+                            (!p.target_date ||
+                              p.target_date.substring(0, 10) <=
+                                dayjs().add(1, 'month').endOf('month').format('YYYY-MM-DD'))
+                        ).length
+                      } khoản kỳ tới${
+                        plannedExpenses.filter(
+                          p =>
+                            p.status === 'pending' &&
+                            p.target_date &&
+                            p.target_date.substring(0, 10) >
+                              dayjs().add(1, 'month').endOf('month').format('YYYY-MM-DD')
+                        ).length > 0
+                          ? ` (+${
+                              plannedExpenses.filter(
+                                p =>
+                                  p.status === 'pending' &&
+                                  p.target_date &&
+                                  p.target_date.substring(0, 10) >
+                                    dayjs().add(1, 'month').endOf('month').format('YYYY-MM-DD')
+                              ).length
+                            } kỳ sau)`
+                          : ''
+                      }`
+                    : 'Chưa có khoản dự chi nào trong kỳ tới'}
                 </Text>
               </View>
 

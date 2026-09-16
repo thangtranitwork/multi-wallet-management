@@ -31,6 +31,8 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
     categories,
     plannedExpenses,
     totalPendingPlanned,
+    totalAllPendingPlanned,
+    liquidAvailableBalance,
     safeToSpendBalance,
     isBalanceHidden,
     addPlannedExpense,
@@ -240,6 +242,8 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
     const today = dayjs().startOf('day');
     const target = dayjs(targetDate).startOf('day');
     const diffDays = target.diff(today, 'day');
+    const endOfNextMonth = dayjs().add(1, 'month').endOf('month').format('YYYY-MM-DD');
+    const isBeyondNextMonth = targetDate.substring(0, 10) > endOfNextMonth;
 
     if (diffDays < 0) {
       return (
@@ -266,6 +270,15 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
         <View style={[styles.dateBadge, { backgroundColor: '#FEF08A', borderColor: '#854D0E' }]}>
           <Ionicons name="hourglass-outline" size={12} color="#854D0E" />
           <Text style={[styles.dateBadgeText, { color: '#854D0E' }]}>Ngày mai</Text>
+        </View>
+      );
+    }
+
+    if (isBeyondNextMonth) {
+      return (
+        <View style={[styles.dateBadge, { backgroundColor: '#F3E8FF', borderColor: '#7E22CE' }]}>
+          <Ionicons name="calendar-outline" size={12} color="#7E22CE" />
+          <Text style={[styles.dateBadgeText, { color: '#7E22CE' }]}>Kỳ sau ({dayjs(targetDate).format('MM/YYYY')})</Text>
         </View>
       );
     }
@@ -321,7 +334,7 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
                   <Text style={styles.safeBannerBadgeText}>TIỀN CÓ THỂ TIÊU AN TOÀN</Text>
                 </View>
                 <Text style={styles.safeBannerSub}>
-                  Sau khi trừ tất cả các khoản đã lên lịch
+                  Bảo lưu dự chi kỳ tới ({dayjs().format('MM/YYYY')} - {dayjs().add(1, 'month').format('MM/YYYY')})
                 </Text>
               </View>
 
@@ -332,12 +345,12 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
               {/* Equation breakdown bar */}
               <View style={styles.breakdownBar}>
                 <View style={styles.breakdownItem}>
-                  <Text style={styles.breakdownLabel}>Tổng số dư ví</Text>
-                  <Text style={styles.breakdownVal}>{isBalanceHidden ? '••••••' : formatVND(totalWalletBalance)}</Text>
+                  <Text style={styles.breakdownLabel}>Tài sản khả dụng</Text>
+                  <Text style={styles.breakdownVal}>{isBalanceHidden ? '••••••' : formatVND(liquidAvailableBalance)}</Text>
                 </View>
                 <Text style={styles.breakdownSign}>-</Text>
                 <View style={styles.breakdownItem}>
-                  <Text style={styles.breakdownLabel}>Dự chi đang chờ</Text>
+                  <Text style={styles.breakdownLabel}>Dự chi kỳ tới</Text>
                   <Text style={[styles.breakdownVal, { color: '#DC2626' }]}>
                     {isBalanceHidden ? '••••••' : formatVND(totalPendingPlanned)}
                   </Text>
@@ -350,6 +363,12 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
                   </Text>
                 </View>
               </View>
+
+              {totalAllPendingPlanned > totalPendingPlanned && (
+                <Text style={styles.breakdownNoteText}>
+                  * Không tính các khoản dự chi dài hạn sau tháng {dayjs().add(1, 'month').format('MM/YYYY')} ({formatVND(totalAllPendingPlanned - totalPendingPlanned)}) để tránh hụt tiền chi tiêu thực tế.
+                </Text>
+              )}
             </View>
           </View>
 
@@ -1033,6 +1052,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '900',
     color: '#9CA3AF',
+  },
+  breakdownNoteText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#4B5563',
+    marginTop: 8,
+    lineHeight: 14,
   },
 
   // Filter tabs

@@ -151,7 +151,6 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
         <View style={styles.header}>
           <View>
             <Text style={styles.title}>Quản Lý Danh Mục</Text>
-            <Text style={styles.subTitle}>Tùy chỉnh danh mục thu & chi tiêu</Text>
           </View>
 
           <Pressable

@@ -98,7 +98,6 @@ export const DebtsScreen: React.FC = () => {
       <View style={styles.header}>
         <View>
           <Text style={styles.screenTitle}>Sổ Nợ & Cho Vay</Text>
-          <Text style={styles.screenSubtitle}>Theo dõi công nợ 2 chiều</Text>
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>

@@ -1,4 +1,4 @@
-# MultiWallet (v1.1.3) - Personal Finance & Multi-Source Wallet Management
+# MultiWallet (v1.1.4) - Personal Finance & Multi-Source Wallet Management
 
 A modern, high-performance mobile application built with **React Native (Expo SDK 57)**, **TypeScript**, and **Expo SQLite**, crafted with a distinctive, tactile Neo-Brutalist design language. 
 
@@ -30,10 +30,11 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
   - Automatically schedules linked **Planned Expense** on the expected payment due date.
 - **Multi-Period Installments (Trả góp nhiều kỳ)**:
   - Configurable terms (2, 3, 6, 9, 12 periods or custom).
+  - **Dual Input Modes**: Enter total principal OR enter amount per term to automatically calculate initial principal.
   - **Support for Pre-existing / Already-paid Terms (Nhập số kỳ đã trả trước đó)**: Seamlessly import historical installments with $k$ terms already settled outside the app. Automatically calculates remaining debt and schedules future payments starting from term $k+1$.
   - Monthly installment fee support (fixed VND fee per period or conversion rate).
-  - Interactive live **Schedule Breakdown Preview** (Principal + Fee per term $\rightarrow$ Target Due Dates, highlighting already paid vs. upcoming terms).
-  - Automatically creates atomic linked recurring planned expenses across subsequent months.
+  - Interactive **Accordion Preview** avoiding scroll jumps while typing.
+  - Flexible **Due Date Adjustment**: Customize due dates with stepper chips (`Chu kỳ thẻ`, `+15 ngày`, `+30 ngày`, `+45 ngày`) and edit linked installment schedules anytime from transaction details!
 - **Seamless 1-Tap Repayment Workflow (Chuẩn hoá Dòng Tiền)**:
   - Execute repayments directly from Planned Expenses: Automatically creates an internal **Transfer** from your Bank Account to the Credit Card wallet.
   - Reduces bank balance, eliminates credit debt, and restores credit limit without double-counting expenses!
@@ -104,12 +105,15 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
     - `Hôm nay đến hạn!` (Urgent warning)
     - `Quá hạn X ngày` (Overdue alert)
     - `Ngày mai` / `Còn X ngày` (Upcoming schedule)
+    - `Kỳ sau (MM/YYYY)` (Future cycle indicator)
     - `Đã chi` (Completed)
   - One-tap quick date chips: *Hôm nay, Ngày mai, Sau 3 ngày, 1 tuần tới, Đầu tháng tới*.
-- **Safe-to-Spend Balance (Tiền có thể chi tiêu an toàn)**:
-  - Real-time calculation:
-    $$\text{Safe-to-Spend} = \text{Total Wallet Balances} - \text{Total Pending Planned Expenses}$$
-  - Clearly displayed on both the **Dashboard Widget** and the **Planned Expenses Modal**. Know exactly how much money is safe to spend today without running out of cash for scheduled bills!
+- **Accurate Safe-to-Spend Balance (Tiền có thể chi tiêu an toàn)**:
+  - Corrected formula avoiding credit debt double-deduction:
+    $$\text{Liquid Assets} = \sum \text{Non-Credit Wallets} + \max(0, \text{Credit Overpayment})$$
+    $$\text{Upcoming Planned} = \sum_{\text{target\_date} \le \text{EndOfNextMonth}} \text{Pending Planned Expenses}$$
+    $$\text{Safe-to-Spend} = \max(0, \text{Liquid Assets} - \text{Upcoming Planned})$$
+  - Clearly displayed on both the **Dashboard** and the **Planned Expenses Modal**. Know exactly how much money is safe to spend today without running out of cash for scheduled bills!
 - **1-Tap "Đã Chi" / "Thanh Toán" Execution**:
   - Convert any planned expense into an actual expense or credit repayment with 1 tap.
   - Choose the paying wallet, confirm or adjust the actual transacted amount, and add notes.

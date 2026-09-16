@@ -9,8 +9,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import dayjs from 'dayjs';
+import { useSQLiteContext } from 'expo-sqlite';
 import { useWallet } from '../context/WalletContext';
-import { Transaction, Category, Wallet } from '../types';
+import { Transaction, Category, Wallet, PlannedExpense } from '../types';
+import * as queries from '../database/queries';
 import { THEME, formatVND } from '../constants';
 import { hapticLight, hapticSuccess, hapticError } from '../utils/haptics';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
@@ -33,12 +35,14 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   onDelete,
   onRecreate,
 }) => {
+  const db = useSQLiteContext();
   const {
     wallets,
     categories,
     updateTransactionCategory,
     updateTransactionWallet,
     updateTransactionTime,
+    updateCreditTransactionDueDate,
     removeTransaction,
     isBalanceHidden,
   } = useWallet();
@@ -52,6 +56,38 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   const [pickerMonth, setPickerMonth] = useState<Date>(new Date());
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+
+  // Credit installment / planned expense link
+  const [linkedPlans, setLinkedPlans] = useState<PlannedExpense[]>([]);
+  const [isEditingDueDate, setIsEditingDueDate] = useState(false);
+  const [newDueDate, setNewDueDate] = useState<string>('');
+
+  useEffect(() => {
+    let isMounted = true;
+    if (transaction?.id && visible) {
+      queries.getPlannedExpensesByParentTxId(db, transaction.id)
+        .then(plans => {
+          if (isMounted) {
+            setLinkedPlans(plans);
+            const pendingFirst = plans.find(p => p.status === 'pending');
+            if (pendingFirst?.target_date) {
+              setNewDueDate(pendingFirst.target_date.substring(0, 10));
+            } else {
+              setNewDueDate(dayjs().format('YYYY-MM-DD'));
+            }
+          }
+        })
+        .catch(() => {
+          if (isMounted) setLinkedPlans([]);
+        });
+    } else {
+      setLinkedPlans([]);
+      setIsEditingDueDate(false);
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [transaction?.id, visible]);
 
   useEffect(() => {
     if (transaction) {
@@ -320,6 +356,45 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
     } catch (err: any) {
       hapticError();
       showAlert('Lỗi', err?.message || 'Không thể cập nhật thời gian giao dịch');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  // --- Credit Installment Due Date Adjustments ---
+  const adjustDueDateDays = (days: number) => {
+    hapticLight();
+    setNewDueDate(prev => {
+      const current = dayjs(prev).isValid() ? dayjs(prev) : dayjs();
+      return current.add(days, 'day').format('YYYY-MM-DD');
+    });
+  };
+
+  const adjustDueDateMonths = (months: number) => {
+    hapticLight();
+    setNewDueDate(prev => {
+      const current = dayjs(prev).isValid() ? dayjs(prev) : dayjs();
+      return current.add(months, 'month').format('YYYY-MM-DD');
+    });
+  };
+
+  const handleSaveDueDate = async () => {
+    if (!transaction || !newDueDate || isUpdating) return;
+    setIsUpdating(true);
+    hapticLight();
+    try {
+      await updateCreditTransactionDueDate({
+        txId: transaction.id,
+        newFirstDueDate: newDueDate,
+      });
+      const updated = await queries.getPlannedExpensesByParentTxId(db, transaction.id);
+      setLinkedPlans(updated);
+      setIsEditingDueDate(false);
+      hapticSuccess();
+      showAlert('Thành công', 'Đã cập nhật hạn thanh toán và dời lịch dự chi các kỳ tương ứng!');
+    } catch (err: any) {
+      hapticError();
+      showAlert('Lỗi', err?.message || 'Không thể cập nhật hạn thanh toán');
     } finally {
       setIsUpdating(false);
     }
@@ -873,6 +948,281 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                     <Text style={styles.noteValueText}>{transaction.note}</Text>
                   </View>
                 )}
+              </View>
+            )}
+
+            {/* Credit Installment & Linked Planned Expenses Section */}
+            {linkedPlans.length > 0 && (
+              <View style={styles.sectionCard}>
+                <View style={styles.sectionHeaderRow}>
+                  <View style={styles.sectionTitleGroup}>
+                    <Ionicons name="calendar-outline" size={18} color="#000000" />
+                    <Text style={styles.sectionTitle}>
+                      Kế hoạch thanh toán / Ngày dự chi ({linkedPlans.length} kỳ)
+                    </Text>
+                  </View>
+                  <Pressable
+                    style={styles.actionToggleBtn}
+                    onPress={() => {
+                      hapticLight();
+                      setIsEditingDueDate(!isEditingDueDate);
+                    }}
+                  >
+                    <Ionicons
+                      name={isEditingDueDate ? 'chevron-up' : 'calendar'}
+                      size={15}
+                      color="#000000"
+                    />
+                    <Text style={styles.actionToggleText}>
+                      {isEditingDueDate ? 'Thu gọn' : 'Đổi hạn'}
+                    </Text>
+                  </Pressable>
+                </View>
+
+                {/* Status summary */}
+                <View style={styles.creditSummaryBox}>
+                  <View style={styles.creditSummaryRow}>
+                    <Text style={styles.creditSummaryLabel}>Đã thanh toán:</Text>
+                    <Text style={styles.creditSummaryVal}>
+                      {linkedPlans.filter(p => p.status === 'executed').length} / {linkedPlans.length} kỳ
+                    </Text>
+                  </View>
+                  <View style={styles.creditSummaryRow}>
+                    <Text style={styles.creditSummaryLabel}>Còn nợ lại:</Text>
+                    <Text style={[styles.creditSummaryVal, { color: '#E11D48' }]}>
+                      {formatVND(
+                        linkedPlans
+                          .filter(p => p.status === 'pending')
+                          .reduce((acc, cur) => acc + cur.amount, 0)
+                      )}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Edit Due Date Accordion */}
+                {isEditingDueDate && (
+                  <View style={styles.creditEditDueDateCard}>
+                    <Text style={styles.creditEditTitle}>
+                      Điều chỉnh ngày đến hạn kỳ kế tiếp:
+                    </Text>
+                    <Text style={styles.creditEditSubtitle}>
+                      Các kỳ tiếp theo sẽ tự động được dời tương ứng mỗi tháng một lần.
+                    </Text>
+
+                    {/* Quick Date Chips */}
+                    <View style={styles.creditQuickChipsRow}>
+                      <Pressable
+                        style={[
+                          styles.creditQuickChip,
+                          newDueDate === dayjs().format('YYYY-MM-DD') && styles.creditQuickChipActive,
+                        ]}
+                        onPress={() => {
+                          hapticLight();
+                          setNewDueDate(dayjs().format('YYYY-MM-DD'));
+                        }}
+                      >
+                        <Text
+                          style={[
+                            styles.creditQuickChipText,
+                            newDueDate === dayjs().format('YYYY-MM-DD') && styles.creditQuickChipTextActive,
+                          ]}
+                        >
+                          Hôm nay
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        style={[
+                          styles.creditQuickChip,
+                          newDueDate === dayjs().add(15, 'day').format('YYYY-MM-DD') && styles.creditQuickChipActive,
+                        ]}
+                        onPress={() => {
+                          hapticLight();
+                          setNewDueDate(dayjs().add(15, 'day').format('YYYY-MM-DD'));
+                        }}
+                      >
+                        <Text
+                          style={[
+                            styles.creditQuickChipText,
+                            newDueDate === dayjs().add(15, 'day').format('YYYY-MM-DD') && styles.creditQuickChipTextActive,
+                          ]}
+                        >
+                          +15 ngày
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        style={[
+                          styles.creditQuickChip,
+                          newDueDate === dayjs().add(30, 'day').format('YYYY-MM-DD') && styles.creditQuickChipActive,
+                        ]}
+                        onPress={() => {
+                          hapticLight();
+                          setNewDueDate(dayjs().add(30, 'day').format('YYYY-MM-DD'));
+                        }}
+                      >
+                        <Text
+                          style={[
+                            styles.creditQuickChipText,
+                            newDueDate === dayjs().add(30, 'day').format('YYYY-MM-DD') && styles.creditQuickChipTextActive,
+                          ]}
+                        >
+                          +30 ngày
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        style={[
+                          styles.creditQuickChip,
+                          newDueDate === dayjs().add(45, 'day').format('YYYY-MM-DD') && styles.creditQuickChipActive,
+                        ]}
+                        onPress={() => {
+                          hapticLight();
+                          setNewDueDate(dayjs().add(45, 'day').format('YYYY-MM-DD'));
+                        }}
+                      >
+                        <Text
+                          style={[
+                            styles.creditQuickChipText,
+                            newDueDate === dayjs().add(45, 'day').format('YYYY-MM-DD') && styles.creditQuickChipTextActive,
+                          ]}
+                        >
+                          +45 ngày
+                        </Text>
+                      </Pressable>
+                    </View>
+
+                    {/* Stepper controls */}
+                    <View style={styles.creditStepperContainer}>
+                      <View style={styles.creditStepperBox}>
+                        <Text style={styles.creditStepperLabel}>NGÀY</Text>
+                        <View style={styles.creditStepperRow}>
+                          <Pressable style={styles.creditStepBtn} onPress={() => adjustDueDateDays(-1)}>
+                            <Ionicons name="remove" size={16} color="#000000" />
+                          </Pressable>
+                          <Text style={styles.creditStepValue}>
+                            {dayjs(newDueDate).isValid() ? dayjs(newDueDate).format('DD') : '--'}
+                          </Text>
+                          <Pressable style={styles.creditStepBtn} onPress={() => adjustDueDateDays(1)}>
+                            <Ionicons name="add" size={16} color="#000000" />
+                          </Pressable>
+                        </View>
+                      </View>
+
+                      <Text style={styles.creditStepperSlash}>/</Text>
+
+                      <View style={styles.creditStepperBox}>
+                        <Text style={styles.creditStepperLabel}>THÁNG</Text>
+                        <View style={styles.creditStepperRow}>
+                          <Pressable style={styles.creditStepBtn} onPress={() => adjustDueDateMonths(-1)}>
+                            <Ionicons name="remove" size={16} color="#000000" />
+                          </Pressable>
+                          <Text style={styles.creditStepValue}>
+                            {dayjs(newDueDate).isValid() ? dayjs(newDueDate).format('MM') : '--'}
+                          </Text>
+                          <Pressable style={styles.creditStepBtn} onPress={() => adjustDueDateMonths(1)}>
+                            <Ionicons name="add" size={16} color="#000000" />
+                          </Pressable>
+                        </View>
+                      </View>
+
+                      <Text style={styles.creditStepperSlash}>/</Text>
+
+                      <View style={styles.creditStepperBox}>
+                        <Text style={styles.creditStepperLabel}>NĂM</Text>
+                        <View style={styles.creditStepperRow}>
+                          <Text style={styles.creditStepValue}>
+                            {dayjs(newDueDate).isValid() ? dayjs(newDueDate).format('YYYY') : '----'}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+
+                    {/* Save Button */}
+                    <Pressable
+                      style={styles.saveDueDateBtn}
+                      onPress={handleSaveDueDate}
+                      disabled={isUpdating}
+                    >
+                      <Ionicons name="checkmark-circle" size={18} color="#000000" />
+                      <Text style={styles.saveDueDateBtnText}>Lưu hạn thanh toán mới</Text>
+                    </Pressable>
+                  </View>
+                )}
+
+                {/* Plan Terms List */}
+                <View style={styles.creditTermsList}>
+                  {linkedPlans.map((plan, idx) => {
+                    const isPaid = plan.status === 'executed';
+                    const isFirstPending = !isPaid && linkedPlans.findIndex(p => p.status === 'pending') === idx;
+                    const formattedPlanDate = plan.target_date
+                      ? dayjs(plan.target_date).format('DD/MM/YYYY')
+                      : 'Không có hạn';
+
+                    return (
+                      <View
+                        key={plan.id}
+                        style={[
+                          styles.creditTermItem,
+                          isFirstPending && styles.creditTermItemHighlight,
+                          isPaid && styles.creditTermItemPaid,
+                        ]}
+                      >
+                        <View style={styles.creditTermLeft}>
+                          <View
+                            style={[
+                              styles.creditTermBadge,
+                              isPaid
+                                ? { backgroundColor: '#DCFCE7' }
+                                : isFirstPending
+                                ? { backgroundColor: THEME.popYellow }
+                                : { backgroundColor: '#F3F4F6' },
+                            ]}
+                          >
+                            <Text style={styles.creditTermBadgeText}>
+                              {plan.installment_current && plan.installment_total
+                                ? `Kỳ ${plan.installment_current}/${plan.installment_total}`
+                                : `Kỳ ${idx + 1}`}
+                            </Text>
+                          </View>
+                          <View>
+                            <Text style={styles.creditTermDate}>
+                              Hạn: {formattedPlanDate}
+                            </Text>
+                            {isFirstPending && (
+                              <Text style={styles.creditTermDueTag}>Kỳ sắp tới cần trả</Text>
+                            )}
+                          </View>
+                        </View>
+
+                        <View style={styles.creditTermRight}>
+                          <Text style={[styles.creditTermAmount, isPaid && { color: '#9CA3AF' }]}>
+                            {formatVND(plan.amount)}
+                          </Text>
+                          <View
+                            style={[
+                              styles.creditStatusPill,
+                              isPaid
+                                ? { backgroundColor: '#DCFCE7', borderColor: '#16A34A' }
+                                : { backgroundColor: '#FEF3C7', borderColor: '#D97706' },
+                            ]}
+                          >
+                            <Ionicons
+                              name={isPaid ? 'checkmark' : 'time-outline'}
+                              size={12}
+                              color={isPaid ? '#16A34A' : '#D97706'}
+                            />
+                            <Text
+                              style={[
+                                styles.creditStatusPillText,
+                                { color: isPaid ? '#16A34A' : '#D97706' },
+                              ]}
+                            >
+                              {isPaid ? 'Đã trả' : 'Chờ trả'}
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
               </View>
             )}
 
@@ -1572,6 +1922,213 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
     color: '#EF4444',
+  },
+  creditSummaryBox: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    padding: 12,
+    marginBottom: 10,
+    gap: 6,
+  },
+  creditSummaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  creditSummaryLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#4B5563',
+  },
+  creditSummaryVal: {
+    fontSize: 13.5,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  creditEditDueDateCard: {
+    backgroundColor: '#FEF9C3',
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#000000',
+    padding: 12,
+    marginBottom: 12,
+  },
+  creditEditTitle: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  creditEditSubtitle: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#713F12',
+    marginTop: 2,
+    marginBottom: 10,
+  },
+  creditQuickChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 10,
+  },
+  creditQuickChip: {
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 5,
+    paddingHorizontal: 9,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+  },
+  creditQuickChipActive: {
+    backgroundColor: '#FACC15',
+  },
+  creditQuickChipText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  creditQuickChipTextActive: {
+    fontWeight: '900',
+  },
+  creditStepperContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginBottom: 12,
+  },
+  creditStepperBox: {
+    alignItems: 'center',
+  },
+  creditStepperLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#713F12',
+    marginBottom: 2,
+  },
+  creditStepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    paddingHorizontal: 4,
+    paddingVertical: 3,
+    gap: 4,
+  },
+  creditStepBtn: {
+    width: 26,
+    height: 26,
+    backgroundColor: '#FEF08A',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  creditStepValue: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#000000',
+    paddingHorizontal: 6,
+    minWidth: 32,
+    textAlign: 'center',
+  },
+  creditStepperSlash: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#000000',
+    marginTop: 12,
+  },
+  saveDueDateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#FACC15',
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    paddingVertical: 10,
+  },
+  saveDueDateBtnText: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  creditTermsList: {
+    gap: 8,
+  },
+  creditTermItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    padding: 10,
+  },
+  creditTermItemHighlight: {
+    borderColor: '#EAB308',
+    backgroundColor: '#FEFCE8',
+  },
+  creditTermItemPaid: {
+    opacity: 0.65,
+    backgroundColor: '#F9FAFB',
+  },
+  creditTermLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  creditTermBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#000000',
+  },
+  creditTermBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  creditTermDate: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  creditTermDueTag: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#D97706',
+    marginTop: 1,
+  },
+  creditTermRight: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  creditTermAmount: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  creditStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  creditStatusPillText: {
+    fontSize: 10,
+    fontWeight: '800',
   },
 
 

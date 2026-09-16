@@ -71,6 +71,9 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
   const [feePerInstallmentStr, setFeePerInstallmentStr] = useState<string>('0');
   const [enableCreditPlan, setEnableCreditPlan] = useState<boolean>(true);
   const [showManualCreditDate, setShowManualCreditDate] = useState<boolean>(false);
+  const [installmentInputMode, setInstallmentInputMode] = useState<'total' | 'per_term'>('total');
+  const [termAmountStr, setTermAmountStr] = useState<string>('0');
+  const [isScheduleExpanded, setIsScheduleExpanded] = useState<boolean>(false);
 
   // Helper tính ngày đến hạn gợi ý theo chu kỳ thẻ
   const getSuggestedDueDate = (wallet?: Wallet, baseDate: Date = new Date()): string => {
@@ -130,6 +133,9 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
       setPaidInstallmentCount(0);
       setFeePerInstallmentStr('0');
       setEnableCreditPlan(true);
+      setInstallmentInputMode('total');
+      setTermAmountStr('0');
+      setIsScheduleExpanded(false);
 
       // Run smart category prediction
       if (defaultType !== 'transfer') {
@@ -146,13 +152,6 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
           setSelectedCategoryId(prefillCategoryId);
         } else if (pred.primarySuggestion) {
           setSelectedCategoryId(pred.primarySuggestion.category.id);
-          // Suggest predicted recurring amount if not set
-          if (!prefillAmount && pred.predictedAmount) {
-            setAmountStr(pred.predictedAmount.toString());
-          }
-          if (!prefillNote && pred.predictedNote) {
-            setNote(pred.predictedNote);
-          }
         } else {
           const filteredCats = categories.filter(c => c.type === (defaultType === 'income' ? 'income' : 'expense'));
           if (filteredCats.length > 0) {
@@ -282,6 +281,45 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
       .reduce((sum, item) => sum + item.total, 0);
   }, [creditMode, amountNumber, installmentPreviewList]);
 
+  const handleInstallmentCountChange = (num: number) => {
+    hapticLight();
+    setInstallmentCount(num);
+    const newPaidCount = Math.min(paidInstallmentCount, num - 1);
+    setPaidInstallmentCount(newPaidCount);
+    if (installmentInputMode === 'per_term') {
+      const termTotal = parseInt(termAmountStr.replace(/[^0-9]/g, ''), 10) || 0;
+      const termPrincipal = Math.max(0, termTotal - feeNumber);
+      setAmountStr((termPrincipal * num).toString());
+    }
+  };
+
+  const handleFeeChange = (text: string) => {
+    setFeePerInstallmentStr(text);
+    const newFee = parseInt(text.replace(/[^0-9]/g, ''), 10) || 0;
+    if (installmentInputMode === 'per_term') {
+      const termTotal = parseInt(termAmountStr.replace(/[^0-9]/g, ''), 10) || 0;
+      const termPrincipal = Math.max(0, termTotal - newFee);
+      setAmountStr((termPrincipal * count).toString());
+    }
+  };
+
+  const handleSwitchInstallmentMode = (mode: 'total' | 'per_term') => {
+    hapticLight();
+    setInstallmentInputMode(mode);
+    if (mode === 'per_term') {
+      const currentPerTerm = basePrincipalPerTerm + feeNumber;
+      setTermAmountStr(currentPerTerm > 0 ? currentPerTerm.toString() : '0');
+    }
+  };
+
+  const handleTermAmountChange = (text: string) => {
+    const clean = text.replace(/[^0-9]/g, '');
+    setTermAmountStr(clean || '0');
+    const termTotal = parseInt(clean, 10) || 0;
+    const termPrincipal = Math.max(0, termTotal - feeNumber);
+    setAmountStr((termPrincipal * count).toString());
+  };
+
   const adjustCreditDueDate = (days: number) => {
     hapticLight();
     setCreditDueDate(prev => {
@@ -317,6 +355,27 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
   // Keypad actions
   const handleDigitPress = (digit: string) => {
     hapticLight();
+    if (isCreditWallet && creditMode === 'installment' && installmentInputMode === 'per_term') {
+      let nextVal = termAmountStr;
+      if (digit === '000') {
+        if (termAmountStr === '0' || !termAmountStr) return;
+        if (termAmountStr.length + 3 > 12) return;
+        nextVal = termAmountStr + '000';
+      } else {
+        if (termAmountStr === '0' || !termAmountStr) {
+          nextVal = digit;
+        } else {
+          if (termAmountStr.length >= 12) return;
+          nextVal = termAmountStr + digit;
+        }
+      }
+      setTermAmountStr(nextVal);
+      const termTotal = parseInt(nextVal, 10) || 0;
+      const termPrincipal = Math.max(0, termTotal - feeNumber);
+      setAmountStr((termPrincipal * count).toString());
+      return;
+    }
+
     if (digit === '000') {
       if (amountStr === '0') return;
       if (amountStr.length + 3 > 12) return;
@@ -333,6 +392,18 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
 
   const handleBackspace = () => {
     hapticLight();
+    if (isCreditWallet && creditMode === 'installment' && installmentInputMode === 'per_term') {
+      let nextVal = '0';
+      if (termAmountStr.length > 1) {
+        nextVal = termAmountStr.slice(0, -1);
+      }
+      setTermAmountStr(nextVal);
+      const termTotal = parseInt(nextVal, 10) || 0;
+      const termPrincipal = Math.max(0, termTotal - feeNumber);
+      setAmountStr((termPrincipal * count).toString());
+      return;
+    }
+
     if (amountStr.length <= 1) {
       setAmountStr('0');
     } else {
@@ -343,6 +414,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
   const handleClear = () => {
     hapticMedium();
     setAmountStr('0');
+    setTermAmountStr('0');
   };
 
   // Format Helper for Custom Date Display
@@ -901,11 +973,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                                 styles.installmentCountChip,
                                 installmentCount === num && styles.installmentCountChipActive,
                               ]}
-                              onPress={() => {
-                                hapticLight();
-                                setInstallmentCount(num);
-                                setPaidInstallmentCount(prev => Math.min(prev, num - 1));
-                              }}
+                              onPress={() => handleInstallmentCountChange(num)}
                             >
                               <Text
                                 style={[
@@ -988,6 +1056,76 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                           </View>
                         </View>
 
+                        {/* PHƯƠNG THỨC NHẬP TIỀN TRẢ GÓP */}
+                        <View style={styles.installmentModeTabsRow}>
+                          <Pressable
+                            style={[
+                              styles.installmentModeTab,
+                              installmentInputMode === 'total' && styles.installmentModeTabActive,
+                            ]}
+                            onPress={() => handleSwitchInstallmentMode('total')}
+                          >
+                            <Text
+                              style={[
+                                styles.installmentModeTabText,
+                                installmentInputMode === 'total' && styles.installmentModeTabTextActive,
+                              ]}
+                            >
+                              Nhập tổng tiền gốc
+                            </Text>
+                          </Pressable>
+                          <Pressable
+                            style={[
+                              styles.installmentModeTab,
+                              installmentInputMode === 'per_term' && styles.installmentModeTabActive,
+                            ]}
+                            onPress={() => handleSwitchInstallmentMode('per_term')}
+                          >
+                            <Ionicons
+                              name="calculator"
+                              size={12}
+                              color={installmentInputMode === 'per_term' ? '#000000' : '#6B7280'}
+                              style={{ marginRight: 4 }}
+                            />
+                            <Text
+                              style={[
+                                styles.installmentModeTabText,
+                                installmentInputMode === 'per_term' && styles.installmentModeTabTextActive,
+                              ]}
+                            >
+                              Nhập tiền mỗi kỳ
+                            </Text>
+                          </Pressable>
+                        </View>
+
+                        {/* Nếu chọn nhập theo mỗi kỳ */}
+                        {installmentInputMode === 'per_term' && (
+                          <View style={styles.installmentPerTermBox}>
+                            <View style={styles.installmentPerTermHeader}>
+                              <Text style={styles.creditFieldLabel}>SỐ TIỀN TRẢ MỖI KỲ *</Text>
+                              <View style={styles.installmentCalcBadge}>
+                                <Text style={styles.installmentCalcBadgeText}>
+                                  Tự tính {count} kỳ
+                                </Text>
+                              </View>
+                            </View>
+                            <View style={styles.installmentInputWrapper}>
+                              <TextInput
+                                style={[styles.installmentTextInput, { fontSize: 14 }]}
+                                keyboardType="numeric"
+                                value={termAmountStr === '0' ? '' : termAmountStr}
+                                onChangeText={handleTermAmountChange}
+                                placeholder="Nhập số tiền 1 kỳ (VD: 1500000)"
+                                placeholderTextColor={THEME.textMuted}
+                              />
+                              <Text style={styles.installmentInputUnit}>₫/kỳ</Text>
+                            </View>
+                            <Text style={styles.installmentPerTermCalcSub}>
+                              = {count} kỳ × {formatVND(parseInt(termAmountStr, 10) || 0)} = {formatVND(totalOriginalAmount)} tổng gốc ban đầu
+                            </Text>
+                          </View>
+                        )}
+
                         <View style={styles.installmentInputsRow}>
                           <View style={{ flex: 1 }}>
                             <Text style={styles.creditFieldLabel}>PHÍ MỖI KỲ (NẾU CÓ)</Text>
@@ -996,36 +1134,212 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                                 style={styles.installmentTextInput}
                                 keyboardType="numeric"
                                 value={feePerInstallmentStr}
-                                onChangeText={setFeePerInstallmentStr}
+                                onChangeText={handleFeeChange}
                                 placeholder="0"
                                 placeholderTextColor={THEME.textMuted}
                               />
                               <Text style={styles.installmentInputUnit}>₫</Text>
                             </View>
                           </View>
+                        </View>
 
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.creditFieldLabel}>
-                              {paidInstallmentCount > 0
-                                ? `HẠN TRẢ KỲ ${paidInstallmentCount + 1}`
-                                : 'HẠN TRẢ KỲ 1'}
-                            </Text>
-                            <View style={styles.installmentInputWrapper}>
+                        {/* Hạn trả kỳ tiếp theo với Hero Date Banner & Quick Chips */}
+                        <View style={styles.creditDueSection}>
+                          <Text style={styles.creditFieldLabel}>
+                            {paidInstallmentCount > 0
+                              ? `HẠN TRẢ KỲ ${paidInstallmentCount + 1} (KỲ TIẾP THEO)`
+                              : 'HẠN TRẢ KỲ 1'}
+                          </Text>
+
+                          <View style={styles.creditDateHeroCard}>
+                            <View style={styles.creditDateHeroLeft}>
+                              <View style={styles.creditDateHeroIcon}>
+                                <Ionicons name="calendar" size={16} color="#000000" />
+                              </View>
+                              <View style={styles.creditDateHeroTexts}>
+                                <Text style={styles.creditDateHeroMain}>
+                                  {dayjs(creditDueDate).isValid()
+                                    ? dayjs(creditDueDate).format('DD/MM/YYYY')
+                                    : creditDueDate}
+                                </Text>
+                                <Text style={styles.creditDateHeroSub}>
+                                  {relativeDueDays}
+                                  {creditDueDate === suggestedDueDate ? ' • Đúng chu kỳ thẻ' : ''}
+                                </Text>
+                              </View>
+                            </View>
+
+                            <View style={styles.creditDateHeroActions}>
+                              <Pressable
+                                style={styles.creditDateStepperBtn}
+                                onPress={() => adjustCreditDueDate(-1)}
+                              >
+                                <Ionicons name="remove" size={13} color="#000000" />
+                              </Pressable>
+                              <Pressable
+                                style={styles.creditDateStepperBtn}
+                                onPress={() => adjustCreditDueDate(1)}
+                              >
+                                <Ionicons name="add" size={13} color="#000000" />
+                              </Pressable>
+                              <Pressable
+                                style={[
+                                  styles.creditDateEditBtn,
+                                  showManualCreditDate && styles.creditDateEditBtnActive,
+                                ]}
+                                onPress={() => setShowManualCreditDate(prev => !prev)}
+                              >
+                                <Ionicons
+                                  name="create-outline"
+                                  size={14}
+                                  color={showManualCreditDate ? '#000000' : '#4B5563'}
+                                />
+                              </Pressable>
+                            </View>
+                          </View>
+
+                          {showManualCreditDate && (
+                            <View style={styles.creditManualDateRow}>
+                              <Text style={styles.creditManualDateLabel}>Nhập ngày:</Text>
                               <TextInput
-                                style={styles.installmentTextInput}
+                                style={styles.creditManualDateInput}
                                 value={creditDueDate}
                                 onChangeText={setCreditDueDate}
                                 placeholder="YYYY-MM-DD"
                                 placeholderTextColor={THEME.textMuted}
                                 maxLength={10}
                               />
-                              <Ionicons name="calendar-outline" size={14} color="#6B7280" />
                             </View>
+                          )}
+
+                          <View style={styles.creditQuickChipsGrid}>
+                            <Pressable
+                              style={[
+                                styles.creditQuickGridChip,
+                                creditDueDate === suggestedDueDate && styles.creditQuickGridChipActive,
+                              ]}
+                              onPress={() => {
+                                hapticLight();
+                                setCreditDueDate(suggestedDueDate);
+                              }}
+                            >
+                              <Text
+                                style={[
+                                  styles.creditQuickGridChipText,
+                                  creditDueDate === suggestedDueDate && styles.creditQuickGridChipTextActive,
+                                ]}
+                                numberOfLines={1}
+                              >
+                                Chu kỳ thẻ
+                              </Text>
+                            </Pressable>
+
+                            <Pressable
+                              style={[
+                                styles.creditQuickGridChip,
+                                creditDueDate === preset15Date && styles.creditQuickGridChipActive,
+                              ]}
+                              onPress={() => {
+                                hapticLight();
+                                setCreditDueDate(preset15Date);
+                              }}
+                            >
+                              <Text
+                                style={[
+                                  styles.creditQuickGridChipText,
+                                  creditDueDate === preset15Date && styles.creditQuickGridChipTextActive,
+                                ]}
+                                numberOfLines={1}
+                              >
+                                +15 ngày
+                              </Text>
+                            </Pressable>
+
+                            <Pressable
+                              style={[
+                                styles.creditQuickGridChip,
+                                creditDueDate === preset30Date && styles.creditQuickGridChipActive,
+                              ]}
+                              onPress={() => {
+                                hapticLight();
+                                setCreditDueDate(preset30Date);
+                              }}
+                            >
+                              <Text
+                                style={[
+                                  styles.creditQuickGridChipText,
+                                  creditDueDate === preset30Date && styles.creditQuickGridChipTextActive,
+                                ]}
+                                numberOfLines={1}
+                              >
+                                +30 ngày
+                              </Text>
+                            </Pressable>
+
+                            <Pressable
+                              style={[
+                                styles.creditQuickGridChip,
+                                creditDueDate === preset45Date && styles.creditQuickGridChipActive,
+                              ]}
+                              onPress={() => {
+                                hapticLight();
+                                setCreditDueDate(preset45Date);
+                              }}
+                            >
+                              <Text
+                                style={[
+                                  styles.creditQuickGridChipText,
+                                  creditDueDate === preset45Date && styles.creditQuickGridChipTextActive,
+                                ]}
+                                numberOfLines={1}
+                              >
+                                +45 ngày
+                              </Text>
+                            </Pressable>
                           </View>
                         </View>
 
-                        {/* Installment Live Schedule Preview */}
-                        {amountNumber > 0 && installmentPreviewList.length > 0 && (
+                        {/* Thanh tóm tắt cố định - Không làm giật/cuộn màn hình khi nhập số */}
+                        <View style={styles.installmentSummaryBar}>
+                          <View style={styles.installmentSummaryLeft}>
+                            <Ionicons name="calculator-outline" size={14} color="#000000" />
+                            <Text style={styles.installmentSummaryText} numberOfLines={1}>
+                              {amountNumber > 0
+                                ? `Dự tính: ~${formatVND(basePrincipalPerTerm + feeNumber)}/kỳ • Còn ${count - paidCount} kỳ`
+                                : `Chưa nhập tiền • ${count - paidCount} kỳ cần trả`}
+                            </Text>
+                          </View>
+                          {amountNumber > 0 && (
+                            <Pressable
+                              style={styles.scheduleToggleBtn}
+                              onPress={() => {
+                                hapticLight();
+                                setIsScheduleExpanded(prev => !prev);
+                              }}
+                            >
+                              <Text style={styles.scheduleToggleBtnText}>
+                                {isScheduleExpanded ? 'Thu gọn' : `Lịch ${count} kỳ`}
+                              </Text>
+                              <Ionicons
+                                name={isScheduleExpanded ? 'chevron-up' : 'chevron-down'}
+                                size={12}
+                                color="#000000"
+                              />
+                            </Pressable>
+                          )}
+                        </View>
+
+                        {paidInstallmentCount > 0 && amountNumber > 0 && (
+                          <View style={styles.paidSummaryNotice}>
+                            <Ionicons name="information-circle" size={13} color="#15803D" style={{ marginTop: 1 }} />
+                            <Text style={styles.paidSummaryNoticeText}>
+                              Gốc ban đầu: {formatVND(totalOriginalAmount)} • Đã trả: {formatVND(paidInstallmentCount * (basePrincipalPerTerm + feeNumber))} • Dư nợ ghi thẻ: {formatVND(totalRemainingPayable)}
+                            </Text>
+                          </View>
+                        )}
+
+                        {/* Accordion Table: chỉ mở khi người dùng chủ động bấm xem, không tự nhảy khi nhập số */}
+                        {isScheduleExpanded && amountNumber > 0 && installmentPreviewList.length > 0 && (
                           <View style={styles.schedulePreviewBox}>
                             <View style={styles.schedulePreviewHeader}>
                               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
@@ -1536,7 +1850,9 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
             {/* Amount Display - Placed right above the keypad */}
             <View style={styles.amountDisplayContainer}>
               <Text style={styles.amountLabel}>
-                {type === 'expense'
+                {isCreditWallet && creditMode === 'installment' && installmentInputMode === 'per_term'
+                  ? `Số tiền mỗi kỳ (Tổng ${count} kỳ)`
+                  : type === 'expense'
                   ? 'Số tiền chi'
                   : type === 'income'
                   ? 'Số tiền thu'
@@ -1550,8 +1866,17 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                   type === 'transfer' && styles.textTransfer,
                 ]}
               >
-                {formatVND(amountNumber)}
+                {isCreditWallet && creditMode === 'installment' && installmentInputMode === 'per_term'
+                  ? formatVND(parseInt(termAmountStr, 10) || 0)
+                  : formatVND(amountNumber)}
               </Text>
+              {isCreditWallet && creditMode === 'installment' && (
+                <Text style={styles.amountInstallmentSubtext}>
+                  {installmentInputMode === 'per_term'
+                    ? `Tổng gốc ban đầu: ${formatVND(amountNumber)}${paidCount > 0 ? ` • Dư nợ ghi thẻ (${count - paidCount} kỳ): ${formatVND(totalRemainingPayable)}` : ''}`
+                    : `Mỗi kỳ: ~${formatVND(basePrincipalPerTerm + feeNumber)} • Còn ${count - paidCount} kỳ cần trả`}
+                </Text>
+              )}
             </View>
 
             {/* Mobile Touch Keypad */}
@@ -2685,5 +3010,132 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     color: '#000000',
+  },
+  amountInstallmentSubtext: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#4B5563',
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  installmentModeTabsRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 8,
+  },
+  installmentModeTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    backgroundColor: '#FFFFFF',
+  },
+  installmentModeTabActive: {
+    backgroundColor: THEME.popYellow,
+  },
+  installmentModeTabText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6B7280',
+  },
+  installmentModeTabTextActive: {
+    color: '#000000',
+    fontWeight: '900',
+  },
+  installmentPerTermBox: {
+    backgroundColor: '#FEF9C3',
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    padding: 8,
+    marginBottom: 8,
+  },
+  installmentPerTermHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  installmentCalcBadge: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#000000',
+  },
+  installmentCalcBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  installmentPerTermCalcSub: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#854D0E',
+    marginTop: 4,
+  },
+  installmentSummaryBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    paddingHorizontal: 8,
+    paddingVertical: 7,
+    marginTop: 4,
+    minHeight: 36,
+  },
+  installmentSummaryLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  installmentSummaryText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  scheduleToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: THEME.popYellow,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#000000',
+  },
+  scheduleToggleBtnText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  paidSummaryNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 5,
+    backgroundColor: '#DCFCE7',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#16A34A',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    marginTop: 4,
+  },
+  paidSummaryNoticeText: {
+    flex: 1,
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#15803D',
+    lineHeight: 13,
   },
 });

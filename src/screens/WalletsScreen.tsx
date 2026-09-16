@@ -55,7 +55,6 @@ export const WalletsScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
       <View style={styles.header}>
         <View>
           <Text style={styles.screenTitle}>Nguồn Tiền</Text>
-          <Text style={styles.screenSubtitle}>Quản lý tài khoản & số dư</Text>
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>

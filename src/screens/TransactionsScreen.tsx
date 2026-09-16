@@ -132,7 +132,6 @@ export const TransactionsScreen: React.FC = () => {
       <View style={styles.header}>
         <View>
           <Text style={styles.screenTitle}>Sổ Giao Dịch</Text>
-          <Text style={styles.screenSubtitle}>Lịch sử thu - chi - chuyển khoản</Text>
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>

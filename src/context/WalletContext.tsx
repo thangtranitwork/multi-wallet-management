@@ -28,6 +28,8 @@ interface WalletContextType {
   summary: FinancialSummary | null;
   categorySpendings: CategorySpending[];
   totalPendingPlanned: number;
+  totalAllPendingPlanned: number;
+  liquidAvailableBalance: number;
   safeToSpendBalance: number;
   isLoading: boolean;
   isBalanceHidden: boolean;
@@ -35,6 +37,7 @@ interface WalletContextType {
   activeWalletFilter: string | null;
   setActiveWalletFilter: (id: string | null) => void;
   refreshData: () => Promise<void>;
+  updateCreditTransactionDueDate: (params: { txId: string; newFirstDueDate: string }) => Promise<void>;
   addTransaction: (tx: {
     type: 'expense' | 'income' | 'transfer';
     amount: number;
@@ -239,16 +242,38 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   }, [db]);
 
-  const totalPendingPlanned = useMemo(() => {
+  const liquidAvailableBalance = useMemo(() => {
+    return wallets.reduce((sum, w) => {
+      if (w.is_excluded) return sum;
+      if (w.type === 'credit') {
+        return sum + (w.balance > 0 ? w.balance : 0);
+      }
+      return sum + w.balance;
+    }, 0);
+  }, [wallets]);
+
+  const totalAllPendingPlanned = useMemo(() => {
     return plannedExpenses
       .filter(p => p.status === 'pending')
       .reduce((sum, p) => sum + p.amount, 0);
   }, [plannedExpenses]);
 
+  // Dự chi trong chu kỳ tới: tháng hiện tại và tháng kế tiếp (target_date <= endOfNextMonth)
+  const totalPendingPlanned = useMemo(() => {
+    const endOfNextMonth = dayjs().add(1, 'month').endOf('month').format('YYYY-MM-DD');
+    return plannedExpenses
+      .filter(p => {
+        if (p.status !== 'pending') return false;
+        if (!p.target_date) return true;
+        const dateStr = p.target_date.substring(0, 10);
+        return dateStr <= endOfNextMonth;
+      })
+      .reduce((sum, p) => sum + p.amount, 0);
+  }, [plannedExpenses]);
+
   const safeToSpendBalance = useMemo(() => {
-    const totalWalletBalance = wallets.reduce((sum, w) => sum + w.balance, 0);
-    return Math.max(0, totalWalletBalance - totalPendingPlanned);
-  }, [wallets, totalPendingPlanned]);
+    return Math.max(0, liquidAvailableBalance - totalPendingPlanned);
+  }, [liquidAvailableBalance, totalPendingPlanned]);
 
   useEffect(() => {
     refreshData();
@@ -384,6 +409,15 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     triggerAutoBackup();
   };
 
+  const updateCreditTransactionDueDate = async (params: {
+    txId: string;
+    newFirstDueDate: string;
+  }) => {
+    await queries.updateCreditTransactionDueDate(db, params);
+    await refreshData();
+    triggerAutoBackup();
+  };
+
   const addDebt = async (debt: {
     type: 'lend' | 'borrow';
     person_name: string;
@@ -515,6 +549,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         summary,
         categorySpendings,
         totalPendingPlanned,
+        totalAllPendingPlanned,
+        liquidAvailableBalance,
         safeToSpendBalance,
         isLoading,
         isBalanceHidden,
@@ -522,6 +558,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         activeWalletFilter,
         setActiveWalletFilter,
         refreshData,
+        updateCreditTransactionDueDate,
         addTransaction,
         removeTransaction,
         updateTransactionCategory,
