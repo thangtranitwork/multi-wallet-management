@@ -61,6 +61,7 @@ interface WalletContextType {
     transactedAt: string;
     isInstallment?: boolean;
     installmentCount?: number;
+    paidInstallmentCount?: number;
     feePerInstallment?: number;
     firstDueDate: string;
   }) => Promise<void>;
@@ -374,6 +375,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     transactedAt: string;
     isInstallment?: boolean;
     installmentCount?: number;
+    paidInstallmentCount?: number;
     feePerInstallment?: number;
     firstDueDate: string;
   }) => {

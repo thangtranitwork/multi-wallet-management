@@ -30,8 +30,9 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
   - Automatically schedules linked **Planned Expense** on the expected payment due date.
 - **Multi-Period Installments (Trả góp nhiều kỳ)**:
   - Configurable terms (2, 3, 6, 9, 12 periods or custom).
+  - **Support for Pre-existing / Already-paid Terms (Nhập số kỳ đã trả trước đó)**: Seamlessly import historical installments with $k$ terms already settled outside the app. Automatically calculates remaining debt and schedules future payments starting from term $k+1$.
   - Monthly installment fee support (fixed VND fee per period or conversion rate).
-  - Interactive live **Schedule Breakdown Preview** (Principal + Fee per term $\rightarrow$ Target Due Dates).
+  - Interactive live **Schedule Breakdown Preview** (Principal + Fee per term $\rightarrow$ Target Due Dates, highlighting already paid vs. upcoming terms).
   - Automatically creates atomic linked recurring planned expenses across subsequent months.
 - **Seamless 1-Tap Repayment Workflow (Chuẩn hoá Dòng Tiền)**:
   - Execute repayments directly from Planned Expenses: Automatically creates an internal **Transfer** from your Bank Account to the Credit Card wallet.

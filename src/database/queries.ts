@@ -1498,8 +1498,9 @@ export async function createCreditExpenseWithPlan(
     transactedAt: string;
     isInstallment?: boolean;
     installmentCount?: number;
+    paidInstallmentCount?: number;
     feePerInstallment?: number;
-    firstDueDate: string; // YYYY-MM-DD
+    firstDueDate: string; // YYYY-MM-DD (Hạn trả của kỳ tiếp theo chưa thanh toán)
   }
 ): Promise<void> {
   await db.withTransactionAsync(async () => {
@@ -1510,27 +1511,42 @@ export async function createCreditExpenseWithPlan(
 
     const isInstallment = !!params.isInstallment && (params.installmentCount || 1) > 1;
     const count = isInstallment ? (params.installmentCount || 1) : 1;
+    const paidCount = isInstallment ? Math.min(count - 1, Math.max(0, params.paidInstallmentCount || 0)) : 0;
     const fee = isInstallment ? (params.feePerInstallment || 0) : 0;
     const totalFee = fee * count;
-    const totalCreditAmount = params.amount + totalFee;
 
-    // 1. Giảm hạn mức (Tăng dư nợ) ví thẻ tín dụng bằng toàn bộ số tiền gốc + tổng phí
+    const basePrincipalPerTerm = Math.floor(params.amount / count);
+    const remainder = params.amount - (basePrincipalPerTerm * (count - 1));
+
+    // Tính tổng dư nợ các kỳ CHƯA thanh toán còn lại
+    let remainingCreditAmount = 0;
+    for (let i = paidCount + 1; i <= count; i++) {
+      const termPrincipal = i === count ? remainder : basePrincipalPerTerm;
+      remainingCreditAmount += (termPrincipal + fee);
+    }
+
+    // 1. Giảm hạn mức (Tăng dư nợ) ví thẻ tín dụng bằng số tiền các kỳ CHƯA thanh toán
     await db.runAsync(
       'UPDATE wallets SET balance = balance - ? WHERE id = ?',
-      [totalCreditAmount, params.creditWalletId]
+      [remainingCreditAmount, params.creditWalletId]
     );
 
     // 2. Tạo giao dịch chi tiêu thẻ tín dụng
-    const txNote = isInstallment
-      ? `${params.note ? params.note + ' ' : ''}[Trả góp ${count} kỳ - Phí ${totalFee.toLocaleString('vi-VN')}₫]`.trim()
-      : params.note || '';
+    let txNote = params.note || '';
+    if (isInstallment) {
+      if (paidCount > 0) {
+        txNote = `${params.note ? params.note + ' ' : ''}[Trả góp ${count} kỳ (Đã trả trước ${paidCount} kỳ) - Còn lại ${count - paidCount} kỳ: ${remainingCreditAmount.toLocaleString('vi-VN')}₫]`.trim();
+      } else {
+        txNote = `${params.note ? params.note + ' ' : ''}[Trả góp ${count} kỳ - Phí ${totalFee.toLocaleString('vi-VN')}₫]`.trim();
+      }
+    }
 
     await db.runAsync(
       `INSERT INTO transactions (id, type, amount, wallet_id, to_wallet_id, category_id, note, transacted_at, created_at)
        VALUES (?, 'expense', ?, ?, NULL, ?, ?, ?, ?)`,
       [
         txId,
-        totalCreditAmount,
+        remainingCreditAmount,
         params.creditWalletId,
         params.categoryId || null,
         txNote,
@@ -1539,21 +1555,20 @@ export async function createCreditExpenseWithPlan(
       ]
     );
 
-    // 3. Tạo các bản ghi planned_expenses cho từng kỳ thanh toán
-    const basePrincipalPerTerm = Math.floor(params.amount / count);
-    const remainder = params.amount - (basePrincipalPerTerm * (count - 1));
+    // 3. Tạo các bản ghi planned_expenses cho các kỳ CHƯA thanh toán (từ kỳ paidCount + 1 đến count)
+    const parts = params.firstDueDate.split('-');
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    const d = parseInt(parts[2], 10);
 
-    for (let i = 1; i <= count; i++) {
+    for (let i = paidCount + 1; i <= count; i++) {
       const planId = 'plan_' + Date.now() + '_' + i;
       const termPrincipal = i === count ? remainder : basePrincipalPerTerm;
       const termTotal = termPrincipal + fee;
 
-      // Tính ngày đến hạn cho từng kỳ (+ (i - 1) tháng)
-      const parts = params.firstDueDate.split('-');
-      const y = parseInt(parts[0], 10);
-      const m = parseInt(parts[1], 10);
-      const d = parseInt(parts[2], 10);
-      const targetDateObj = new Date(y, (m - 1) + (i - 1), d);
+      // Kỳ paidCount + 1 sẽ có hạn là firstDueDate (+ 0 tháng), các kỳ tiếp theo là + 1, + 2, ...
+      const monthOffset = i - (paidCount + 1);
+      const targetDateObj = new Date(y, (m - 1) + monthOffset, d);
       const targetDate = [
         targetDateObj.getFullYear(),
         String(targetDateObj.getMonth() + 1).padStart(2, '0'),

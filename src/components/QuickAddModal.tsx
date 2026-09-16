@@ -67,6 +67,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
   const [creditMode, setCreditMode] = useState<'single' | 'installment'>('single');
   const [creditDueDate, setCreditDueDate] = useState<string>(dayjs().add(30, 'day').format('YYYY-MM-DD'));
   const [installmentCount, setInstallmentCount] = useState<number>(3);
+  const [paidInstallmentCount, setPaidInstallmentCount] = useState<number>(0);
   const [feePerInstallmentStr, setFeePerInstallmentStr] = useState<string>('0');
   const [enableCreditPlan, setEnableCreditPlan] = useState<boolean>(true);
   const [showManualCreditDate, setShowManualCreditDate] = useState<boolean>(false);
@@ -126,6 +127,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
       setCreditDueDate(getSuggestedDueDate(targetW, baseD));
       setCreditMode('single');
       setInstallmentCount(3);
+      setPaidInstallmentCount(0);
       setFeePerInstallmentStr('0');
       setEnableCreditPlan(true);
 
@@ -228,14 +230,22 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
 
   const feeNumber = parseInt(feePerInstallmentStr.replace(/[^0-9]/g, ''), 10) || 0;
   const count = creditMode === 'installment' ? Math.max(1, installmentCount) : 1;
+  const paidCount = creditMode === 'installment' ? Math.min(count - 1, Math.max(0, paidInstallmentCount)) : 0;
   const basePrincipalPerTerm = Math.floor(amountNumber / count);
   const remainder = amountNumber - (basePrincipalPerTerm * (count - 1));
   const totalInstallmentFee = creditMode === 'installment' ? feeNumber * count : 0;
-  const totalPayableAmount = amountNumber + totalInstallmentFee;
+  const totalOriginalAmount = amountNumber + totalInstallmentFee;
 
   const installmentPreviewList = useMemo(() => {
     if (creditMode !== 'installment' || amountNumber <= 0) return [];
-    const list: Array<{ term: number; date: string; principal: number; fee: number; total: number }> = [];
+    const list: Array<{
+      term: number;
+      date: string;
+      principal: number;
+      fee: number;
+      total: number;
+      isPaid: boolean;
+    }> = [];
     const parts = creditDueDate.split('-');
     const y = parseInt(parts[0], 10) || dayjs().year();
     const m = parseInt(parts[1], 10) || (dayjs().month() + 1);
@@ -244,7 +254,9 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
     for (let i = 1; i <= count; i++) {
       const termPrincipal = i === count ? remainder : basePrincipalPerTerm;
       const termTotal = termPrincipal + feeNumber;
-      const targetDateObj = new Date(y, (m - 1) + (i - 1), d);
+      const isPaid = i <= paidCount;
+      const monthOffset = i - (paidCount + 1);
+      const targetDateObj = new Date(y, (m - 1) + monthOffset, d);
       const targetDate = [
         String(targetDateObj.getDate()).padStart(2, '0'),
         String(targetDateObj.getMonth() + 1).padStart(2, '0'),
@@ -253,14 +265,22 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
 
       list.push({
         term: i,
-        date: targetDate,
+        date: isPaid ? 'Đã thanh toán trước' : targetDate,
         principal: termPrincipal,
         fee: feeNumber,
         total: termTotal,
+        isPaid,
       });
     }
     return list;
-  }, [creditMode, amountNumber, count, feeNumber, creditDueDate, basePrincipalPerTerm, remainder]);
+  }, [creditMode, amountNumber, count, paidCount, feeNumber, creditDueDate, basePrincipalPerTerm, remainder]);
+
+  const totalRemainingPayable = useMemo(() => {
+    if (creditMode !== 'installment') return amountNumber;
+    return installmentPreviewList
+      .filter(item => !item.isPaid)
+      .reduce((sum, item) => sum + item.total, 0);
+  }, [creditMode, amountNumber, installmentPreviewList]);
 
   const adjustCreditDueDate = (days: number) => {
     hapticLight();
@@ -474,6 +494,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
           transactedAt: selectedDate.toISOString(),
           isInstallment: creditMode === 'installment',
           installmentCount: creditMode === 'installment' ? installmentCount : 1,
+          paidInstallmentCount: creditMode === 'installment' ? paidCount : 0,
           feePerInstallment: creditMode === 'installment' ? feeNumber : 0,
           firstDueDate: creditDueDate,
         });
@@ -871,7 +892,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                     ) : (
                       /* Installment Mode */
                       <View style={styles.creditInstallmentSection}>
-                        <Text style={styles.creditFieldLabel}>SỐ KỲ TRẢ GÓP</Text>
+                        <Text style={styles.creditFieldLabel}>TỔNG SỐ KỲ TRẢ GÓP</Text>
                         <View style={styles.installmentCountRow}>
                           {[2, 3, 6, 9, 12].map(num => (
                             <Pressable
@@ -883,6 +904,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                               onPress={() => {
                                 hapticLight();
                                 setInstallmentCount(num);
+                                setPaidInstallmentCount(prev => Math.min(prev, num - 1));
                               }}
                             >
                               <Text
@@ -895,6 +917,75 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                               </Text>
                             </Pressable>
                           ))}
+                        </View>
+
+                        {/* SỐ KỲ ĐÃ THANH TOÁN TRƯỚC ĐÓ */}
+                        <View style={styles.paidTermsContainer}>
+                          <View style={styles.paidTermsHeader}>
+                            <Text style={styles.creditFieldLabel}>SỐ KỲ ĐÃ TRẢ TRƯỚC ĐÓ (NẾU CÓ)</Text>
+                            {paidInstallmentCount > 0 && (
+                              <View style={styles.paidTermsBadge}>
+                                <Text style={styles.paidTermsBadgeText}>
+                                  Còn {installmentCount - paidInstallmentCount} kỳ cần trả
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+
+                          <View style={styles.paidTermsStepperRow}>
+                            <Pressable
+                              style={[
+                                styles.paidTermsStepBtn,
+                                paidInstallmentCount === 0 && styles.paidTermsStepBtnDisabled,
+                              ]}
+                              onPress={() => {
+                                if (paidInstallmentCount > 0) {
+                                  hapticLight();
+                                  setPaidInstallmentCount(prev => Math.max(0, prev - 1));
+                                }
+                              }}
+                              disabled={paidInstallmentCount === 0}
+                            >
+                              <Ionicons
+                                name="remove"
+                                size={14}
+                                color={paidInstallmentCount === 0 ? '#9CA3AF' : '#000000'}
+                              />
+                            </Pressable>
+
+                            <View style={styles.paidTermsValueCard}>
+                              <Ionicons
+                                name={paidInstallmentCount > 0 ? 'checkmark-circle' : 'time-outline'}
+                                size={14}
+                                color={paidInstallmentCount > 0 ? '#16A34A' : '#6B7280'}
+                              />
+                              <Text style={styles.paidTermsValueTitle}>
+                                {paidInstallmentCount === 0
+                                  ? '0 kỳ (Mới mua / Chưa trả kỳ nào)'
+                                  : `Đã trả trước ${paidInstallmentCount} / ${installmentCount} kỳ`}
+                              </Text>
+                            </View>
+
+                            <Pressable
+                              style={[
+                                styles.paidTermsStepBtn,
+                                paidInstallmentCount >= installmentCount - 1 && styles.paidTermsStepBtnDisabled,
+                              ]}
+                              onPress={() => {
+                                if (paidInstallmentCount < installmentCount - 1) {
+                                  hapticLight();
+                                  setPaidInstallmentCount(prev => Math.min(installmentCount - 1, prev + 1));
+                                }
+                              }}
+                              disabled={paidInstallmentCount >= installmentCount - 1}
+                            >
+                              <Ionicons
+                                name="add"
+                                size={14}
+                                color={paidInstallmentCount >= installmentCount - 1 ? '#9CA3AF' : '#000000'}
+                              />
+                            </Pressable>
+                          </View>
                         </View>
 
                         <View style={styles.installmentInputsRow}>
@@ -914,7 +1005,11 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                           </View>
 
                           <View style={{ flex: 1 }}>
-                            <Text style={styles.creditFieldLabel}>HẠN TRẢ KỲ 1</Text>
+                            <Text style={styles.creditFieldLabel}>
+                              {paidInstallmentCount > 0
+                                ? `HẠN TRẢ KỲ ${paidInstallmentCount + 1}`
+                                : 'HẠN TRẢ KỲ 1'}
+                            </Text>
                             <View style={styles.installmentInputWrapper}>
                               <TextInput
                                 style={styles.installmentTextInput}
@@ -936,41 +1031,65 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                                 <Ionicons name="receipt-outline" size={13} color="#000000" />
                                 <Text style={styles.schedulePreviewTitle}>
-                                  Lịch phân bổ {installmentCount} kỳ
+                                  Lịch {installmentCount} kỳ ({count - paidCount} kỳ cần trả)
                                 </Text>
                               </View>
                               <Text style={styles.schedulePreviewTotal}>
-                                Tổng: {formatVND(totalPayableAmount)}
+                                Còn lại: {formatVND(totalRemainingPayable)}
                               </Text>
                             </View>
 
                             <View style={styles.scheduleTable}>
                               {installmentPreviewList.map(item => (
-                                <View key={item.term} style={styles.scheduleRow}>
+                                <View
+                                  key={item.term}
+                                  style={[
+                                    styles.scheduleRow,
+                                    item.isPaid && styles.scheduleRowPaid,
+                                  ]}
+                                >
                                   <View style={styles.scheduleRowLeft}>
                                     <View
                                       style={[
                                         styles.scheduleTermBadge,
-                                        item.term === 1 && styles.scheduleTermBadgeFirst,
+                                        item.isPaid
+                                          ? styles.scheduleTermBadgePaid
+                                          : item.term === paidCount + 1 && styles.scheduleTermBadgeNext,
                                       ]}
                                     >
                                       <Text
                                         style={[
                                           styles.scheduleTermBadgeText,
-                                          item.term === 1 && styles.scheduleTermBadgeTextFirst,
+                                          item.isPaid
+                                            ? styles.scheduleTermBadgeTextPaid
+                                            : item.term === paidCount + 1 && styles.scheduleTermBadgeTextNext,
                                         ]}
                                       >
-                                        Kỳ {item.term}/{installmentCount}
+                                        {item.isPaid
+                                          ? `✓ Kỳ ${item.term} (Đã trả)`
+                                          : `Kỳ ${item.term}/${installmentCount}`}
                                       </Text>
                                     </View>
-                                    <Text style={styles.scheduleDateText}>{item.date}</Text>
+                                    <Text
+                                      style={[
+                                        styles.scheduleDateText,
+                                        item.isPaid && styles.scheduleDateTextPaid,
+                                      ]}
+                                    >
+                                      {item.date}
+                                    </Text>
                                   </View>
 
                                   <View style={styles.scheduleRowRight}>
-                                    <Text style={styles.scheduleTotalText}>
+                                    <Text
+                                      style={[
+                                        styles.scheduleTotalText,
+                                        item.isPaid && styles.scheduleTotalTextPaid,
+                                      ]}
+                                    >
                                       {formatVND(item.total)}
                                     </Text>
-                                    {item.fee > 0 && (
+                                    {item.fee > 0 && !item.isPaid && (
                                       <Text style={styles.scheduleFeeText}>
                                         Gốc {formatVND(item.principal)} + Phí {formatVND(item.fee)}
                                       </Text>
@@ -2433,6 +2552,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 2,
   },
+  scheduleRowPaid: {
+    opacity: 0.55,
+  },
   scheduleRowLeft: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2445,6 +2567,22 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     borderWidth: 1,
     borderColor: '#000000',
+  },
+  scheduleTermBadgePaid: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#16A34A',
+  },
+  scheduleTermBadgeTextPaid: {
+    color: '#15803D',
+    fontWeight: '900',
+  },
+  scheduleTermBadgeNext: {
+    backgroundColor: THEME.popYellow,
+    borderColor: '#000000',
+  },
+  scheduleTermBadgeTextNext: {
+    color: '#000000',
+    fontWeight: '900',
   },
   scheduleTermBadgeFirst: {
     backgroundColor: THEME.popYellow,
@@ -2463,6 +2601,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#4B5563',
   },
+  scheduleDateTextPaid: {
+    color: '#6B7280',
+    fontStyle: 'italic',
+  },
   scheduleRowRight: {
     alignItems: 'flex-end',
   },
@@ -2471,9 +2613,77 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#000000',
   },
+  scheduleTotalTextPaid: {
+    color: '#6B7280',
+    textDecorationLine: 'line-through',
+  },
   scheduleFeeText: {
     fontSize: 8.5,
     fontWeight: '600',
     color: '#6B7280',
+  },
+  paidTermsContainer: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    padding: 8,
+    marginBottom: 8,
+  },
+  paidTermsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  paidTermsBadge: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#16A34A',
+  },
+  paidTermsBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  paidTermsStepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  paidTermsStepBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  paidTermsStepBtnDisabled: {
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F3F4F6',
+  },
+  paidTermsValueCard: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    borderRadius: 6,
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+  },
+  paidTermsValueTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#000000',
   },
 });
