@@ -145,8 +145,8 @@ export async function importAllData(
     // 3. Chèn ví tiền
     for (const w of wallets) {
       await db.runAsync(
-        `INSERT OR REPLACE INTO wallets (id, name, type, balance, credit_limit, currency, color, icon, is_excluded, note, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR REPLACE INTO wallets (id, name, type, balance, credit_limit, currency, color, icon, is_excluded, statement_day, due_day, note, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           w.id,
           w.name,
@@ -157,6 +157,8 @@ export async function importAllData(
           w.color,
           w.icon,
           w.is_excluded ? 1 : 0,
+          w.statement_day ?? null,
+          w.due_day ?? null,
           w.note || '',
           w.created_at || new Date().toISOString(),
         ]
@@ -223,15 +225,24 @@ export async function importAllData(
     // 7. Chèn các khoản dự chi
     for (const pe of plannedExpenses) {
       await db.runAsync(
-        `INSERT OR REPLACE INTO planned_expenses (id, title, amount, target_date, wallet_id, category_id, status, actual_amount, note, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR REPLACE INTO planned_expenses (
+           id, title, amount, target_date, wallet_id, to_wallet_id, category_id,
+           planned_type, installment_current, installment_total, fee, parent_tx_id,
+           status, actual_amount, note, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           pe.id,
           pe.title,
           pe.amount,
           pe.target_date,
           pe.wallet_id || null,
+          pe.to_wallet_id || null,
           pe.category_id || null,
+          pe.planned_type || 'expense',
+          pe.installment_current ?? null,
+          pe.installment_total ?? null,
+          pe.fee || 0,
+          pe.parent_tx_id || null,
           pe.status || 'pending',
           pe.actual_amount || null,
           pe.note || '',

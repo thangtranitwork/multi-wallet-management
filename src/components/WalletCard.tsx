@@ -116,6 +116,7 @@ export const WalletCard: React.FC<WalletCardProps> = ({
             <View style={styles.creditInfoRow}>
               <Text style={styles.creditInfoText}>
                 Hạn mức: {isBalanceHidden ? '•••' : formatVND(wallet.credit_limit)}
+                {wallet.due_day ? ` • Hạn: Ngày ${wallet.due_day}` : ''}
               </Text>
             </View>
           )}

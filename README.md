@@ -1,25 +1,43 @@
-# MultiWallet (v1.1.1) - Personal Finance & Multi-Source Wallet Management
+# MultiWallet (v1.1.3) - Personal Finance & Multi-Source Wallet Management
 
 A modern, high-performance mobile application built with **React Native (Expo SDK 57)**, **TypeScript**, and **Expo SQLite**, crafted with a distinctive, tactile Neo-Brutalist design language. 
 
-Designed for 100% offline-first privacy, MultiWallet gives you total control over all your money sources, loans, expenses, and net worth without relying on any external cloud database.
+Designed for 100% offline-first privacy, MultiWallet gives you total control over all your money sources, loans, expenses, credit cards, BNPL installments, and net worth without relying on any external cloud database.
 
 ---
 
 ## Key Features
 
-### 1. Multi-Source Wallet Management
+### 1. Multi-Source Wallet & Credit Card Management
 - Seamlessly track multiple financial accounts in one place:
   - **Cash**: Daily pockets and cash expenses.
   - **Bank Accounts**: Multiple checking and saving accounts.
   - **E-Wallets**: Digital wallets and fintech services.
-  - **Credit Cards**: Track credit limits, current balances, and available credit automatically.
+  - **Credit Cards & SPayLater (Buy Now Pay Later)**:
+    - Track credit limits, current balances (negative debt), and available credit in real-time.
+    - **Configurable Billing Cycles**: Set monthly Statement Closing Date (`statement_day`) and Payment Due Date (`due_day`).
+    - Smart due-date suggestions when logging credit card spending.
   - **Savings & Investments**: Dedicated long-term funds.
 - Customizable visual tags, colors, and icons for each wallet.
-- Quick **Balance Adjustment** with automatic delta logging.
+- **Smart Balance Adjustment**:
+  - Direct balance correction with optional **"Include in Monthly Income/Expense Reports"** toggle.
+  - Exclude initial balance corrections from inflating monthly earnings/spending statistics.
 - Option to exclude specific wallets from total Net Worth calculations.
 
-### 2. Comprehensive Debt & Loan Tracker
+### 2. Credit Card & Installment Engine (Trả Góp & Hẹn Lịch Trả Nợ)
+- **Single-Period Deferral (Trả sau 1 kỳ)**:
+  - Record expense on credit card/SPayLater $\rightarrow$ Available credit decreases, cash/bank wallets remain untouched.
+  - Automatically schedules linked **Planned Expense** on the expected payment due date.
+- **Multi-Period Installments (Trả góp nhiều kỳ)**:
+  - Configurable terms (2, 3, 6, 9, 12 periods or custom).
+  - Monthly installment fee support (fixed VND fee per period or conversion rate).
+  - Interactive live **Schedule Breakdown Preview** (Principal + Fee per term $\rightarrow$ Target Due Dates).
+  - Automatically creates atomic linked recurring planned expenses across subsequent months.
+- **Seamless 1-Tap Repayment Workflow (Chuẩn hoá Dòng Tiền)**:
+  - Execute repayments directly from Planned Expenses: Automatically creates an internal **Transfer** from your Bank Account to the Credit Card wallet.
+  - Reduces bank balance, eliminates credit debt, and restores credit limit without double-counting expenses!
+
+### 3. Comprehensive Debt & Loan Tracker
 - **Lend / Receivables (Money people owe you)**:
   - Record loans disbursed directly from any selected wallet.
   - Track remaining balances, borrower contact, and due dates with overdue notices.
@@ -30,7 +48,7 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
   - **Installment or Lump-sum Repayment**: Deduct payments from any wallet.
   - Automatically accounted as **Liabilities**.
 
-### 3. Rapid Transaction Logging with Date & Time Selection
+### 4. Rapid Transaction Logging with Date & Time Selection
 - **Expenses**: Deduct from wallet, assign category (Food & Dining, Coffee, Transport, Shopping, Bills, etc.).
 - **Income**: Credit to wallet, assign category (Salary, Bonus, Investment, etc.).
 - **Internal Transfers**: Transfer funds between wallets (e.g., Bank to E-Wallet) with instant two-way balance updates without affecting Net Worth.
@@ -39,7 +57,7 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
   - Interactive Neo-Brutalist calendar grid and hour/minute steppers for precise transaction backdating.
 - Tactile mobile number keypad with `000` triple-zero button for effortless entry.
 
-### 4. Interactive Neo-Brutalist Home Screen Widget (Android 4x2)
+### 5. Interactive Neo-Brutalist Home Screen Widget (Android 4x2)
 - **Real-Time Financial Overview**: Total assets, monthly income, and monthly expense directly on your Android Home Screen.
 - **Interactive Balance Privacy Toggle**: Tap the eye button right on the widget to toggle masking (`••••••`) without needing to launch the app.
 - **Tactile 1-Tap Shortcuts**:
@@ -48,7 +66,7 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
   - `[Eye]` button: Toggles privacy status immediately.
 - **Automatic Instant Sync**: Automatically updates the widget whenever transactions are created, edited, deleted, or wallets are adjusted.
 
-### 5. Smart Multi-Category Habitual Reminders (Nhắc nhở thông minh đa thói quen)
+### 6. Smart Multi-Category Habitual Reminders (Nhắc nhở thông minh đa thói quen)
 - **Universal Habit Clustering Engine**: Automatically analyzes your SQLite transaction history to discover recurring behavioral patterns across **all categories**:
   - **Morning Routine (06:00 - 10:00)**: Cà phê sáng, ăn sáng, đổ xăng đầu ngày.
   - **Lunch Routine (11:00 - 14:00)**: Cơm trưa, đồ uống trưa.
@@ -62,7 +80,7 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
 - **1-Tap Quick Add Execution**: Tapping any reminder opens `QuickAddModal` with the corresponding category pre-filled and numeric keypad ready.
 - **Playful Vietnamese Tone (0 Emoji)**: Witty "chiếc ví bạn thân" voice lines, strictly adhering to the project 0-emoji design rule.
 
-### 6. Financial Analytics, Cash Flow & Spending Ratio
+### 7. Financial Analytics, Cash Flow & Spending Ratio
 - Standard financial formula for **Net Worth**:
   $$\text{Net Worth} = (\text{Total Available Wallet Balances} + \text{Receivables}) - (\text{Credit Card Debt} + \text{Payables})$$
 - **Flexible Time Period Filter**: This Week, This Month, Last Month, This Year, All Time.
@@ -72,13 +90,13 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
 - Asset allocation breakdown across multiple wallets.
 - Privacy eye toggle to mask sensitive figures (`••••••`) in public spaces.
 
-### 7. Custom Category Management
+### 8. Custom Category Management
 - Manage Expense & Income categories with personalized naming.
 - Pick from 24+ curated financial and lifestyle icons.
 - Choose from 12+ vibrant Neo-Brutalist color palettes.
 - Safely delete categories with automatic transaction unlinking.
 
-### 8. Planned Expenses & Safe-to-Spend (Kế Hoạch Dự Chi & Tiền An Toàn)
+### 9. Planned Expenses & Safe-to-Spend (Kế Hoạch Dự Chi & Tiền An Toàn)
 - **Schedule Upcoming Future Expenses**:
   - Plan upcoming fixed or variable expenses (house rent, electricity, tuition fees, gifts, etc.).
   - **Target Due Date (Ngày dự chi)** with intelligent relative countdown badges:
@@ -91,18 +109,18 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
   - Real-time calculation:
     $$\text{Safe-to-Spend} = \text{Total Wallet Balances} - \text{Total Pending Planned Expenses}$$
   - Clearly displayed on both the **Dashboard Widget** and the **Planned Expenses Modal**. Know exactly how much money is safe to spend today without running out of cash for scheduled bills!
-- **1-Tap "Đã Chi" Execution**:
-  - Convert any planned expense into an actual expense transaction with 1 tap.
+- **1-Tap "Đã Chi" / "Thanh Toán" Execution**:
+  - Convert any planned expense into an actual expense or credit repayment with 1 tap.
   - Choose the paying wallet, confirm or adjust the actual transacted amount, and add notes.
-  - Handled atomically inside an `expo-sqlite` transaction (marks executed, updates balance, creates transaction).
+  - Handled atomically inside an `expo-sqlite` transaction (marks executed, updates balance, creates transaction/transfer).
 
-### 9. Tactile Haptic Feedback (Cảm ứng xúc giác cơ học)
+### 10. Tactile Haptic Feedback (Cảm ứng xúc giác cơ học)
 - Powered by `expo-haptics` with fine-tuned vibration pulses.
 - Mechanical keypress feedback on the Neo-Brutalist numeric keypad (`0-9`, `000`, `⌫`).
 - Distinct haptic feedback patterns for tab switching, saving transactions, and alert warnings.
 - User-configurable on/off switch in Settings.
 
-### 10. Biometric (Fingerprint) & Tactile PIN Lock (Bảo mật vân tay & Mã PIN)
+### 11. Biometric (Fingerprint) & Tactile PIN Lock (Bảo mật vân tay & Mã PIN)
 - Powered by `expo-local-authentication` and SQLite local encrypted settings.
 - **Fingerprint Scanner (Cảm biến vân tay)**: Fast and seamless biometric unlock.
 - **Dedicated Neo-Brutalist Numeric Keypad**: 

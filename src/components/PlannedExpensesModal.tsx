@@ -482,6 +482,23 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
                               </>
                             ) : null}
                           </View>
+                          {item.planned_type === 'credit_payment' && (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                              <View style={[styles.dateBadge, { backgroundColor: '#FEF9C3', borderColor: '#000000', borderWidth: 1, paddingVertical: 1, paddingHorizontal: 6 }]}>
+                                <Ionicons name="card" size={10} color="#000000" />
+                                <Text style={[styles.dateBadgeText, { color: '#000000', fontSize: 10, fontWeight: '800' }]}>
+                                  Trả nợ thẻ {item.to_wallet_name ? `• ${item.to_wallet_name}` : ''}
+                                </Text>
+                              </View>
+                              {item.installment_current && item.installment_total ? (
+                                <View style={[styles.dateBadge, { backgroundColor: '#F3E8FF', borderColor: '#A855F7', borderWidth: 1, paddingVertical: 1, paddingHorizontal: 6 }]}>
+                                  <Text style={[styles.dateBadgeText, { color: '#7E22CE', fontSize: 10, fontWeight: '800' }]}>
+                                    Kỳ {item.installment_current}/{item.installment_total}
+                                  </Text>
+                                </View>
+                              ) : null}
+                            </View>
+                          )}
                         </View>
                       </View>
 
@@ -522,7 +539,9 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
                           >
                             <View style={styles.executeBtnInner}>
                               <Ionicons name="checkmark-sharp" size={16} color="#000000" />
-                              <Text style={styles.executeBtnText}>Đã chi</Text>
+                              <Text style={styles.executeBtnText}>
+                                {item.planned_type === 'credit_payment' ? 'Thanh toán' : 'Đã chi'}
+                              </Text>
                             </View>
                           </Pressable>
                         )}
@@ -747,9 +766,13 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
             <View style={styles.executeModalBox}>
               <View style={styles.formModalHeader}>
                 <View style={styles.executeTitleBadge}>
-                  <Text style={styles.executeTitleBadgeText}>HOÀN TẤT CHI</Text>
+                  <Text style={styles.executeTitleBadgeText}>
+                    {executingItem?.planned_type === 'credit_payment' ? 'TRẢ NỢ THẺ' : 'HOÀN TẤT CHI'}
+                  </Text>
                 </View>
-                <Text style={styles.formModalTitle}>Xác Nhận Đã Chi</Text>
+                <Text style={styles.formModalTitle}>
+                  {executingItem?.planned_type === 'credit_payment' ? 'Thanh Toán Thẻ' : 'Xác Nhận Đã Chi'}
+                </Text>
                 <Pressable
                   style={styles.formModalCloseBtn}
                   onPress={() => setExecutingItem(null)}
@@ -759,7 +782,9 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
               </View>
 
               <Text style={styles.executePrompt}>
-                Hệ thống sẽ ghi một khoản chi tiêu mới vào nhật ký và tự động trừ số dư ví đã chọn.
+                {executingItem?.planned_type === 'credit_payment'
+                  ? 'Hệ thống sẽ chuyển tiền từ ví đã chọn sang ví thẻ tín dụng để thanh toán dư nợ và hồi hạn mức.'
+                  : 'Hệ thống sẽ ghi một khoản chi tiêu mới vào nhật ký và tự động trừ số dư ví đã chọn.'}
               </Text>
 
               {/* Tên khoản dự chi */}
@@ -771,7 +796,11 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
               </View>
 
               {/* Số tiền thực tế */}
-              <Text style={[styles.inputLabel, { marginTop: 12 }]}>SỐ TIỀN THỰC TẾ ĐÃ CHI (₫) *</Text>
+              <Text style={[styles.inputLabel, { marginTop: 12 }]}>
+                {executingItem?.planned_type === 'credit_payment'
+                  ? 'SỐ TIỀN THANH TOÁN THỰC TẾ (₫) *'
+                  : 'SỐ TIỀN THỰC TẾ ĐÃ CHI (₫) *'}
+              </Text>
               <TextInput
                 style={[styles.inputField, styles.amountInputField]}
                 value={actualAmountInput}
@@ -780,7 +809,11 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
               />
 
               {/* Chọn ví thanh toán */}
-              <Text style={[styles.inputLabel, { marginTop: 14 }]}>TRỪ TỪ VÍ NÀO? *</Text>
+              <Text style={[styles.inputLabel, { marginTop: 14 }]}>
+                {executingItem?.planned_type === 'credit_payment'
+                  ? 'TRÍCH TIỀN TỪ VÍ NÀO ĐỂ TRẢ NỢ? *'
+                  : 'TRỪ TỪ VÍ NÀO? *'}
+              </Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.walletPickerScroll}>
                 {wallets.map(w => {
                   const isSelected = executeWalletId === w.id;

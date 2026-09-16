@@ -65,6 +65,10 @@ export const TransactionItem: React.FC<TransactionItemProps> = ({
     iconName = 'refresh-circle-outline';
     popBg = THEME.popPink;
     title = `Trả nợ cho ${transaction.person_name || 'người khác'}`;
+  } else if (transaction.type === 'adjustment') {
+    iconName = 'sync-outline';
+    popBg = THEME.popSlate;
+    title = 'Cân đối số dư ví';
   }
 
   const txDate = dayjs(transaction.transacted_at);
@@ -123,6 +127,7 @@ export const TransactionItem: React.FC<TransactionItemProps> = ({
               isIncome && styles.incomeColor,
               isExpense && styles.expenseColor,
               isTransfer && styles.transferColor,
+              transaction.type === 'adjustment' && { color: '#6B7280' },
             ]}
           >
             {isBalanceHidden

@@ -183,6 +183,13 @@ export const WalletsScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
                           <Text style={styles.creditLimitVal}>
                             {isBalanceHidden ? '••••••' : formatVND(creditAvailable)}
                           </Text>
+                          {(w.due_day || w.statement_day) && (
+                            <Text style={{ fontSize: 10, fontWeight: '700', color: '#6B7280', marginTop: 2 }}>
+                              {w.due_day ? `Hạn trả: Ngày ${w.due_day}` : ''}
+                              {w.statement_day && w.due_day ? ' • ' : ''}
+                              {w.statement_day ? `Sao kê: Ngày ${w.statement_day}` : ''}
+                            </Text>
+                          )}
                         </View>
                       )}
                     </View>

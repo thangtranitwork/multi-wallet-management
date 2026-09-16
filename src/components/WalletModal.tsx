@@ -42,6 +42,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   const [type, setType] = useState<WalletType>('bank');
   const [balanceStr, setBalanceStr] = useState<string>('0');
   const [creditLimitStr, setCreditLimitStr] = useState<string>('0');
+  const [statementDayStr, setStatementDayStr] = useState<string>('');
+  const [dueDayStr, setDueDayStr] = useState<string>('');
   const [color, setColor] = useState<string>(WALLET_COLORS[0]);
   const [icon, setIcon] = useState<string>(WALLET_ICONS[0]);
   const [isExcluded, setIsExcluded] = useState<boolean>(false);
@@ -50,6 +52,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   // Cho chế độ Điều chỉnh số dư
   const [adjustBalanceStr, setAdjustBalanceStr] = useState<string>('0');
   const [adjustNote, setAdjustNote] = useState<string>('');
+  const [includeInReports, setIncludeInReports] = useState<boolean>(false);
 
   useEffect(() => {
     if (visible) {
@@ -57,11 +60,14 @@ export const WalletModal: React.FC<WalletModalProps> = ({
         if (isAdjust) {
           setAdjustBalanceStr(currentWallet.balance.toString());
           setAdjustNote('');
+          setIncludeInReports(false);
         } else {
           setName(currentWallet.name);
           setType(currentWallet.type);
           setBalanceStr(currentWallet.balance.toString());
           setCreditLimitStr((currentWallet.credit_limit || 0).toString());
+          setStatementDayStr(currentWallet.statement_day ? currentWallet.statement_day.toString() : '');
+          setDueDayStr(currentWallet.due_day ? currentWallet.due_day.toString() : '');
           setColor(currentWallet.color || WALLET_COLORS[0]);
           setIcon(currentWallet.icon || WALLET_ICONS[0]);
           setIsExcluded(currentWallet.is_excluded === 1);
@@ -72,6 +78,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
         setType('bank');
         setBalanceStr('0');
         setCreditLimitStr('0');
+        setStatementDayStr('');
+        setDueDayStr('');
         setColor(WALLET_COLORS[1]);
         setIcon('business-outline');
         setIsExcluded(false);
@@ -88,7 +96,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
         return;
       }
       try {
-        await adjustBalance(currentWallet.id, newBal, adjustNote.trim());
+        await adjustBalance(currentWallet.id, newBal, adjustNote.trim(), includeInReports);
         onClose();
       } catch (err: any) {
         showAlert('Lỗi', err?.message || 'Không thể điều chỉnh số dư');
@@ -103,6 +111,10 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 
     const bal = parseInt(balanceStr.replace(/[^0-9-]/g, ''), 10) || 0;
     const limit = parseInt(creditLimitStr.replace(/[^0-9-]/g, ''), 10) || 0;
+    const stmtDayRaw = parseInt(statementDayStr.replace(/[^0-9]/g, ''), 10);
+    const dueDayRaw = parseInt(dueDayStr.replace(/[^0-9]/g, ''), 10);
+    const stmtDay = stmtDayRaw >= 1 && stmtDayRaw <= 31 ? stmtDayRaw : null;
+    const dueDay = dueDayRaw >= 1 && dueDayRaw <= 31 ? dueDayRaw : null;
 
     try {
       if (currentWallet) {
@@ -111,6 +123,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
           name: name.trim(),
           type,
           credit_limit: type === 'credit' ? limit : 0,
+          statement_day: type === 'credit' ? stmtDay : null,
+          due_day: type === 'credit' ? dueDay : null,
           color,
           icon,
           is_excluded: isExcluded ? 1 : 0,
@@ -122,6 +136,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
           type,
           balance: bal,
           credit_limit: type === 'credit' ? limit : 0,
+          statement_day: type === 'credit' ? stmtDay : null,
+          due_day: type === 'credit' ? dueDay : null,
           currency: 'VND',
           color,
           icon,
@@ -232,8 +248,26 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                     style={styles.input}
                     value={adjustNote}
                     onChangeText={setAdjustNote}
-                    placeholder="Ví dụ: Kiểm đếm tiền mặt, lãi phát sinh..."
+                    placeholder="Ví dụ: Kiểm đếm tiền mặt, cân đối ví..."
                     placeholderTextColor={THEME.textMuted}
+                  />
+                </View>
+
+                {/* Toggle include in monthly reports */}
+                <View style={[styles.switchRow, { marginTop: 8 }]}>
+                  <View style={styles.switchTextContainer}>
+                    <Text style={styles.switchTitle}>Ghi nhận vào Báo cáo Thu/Chi tháng</Text>
+                    <Text style={styles.switchSubtitle}>
+                      {includeInReports
+                        ? 'Chênh lệch sẽ được cộng vào Thu nhập/Chi tiêu tháng này.'
+                        : 'Khuyên dùng: Chỉ cập nhật số dư ví, không làm sai lệch báo cáo thu chi.'}
+                    </Text>
+                  </View>
+                  <Switch
+                    value={includeInReports}
+                    onValueChange={setIncludeInReports}
+                    trackColor={{ false: '#E5E7EB', true: THEME.primary }}
+                    thumbColor="#FFFFFF"
                   />
                 </View>
               </>
@@ -244,7 +278,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                   <Text style={styles.sectionLabel}>Tên nguồn tiền / Ví (*)</Text>
                   <TextInput
                     style={styles.input}
-                    placeholder="Ví dụ: Vietcombank, Ví tiền mặt, MoMo..."
+                    placeholder="Ví dụ: Vietcombank, SPayLater Shopee, MoMo..."
                     placeholderTextColor={THEME.textMuted}
                     value={name}
                     onChangeText={setName}
@@ -301,19 +335,54 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                   </View>
                 )}
 
-                {/* Credit Limit (If Credit Card) */}
+                {/* Credit Limit & Billing Cycle (If Credit Card) */}
                 {type === 'credit' && (
-                  <View style={styles.sectionContainer}>
-                    <Text style={styles.sectionLabel}>Hạn mức thẻ tín dụng (VNĐ)</Text>
-                    <TextInput
-                      style={styles.inputLarge}
-                      keyboardType="numeric"
-                      value={creditLimitStr}
-                      onChangeText={setCreditLimitStr}
-                      placeholder="0"
-                      placeholderTextColor={THEME.textMuted}
-                    />
-                  </View>
+                  <>
+                    <View style={styles.sectionContainer}>
+                      <Text style={styles.sectionLabel}>Hạn mức thẻ tín dụng (VNĐ)</Text>
+                      <TextInput
+                        style={styles.inputLarge}
+                        keyboardType="numeric"
+                        value={creditLimitStr}
+                        onChangeText={setCreditLimitStr}
+                        placeholder="0"
+                        placeholderTextColor={THEME.textMuted}
+                      />
+                    </View>
+
+                    <View style={styles.sectionContainer}>
+                      <Text style={styles.sectionLabel}>Chu kỳ sao kê & thanh toán (tùy chọn)</Text>
+                      <View style={{ flexDirection: 'row', gap: 10 }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.subFieldLabel}>Ngày chốt sao kê (1-31)</Text>
+                          <TextInput
+                            style={styles.input}
+                            keyboardType="numeric"
+                            value={statementDayStr}
+                            onChangeText={setStatementDayStr}
+                            placeholder="VD: 24"
+                            placeholderTextColor={THEME.textMuted}
+                            maxLength={2}
+                          />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.subFieldLabel}>Ngày đến hạn trả (1-31)</Text>
+                          <TextInput
+                            style={styles.input}
+                            keyboardType="numeric"
+                            value={dueDayStr}
+                            onChangeText={setDueDayStr}
+                            placeholder="VD: 10"
+                            placeholderTextColor={THEME.textMuted}
+                            maxLength={2}
+                          />
+                        </View>
+                      </View>
+                      <Text style={styles.helperText}>
+                        Ví dụ: Shopee SPayLater chốt sao kê ngày 24, đến hạn thanh toán ngày 10 hàng tháng.
+                      </Text>
+                    </View>
+                  </>
                 )}
 
                 {/* Color Palette */}
@@ -607,6 +676,19 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     color: '#6B7280',
+  },
+  subFieldLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#000000',
+    marginBottom: 6,
+  },
+  helperText: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#6B7280',
+    marginTop: 6,
+    lineHeight: 16,
   },
   saveBtn: {
     flexDirection: 'row',

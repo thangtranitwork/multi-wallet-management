@@ -10,6 +10,8 @@ export interface Wallet {
   color: string;
   icon: string;
   is_excluded: number; // 0 = false, 1 = true
+  statement_day?: number | null; // Ngày chốt sao kê hàng tháng (1-31)
+  due_day?: number | null;       // Ngày đến hạn thanh toán hàng tháng (1-31)
   note?: string;
   created_at: string;
 }
@@ -28,6 +30,7 @@ export type TransactionType =
   | 'expense' 
   | 'income' 
   | 'transfer' 
+  | 'adjustment'
   | 'debt_lend' 
   | 'debt_borrow' 
   | 'debt_repay' 
@@ -104,14 +107,21 @@ export interface CategorySpending {
 }
 
 export type PlannedExpenseStatus = 'pending' | 'executed' | 'cancelled';
+export type PlannedType = 'expense' | 'credit_payment';
 
 export interface PlannedExpense {
   id: string;
   title: string;
   amount: number;
   target_date: string; // YYYY-MM-DD or ISO string
-  wallet_id?: string | null;
+  wallet_id?: string | null;        // Ví nguồn thanh toán (VD: ngân hàng)
+  to_wallet_id?: string | null;     // Ví đích cần trả nợ (VD: thẻ tín dụng / SPayLater)
   category_id?: string | null;
+  planned_type?: PlannedType;       // 'expense' hoặc 'credit_payment'
+  installment_current?: number | null; // Kỳ hiện tại (VD: 1)
+  installment_total?: number | null;   // Tổng số kỳ (VD: 3)
+  fee?: number;                     // Phí chuyển đổi / phí mỗi kỳ
+  parent_tx_id?: string | null;     // ID giao dịch gốc
   status: PlannedExpenseStatus;
   actual_amount?: number | null;
   note?: string;
@@ -120,8 +130,12 @@ export interface PlannedExpense {
   wallet_name?: string;
   wallet_color?: string;
   wallet_icon?: string;
+  to_wallet_name?: string;
+  to_wallet_color?: string;
+  to_wallet_icon?: string;
   category_name?: string;
   category_icon?: string;
   category_color?: string;
 }
+
 

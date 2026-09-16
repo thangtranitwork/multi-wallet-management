@@ -17,6 +17,8 @@ export async function initDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
       color TEXT NOT NULL,
       icon TEXT NOT NULL,
       is_excluded INTEGER NOT NULL DEFAULT 0,
+      statement_day INTEGER DEFAULT NULL,
+      due_day INTEGER DEFAULT NULL,
       note TEXT,
       created_at TEXT NOT NULL
     );
@@ -45,7 +47,7 @@ export async function initDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
 
     CREATE TABLE IF NOT EXISTS transactions (
       id TEXT PRIMARY KEY NOT NULL,
-      type TEXT NOT NULL, -- 'expense', 'income', 'transfer', 'debt_lend', 'debt_borrow', 'debt_repay', 'debt_collect'
+      type TEXT NOT NULL, -- 'expense', 'income', 'transfer', 'adjustment', 'debt_lend', 'debt_borrow', 'debt_repay', 'debt_collect'
       amount REAL NOT NULL,
       wallet_id TEXT NOT NULL,
       to_wallet_id TEXT,
@@ -81,12 +83,19 @@ export async function initDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
       amount REAL NOT NULL,
       target_date TEXT NOT NULL,
       wallet_id TEXT,
+      to_wallet_id TEXT,
       category_id TEXT,
+      planned_type TEXT NOT NULL DEFAULT 'expense',
+      installment_current INTEGER DEFAULT NULL,
+      installment_total INTEGER DEFAULT NULL,
+      fee REAL DEFAULT 0,
+      parent_tx_id TEXT DEFAULT NULL,
       status TEXT NOT NULL DEFAULT 'pending',
       actual_amount REAL,
       note TEXT,
       created_at TEXT NOT NULL,
       FOREIGN KEY (wallet_id) REFERENCES wallets(id) ON DELETE SET NULL,
+      FOREIGN KEY (to_wallet_id) REFERENCES wallets(id) ON DELETE SET NULL,
       FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
     );
 
@@ -96,6 +105,16 @@ export async function initDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_planned_target_date ON planned_expenses(target_date ASC);
     CREATE INDEX IF NOT EXISTS idx_planned_status ON planned_expenses(status);
   `);
+
+  // Safe ALTER TABLE migrations for existing installations
+  try { await db.execAsync('ALTER TABLE wallets ADD COLUMN statement_day INTEGER DEFAULT NULL;'); } catch {}
+  try { await db.execAsync('ALTER TABLE wallets ADD COLUMN due_day INTEGER DEFAULT NULL;'); } catch {}
+  try { await db.execAsync('ALTER TABLE planned_expenses ADD COLUMN to_wallet_id TEXT DEFAULT NULL;'); } catch {}
+  try { await db.execAsync("ALTER TABLE planned_expenses ADD COLUMN planned_type TEXT NOT NULL DEFAULT 'expense';"); } catch {}
+  try { await db.execAsync('ALTER TABLE planned_expenses ADD COLUMN installment_current INTEGER DEFAULT NULL;'); } catch {}
+  try { await db.execAsync('ALTER TABLE planned_expenses ADD COLUMN installment_total INTEGER DEFAULT NULL;'); } catch {}
+  try { await db.execAsync('ALTER TABLE planned_expenses ADD COLUMN fee REAL DEFAULT 0;'); } catch {}
+  try { await db.execAsync('ALTER TABLE planned_expenses ADD COLUMN parent_tx_id TEXT DEFAULT NULL;'); } catch {}
 
   // ONLY seed default standard categories (no wallets, no transactions, no debts)
   const catCount = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM categories');

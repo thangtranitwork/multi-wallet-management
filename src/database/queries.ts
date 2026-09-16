@@ -36,8 +36,8 @@ export async function createWallet(
 ): Promise<void> {
   const now = new Date().toISOString();
   await db.runAsync(
-    `INSERT INTO wallets (id, name, type, balance, credit_limit, currency, color, icon, is_excluded, note, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO wallets (id, name, type, balance, credit_limit, currency, color, icon, is_excluded, statement_day, due_day, note, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       wallet.id,
       wallet.name,
@@ -48,6 +48,8 @@ export async function createWallet(
       wallet.color,
       wallet.icon,
       wallet.is_excluded ? 1 : 0,
+      wallet.statement_day ?? null,
+      wallet.due_day ?? null,
       wallet.note || '',
       now,
     ]
@@ -66,6 +68,8 @@ export async function updateWallet(
          color = COALESCE(?, color),
          icon = COALESCE(?, icon),
          is_excluded = COALESCE(?, is_excluded),
+         statement_day = COALESCE(?, statement_day),
+         due_day = COALESCE(?, due_day),
          note = COALESCE(?, note)
      WHERE id = ?`,
     [
@@ -75,6 +79,8 @@ export async function updateWallet(
       wallet.color ?? null,
       wallet.icon ?? null,
       wallet.is_excluded !== undefined ? (wallet.is_excluded ? 1 : 0) : null,
+      wallet.statement_day !== undefined ? wallet.statement_day : null,
+      wallet.due_day !== undefined ? wallet.due_day : null,
       wallet.note ?? null,
       wallet.id,
     ]
@@ -85,7 +91,8 @@ export async function adjustWalletBalance(
   db: SQLite.SQLiteDatabase,
   walletId: string,
   newBalance: number,
-  note?: string
+  note?: string,
+  includeInReports: boolean = false
 ): Promise<void> {
   await db.withTransactionAsync(async () => {
     const wallet = await getWalletById(db, walletId);
@@ -102,16 +109,17 @@ export async function adjustWalletBalance(
     const txId = 'adj_' + Date.now();
     const now = new Date().toISOString();
     const isIncome = diff > 0;
+    const txType = includeInReports ? (isIncome ? 'income' : 'expense') : 'adjustment';
 
     await db.runAsync(
       `INSERT INTO transactions (id, type, amount, wallet_id, note, transacted_at, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         txId,
-        isIncome ? 'income' : 'expense',
+        txType,
         Math.abs(diff),
         walletId,
-        note ? `Điều chỉnh số dư: ${note}` : 'Điều chỉnh số dư ví',
+        note ? `Cân đối số dư: ${note}` : 'Cân đối số dư ví',
         now,
         now,
       ]
@@ -1290,9 +1298,11 @@ export async function getPlannedExpenses(
   let sql = `
     SELECT pe.*,
            w.name as wallet_name, w.color as wallet_color, w.icon as wallet_icon,
+           tw.name as to_wallet_name, tw.color as to_wallet_color, tw.icon as to_wallet_icon,
            c.name as category_name, c.color as category_color, c.icon as category_icon
     FROM planned_expenses pe
     LEFT JOIN wallets w ON pe.wallet_id = w.id
+    LEFT JOIN wallets tw ON pe.to_wallet_id = tw.id
     LEFT JOIN categories c ON pe.category_id = c.id
   `;
   const params: any[] = [];
@@ -1319,21 +1329,36 @@ export async function createPlannedExpense(
     amount: number;
     target_date: string;
     wallet_id?: string | null;
+    to_wallet_id?: string | null;
     category_id?: string | null;
+    planned_type?: 'expense' | 'credit_payment';
+    installment_current?: number | null;
+    installment_total?: number | null;
+    fee?: number;
+    parent_tx_id?: string | null;
     note?: string;
   }
 ): Promise<void> {
   const now = new Date().toISOString();
   await db.runAsync(
-    `INSERT INTO planned_expenses (id, title, amount, target_date, wallet_id, category_id, status, note, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+    `INSERT INTO planned_expenses (
+       id, title, amount, target_date, wallet_id, to_wallet_id, category_id,
+       planned_type, installment_current, installment_total, fee, parent_tx_id,
+       status, note, created_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
     [
       expense.id,
       expense.title,
       expense.amount,
       expense.target_date,
       expense.wallet_id || null,
+      expense.to_wallet_id || null,
       expense.category_id || null,
+      expense.planned_type || 'expense',
+      expense.installment_current ?? null,
+      expense.installment_total ?? null,
+      expense.fee || 0,
+      expense.parent_tx_id || null,
       expense.note || '',
       now,
     ]
@@ -1350,7 +1375,13 @@ export async function updatePlannedExpense(
          amount = COALESCE(?, amount),
          target_date = COALESCE(?, target_date),
          wallet_id = COALESCE(?, wallet_id),
+         to_wallet_id = COALESCE(?, to_wallet_id),
          category_id = COALESCE(?, category_id),
+         planned_type = COALESCE(?, planned_type),
+         installment_current = COALESCE(?, installment_current),
+         installment_total = COALESCE(?, installment_total),
+         fee = COALESCE(?, fee),
+         parent_tx_id = COALESCE(?, parent_tx_id),
          status = COALESCE(?, status),
          actual_amount = COALESCE(?, actual_amount),
          note = COALESCE(?, note)
@@ -1360,7 +1391,13 @@ export async function updatePlannedExpense(
       expense.amount ?? null,
       expense.target_date ?? null,
       expense.wallet_id ?? null,
+      expense.to_wallet_id ?? null,
       expense.category_id ?? null,
+      expense.planned_type ?? null,
+      expense.installment_current ?? null,
+      expense.installment_total ?? null,
+      expense.fee ?? null,
+      expense.parent_tx_id ?? null,
       expense.status ?? null,
       expense.actual_amount ?? null,
       expense.note ?? null,
@@ -1400,26 +1437,157 @@ export async function executePlannedExpense(
       [params.actualAmount, params.walletId, params.id]
     );
 
-    // 2. Trừ số dư ví
+    if (planned.planned_type === 'credit_payment' && planned.to_wallet_id) {
+      // 2a. Nếu là trả nợ thẻ tín dụng: Chuyển tiền từ ví nguồn (Ngân hàng) sang ví đích (Thẻ tín dụng)
+      await db.runAsync(
+        'UPDATE wallets SET balance = balance - ? WHERE id = ?',
+        [params.actualAmount, params.walletId]
+      );
+      await db.runAsync(
+        'UPDATE wallets SET balance = balance + ? WHERE id = ?',
+        [params.actualAmount, planned.to_wallet_id]
+      );
+
+      // 3a. Thêm giao dịch chuyển tiền (Transfer)
+      await db.runAsync(
+        `INSERT INTO transactions (id, type, amount, wallet_id, to_wallet_id, category_id, note, transacted_at, created_at)
+         VALUES (?, 'transfer', ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          txId,
+          params.actualAmount,
+          params.walletId,
+          planned.to_wallet_id,
+          planned.category_id || null,
+          `[Thanh toán thẻ] ${planned.title}${params.note ? ` - ${params.note}` : ''}`.trim(),
+          transactedAt,
+          now,
+        ]
+      );
+    } else {
+      // 2b. Chi tiêu thực tế thông thường
+      await db.runAsync(
+        'UPDATE wallets SET balance = balance - ? WHERE id = ?',
+        [params.actualAmount, params.walletId]
+      );
+
+      // 3b. Thêm giao dịch chi tiêu thực tế
+      await db.runAsync(
+        `INSERT INTO transactions (id, type, amount, wallet_id, to_wallet_id, category_id, note, transacted_at, created_at)
+         VALUES (?, 'expense', ?, ?, NULL, ?, ?, ?, ?)`,
+        [
+          txId,
+          params.actualAmount,
+          params.walletId,
+          planned.category_id || null,
+          `[Dự chi] ${planned.title}${params.note ? ` - ${params.note}` : ''}`.trim(),
+          transactedAt,
+          now,
+        ]
+      );
+    }
+  });
+}
+
+export async function createCreditExpenseWithPlan(
+  db: SQLite.SQLiteDatabase,
+  params: {
+    creditWalletId: string;
+    amount: number;
+    categoryId?: string | null;
+    note?: string;
+    transactedAt: string;
+    isInstallment?: boolean;
+    installmentCount?: number;
+    feePerInstallment?: number;
+    firstDueDate: string; // YYYY-MM-DD
+  }
+): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    const now = new Date().toISOString();
+    const txId = 'tx_' + Date.now();
+    const creditWallet = await getWalletById(db, params.creditWalletId);
+    if (!creditWallet) throw new Error('Ví thẻ tín dụng không tồn tại');
+
+    const isInstallment = !!params.isInstallment && (params.installmentCount || 1) > 1;
+    const count = isInstallment ? (params.installmentCount || 1) : 1;
+    const fee = isInstallment ? (params.feePerInstallment || 0) : 0;
+    const totalFee = fee * count;
+    const totalCreditAmount = params.amount + totalFee;
+
+    // 1. Giảm hạn mức (Tăng dư nợ) ví thẻ tín dụng bằng toàn bộ số tiền gốc + tổng phí
     await db.runAsync(
       'UPDATE wallets SET balance = balance - ? WHERE id = ?',
-      [params.actualAmount, params.walletId]
+      [totalCreditAmount, params.creditWalletId]
     );
 
-    // 3. Thêm giao dịch chi tiêu thực tế
+    // 2. Tạo giao dịch chi tiêu thẻ tín dụng
+    const txNote = isInstallment
+      ? `${params.note ? params.note + ' ' : ''}[Trả góp ${count} kỳ - Phí ${totalFee.toLocaleString('vi-VN')}₫]`.trim()
+      : params.note || '';
+
     await db.runAsync(
       `INSERT INTO transactions (id, type, amount, wallet_id, to_wallet_id, category_id, note, transacted_at, created_at)
        VALUES (?, 'expense', ?, ?, NULL, ?, ?, ?, ?)`,
       [
         txId,
-        params.actualAmount,
-        params.walletId,
-        planned.category_id || null,
-        `[Dự chi] ${planned.title}${params.note ? ` - ${params.note}` : ''}`.trim(),
-        transactedAt,
+        totalCreditAmount,
+        params.creditWalletId,
+        params.categoryId || null,
+        txNote,
+        params.transactedAt,
         now,
       ]
     );
+
+    // 3. Tạo các bản ghi planned_expenses cho từng kỳ thanh toán
+    const basePrincipalPerTerm = Math.floor(params.amount / count);
+    const remainder = params.amount - (basePrincipalPerTerm * (count - 1));
+
+    for (let i = 1; i <= count; i++) {
+      const planId = 'plan_' + Date.now() + '_' + i;
+      const termPrincipal = i === count ? remainder : basePrincipalPerTerm;
+      const termTotal = termPrincipal + fee;
+
+      // Tính ngày đến hạn cho từng kỳ (+ (i - 1) tháng)
+      const parts = params.firstDueDate.split('-');
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10);
+      const d = parseInt(parts[2], 10);
+      const targetDateObj = new Date(y, (m - 1) + (i - 1), d);
+      const targetDate = [
+        targetDateObj.getFullYear(),
+        String(targetDateObj.getMonth() + 1).padStart(2, '0'),
+        String(targetDateObj.getDate()).padStart(2, '0')
+      ].join('-');
+
+      const planTitle = isInstallment
+        ? `Trả nợ ${creditWallet.name}: ${params.note || 'Chi tiêu'} (Kỳ ${i}/${count})`
+        : `Trả nợ ${creditWallet.name}: ${params.note || 'Chi tiêu'}`;
+
+      await db.runAsync(
+        `INSERT INTO planned_expenses (
+           id, title, amount, target_date, wallet_id, to_wallet_id, category_id,
+           planned_type, installment_current, installment_total, fee, parent_tx_id,
+           status, note, created_at
+         ) VALUES (?, ?, ?, ?, NULL, ?, ?, 'credit_payment', ?, ?, ?, ?, 'pending', ?, ?)`,
+        [
+          planId,
+          planTitle,
+          termTotal,
+          targetDate,
+          params.creditWalletId,
+          params.categoryId || null,
+          isInstallment ? i : null,
+          isInstallment ? count : null,
+          fee,
+          txId,
+          isInstallment
+            ? `Gốc: ${termPrincipal.toLocaleString('vi-VN')}₫ + Phí: ${fee.toLocaleString('vi-VN')}₫`
+            : (params.note || ''),
+          now,
+        ]
+      );
+    }
   });
 }
 

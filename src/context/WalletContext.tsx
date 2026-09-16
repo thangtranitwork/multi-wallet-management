@@ -51,8 +51,19 @@ interface WalletContextType {
   splitTransaction: (transactionId: string, splits: queries.SplitItem[]) => Promise<void>;
   addWallet: (wallet: Omit<Wallet, 'id' | 'created_at'>) => Promise<void>;
   editWallet: (wallet: Partial<Wallet> & { id: string }) => Promise<void>;
-  adjustBalance: (walletId: string, newBalance: number, note?: string) => Promise<void>;
+  adjustBalance: (walletId: string, newBalance: number, note?: string, includeInReports?: boolean) => Promise<void>;
   removeWallet: (id: string) => Promise<void>;
+  addCreditExpenseWithPlan: (params: {
+    creditWalletId: string;
+    amount: number;
+    categoryId?: string | null;
+    note?: string;
+    transactedAt: string;
+    isInstallment?: boolean;
+    installmentCount?: number;
+    feePerInstallment?: number;
+    firstDueDate: string;
+  }) => Promise<void>;
   addDebt: (debt: {
     type: 'lend' | 'borrow';
     person_name: string;
@@ -338,14 +349,35 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     triggerAutoBackup();
   };
 
-  const adjustBalance = async (walletId: string, newBalance: number, note?: string) => {
-    await queries.adjustWalletBalance(db, walletId, newBalance, note);
+  const adjustBalance = async (
+    walletId: string,
+    newBalance: number,
+    note?: string,
+    includeInReports: boolean = false
+  ) => {
+    await queries.adjustWalletBalance(db, walletId, newBalance, note, includeInReports);
     await refreshData();
     triggerAutoBackup();
   };
 
   const removeWallet = async (id: string) => {
     await queries.deleteWallet(db, id);
+    await refreshData();
+    triggerAutoBackup();
+  };
+
+  const addCreditExpenseWithPlan = async (params: {
+    creditWalletId: string;
+    amount: number;
+    categoryId?: string | null;
+    note?: string;
+    transactedAt: string;
+    isInstallment?: boolean;
+    installmentCount?: number;
+    feePerInstallment?: number;
+    firstDueDate: string;
+  }) => {
+    await queries.createCreditExpenseWithPlan(db, params);
     await refreshData();
     triggerAutoBackup();
   };
@@ -498,6 +530,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         editWallet,
         adjustBalance,
         removeWallet,
+        addCreditExpenseWithPlan,
         addDebt,
         payOrCollectDebt,
         removeDebt,
