@@ -38,8 +38,8 @@ export async function createWallet(
 ): Promise<void> {
   const now = new Date().toISOString();
   await db.runAsync(
-    `INSERT INTO wallets (id, name, type, balance, credit_limit, currency, color, icon, is_excluded, statement_day, due_day, note, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO wallets (id, name, type, balance, credit_limit, currency, color, icon, is_excluded, statement_day, due_day, bank_bin, bank_account, note, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       wallet.id,
       wallet.name,
@@ -52,6 +52,8 @@ export async function createWallet(
       wallet.is_excluded ? 1 : 0,
       wallet.statement_day ?? null,
       wallet.due_day ?? null,
+      wallet.bank_bin ?? null,
+      wallet.bank_account ?? null,
       wallet.note || '',
       now,
     ]
@@ -70,8 +72,10 @@ export async function updateWallet(
          color = COALESCE(?, color),
          icon = COALESCE(?, icon),
          is_excluded = COALESCE(?, is_excluded),
-         statement_day = COALESCE(?, statement_day),
-         due_day = COALESCE(?, due_day),
+         statement_day = CASE WHEN ? = 1 THEN ? ELSE statement_day END,
+         due_day = CASE WHEN ? = 1 THEN ? ELSE due_day END,
+         bank_bin = CASE WHEN ? = 1 THEN ? ELSE bank_bin END,
+         bank_account = CASE WHEN ? = 1 THEN ? ELSE bank_account END,
          note = COALESCE(?, note)
      WHERE id = ?`,
     [
@@ -81,8 +85,14 @@ export async function updateWallet(
       wallet.color ?? null,
       wallet.icon ?? null,
       wallet.is_excluded !== undefined ? (wallet.is_excluded ? 1 : 0) : null,
+      wallet.statement_day !== undefined ? 1 : 0,
       wallet.statement_day !== undefined ? wallet.statement_day : null,
+      wallet.due_day !== undefined ? 1 : 0,
       wallet.due_day !== undefined ? wallet.due_day : null,
+      wallet.bank_bin !== undefined ? 1 : 0,
+      wallet.bank_bin !== undefined ? wallet.bank_bin : null,
+      wallet.bank_account !== undefined ? 1 : 0,
+      wallet.bank_account !== undefined ? wallet.bank_account : null,
       wallet.note ?? null,
       wallet.id,
     ]

@@ -12,6 +12,8 @@ export interface Wallet {
   is_excluded: number; // 0 = false, 1 = true
   statement_day?: number | null; // Ngày chốt sao kê hàng tháng (1-31)
   due_day?: number | null;       // Ngày đến hạn thanh toán hàng tháng (1-31)
+  bank_bin?: string | null;      // Mã BIN ngân hàng (6 chữ số chuẩn NAPAS)
+  bank_account?: string | null;  // Số tài khoản ngân hàng thụ hưởng
   note?: string;
   created_at: string;
 }

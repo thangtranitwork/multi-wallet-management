@@ -1,4 +1,4 @@
-# MultiWallet (v1.1.5) - Personal Finance & Multi-Source Wallet Management
+# MultiWallet (v1.1.6) - Personal Finance & Multi-Source Wallet Management
 
 A modern, high-performance mobile application built with **React Native (Expo SDK 57)**, **TypeScript**, and **Expo SQLite**, crafted with a distinctive, tactile Neo-Brutalist design language. 
 

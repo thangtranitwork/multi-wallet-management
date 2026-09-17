@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useWallet } from '../context/WalletContext';
 import { WalletModal } from '../components/WalletModal';
+import { VietQRModal } from '../components/VietQRModal';
 import { Wallet } from '../types';
 import { THEME, formatVND } from '../constants';
 
@@ -29,6 +30,7 @@ export const WalletsScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
   const [createModalVisible, setCreateModalVisible] = useState(false);
   const [editingWallet, setEditingWallet] = useState<Wallet | null>(null);
   const [adjustingWallet, setAdjustingWallet] = useState<Wallet | null>(null);
+  const [qrWallet, setQrWallet] = useState<Wallet | null>(null);
 
   const handleQuickAddPreset = async (preset: {
     name: string;
@@ -213,6 +215,16 @@ export const WalletsScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
                         <Ionicons name="receipt-outline" size={14} color="#000000" />
                         <Text style={styles.actionBtnText}>Lịch sử</Text>
                       </Pressable>
+
+                      {w.bank_account && w.bank_bin ? (
+                        <Pressable
+                          style={[styles.actionBtn, { backgroundColor: '#00E599' }]}
+                          onPress={() => setQrWallet(w)}
+                        >
+                          <Ionicons name="qr-code-outline" size={14} color="#000000" />
+                          <Text style={styles.actionBtnText}>Mã QR</Text>
+                        </Pressable>
+                      ) : null}
                     </View>
                   </View>
                 </View>
@@ -290,6 +302,22 @@ export const WalletsScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
         wallet={editingWallet || adjustingWallet}
         mode={adjustingWallet ? 'adjust' : editingWallet ? 'edit' : 'create'}
       />
+
+      {/* Dynamic VietQR Modal */}
+      {qrWallet && (
+        <VietQRModal
+          visible={true}
+          onClose={() => setQrWallet(null)}
+          defaultWalletId={qrWallet.id}
+          amount={0}
+          title={`MÃ VIETQR NHẬN TIỀN`}
+          purpose={qrWallet.name}
+          onConfigureWallet={wId => {
+            const target = wallets.find(w => w.id === wId);
+            if (target) setEditingWallet(target);
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 };

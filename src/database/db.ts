@@ -19,6 +19,8 @@ export async function initDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
       is_excluded INTEGER NOT NULL DEFAULT 0,
       statement_day INTEGER DEFAULT NULL,
       due_day INTEGER DEFAULT NULL,
+      bank_bin TEXT DEFAULT NULL,
+      bank_account TEXT DEFAULT NULL,
       note TEXT,
       created_at TEXT NOT NULL
     );
@@ -110,6 +112,8 @@ export async function initDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
   // Safe ALTER TABLE migrations for existing installations
   try { await db.execAsync('ALTER TABLE wallets ADD COLUMN statement_day INTEGER DEFAULT NULL;'); } catch {}
   try { await db.execAsync('ALTER TABLE wallets ADD COLUMN due_day INTEGER DEFAULT NULL;'); } catch {}
+  try { await db.execAsync('ALTER TABLE wallets ADD COLUMN bank_bin TEXT DEFAULT NULL;'); } catch {}
+  try { await db.execAsync('ALTER TABLE wallets ADD COLUMN bank_account TEXT DEFAULT NULL;'); } catch {}
   try { await db.execAsync('ALTER TABLE planned_expenses ADD COLUMN to_wallet_id TEXT DEFAULT NULL;'); } catch {}
   try { await db.execAsync("ALTER TABLE planned_expenses ADD COLUMN planned_type TEXT NOT NULL DEFAULT 'expense';"); } catch {}
   try { await db.execAsync('ALTER TABLE planned_expenses ADD COLUMN installment_current INTEGER DEFAULT NULL;'); } catch {}
