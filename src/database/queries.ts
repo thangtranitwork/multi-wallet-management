@@ -10,6 +10,8 @@ import {
   CategorySpending,
   PlannedExpense,
   PlannedExpenseStatus,
+  CategoryComparisonItem,
+  PeriodComparisonResult,
 } from '../types';
 
 // ==================== WALLET QUERIES ====================
@@ -406,6 +408,17 @@ export async function updateTransactionTime(
   await db.runAsync(
     'UPDATE transactions SET transacted_at = ? WHERE id = ?',
     [transactedAt, transactionId]
+  );
+}
+
+export async function updateTransactionAmortized(
+  db: SQLite.SQLiteDatabase,
+  transactionId: string,
+  isAmortized: boolean
+): Promise<void> {
+  await db.runAsync(
+    'UPDATE transactions SET is_amortized = ? WHERE id = ?',
+    [isAmortized ? 1 : 0, transactionId]
   );
 }
 
@@ -1118,7 +1131,8 @@ export interface AdvancedAnalyticsMetrics {
 export async function getDailyBreakdown(
   db: SQLite.SQLiteDatabase,
   startDateIso?: string | null,
-  endDateIso?: string | null
+  endDateIso?: string | null,
+  fullMonth?: boolean
 ): Promise<DailyStatItem[]> {
   let whereClause = "WHERE type IN ('income', 'expense')";
   const params: any[] = [];
@@ -1132,6 +1146,7 @@ export async function getDailyBreakdown(
     params.push(endDateIso);
   }
 
+  // 1. Lấy các giao dịch KHÔNG trải đều (is_amortized IS NULL OR is_amortized = 0)
   const rows = await db.getAllAsync<{
     date: string;
     income: number;
@@ -1144,7 +1159,7 @@ export async function getDailyBreakdown(
        SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as expense,
        COUNT(*) as txCount
      FROM transactions
-     ${whereClause}
+     ${whereClause} AND (is_amortized IS NULL OR is_amortized = 0)
      GROUP BY substr(transacted_at, 1, 10)
      ORDER BY date ASC`,
     params
@@ -1155,17 +1170,60 @@ export async function getDailyBreakdown(
     rowMap.set(r.date, { income: r.income, expense: r.expense, txCount: r.txCount });
   }
 
-  // Điền đầy đủ các ngày trong kỳ nếu có startDate & endDate (áp dụng cho tuần, tháng, 2 tháng)
+  // 2. Lấy các giao dịch CÓ trải đều (is_amortized = 1)
+  let amortizedWhere = "WHERE type IN ('income', 'expense') AND is_amortized = 1";
+  const amortizedParams: any[] = [];
+  if (startDateIso && endDateIso) {
+    const monthStart = dayjs(startDateIso).startOf('month').toISOString();
+    const monthEnd = dayjs(endDateIso).endOf('month').toISOString();
+    amortizedWhere += ' AND transacted_at >= ? AND transacted_at <= ?';
+    amortizedParams.push(monthStart, monthEnd);
+  }
+
+  const amortizedRows = await db.getAllAsync<{
+    id: string;
+    type: string;
+    amount: number;
+    transacted_at: string;
+  }>(
+    `SELECT id, type, amount, transacted_at
+     FROM transactions
+     ${amortizedWhere}`,
+    amortizedParams
+  );
+
+  for (const tx of amortizedRows) {
+    const txDate = dayjs(tx.transacted_at);
+    const daysInMonth = txDate.daysInMonth();
+    const dailySlice = tx.amount / daysInMonth;
+    const originalDateStr = txDate.format('YYYY-MM-DD');
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = txDate.date(d).format('YYYY-MM-DD');
+      const existing = rowMap.get(dateStr) || { income: 0, expense: 0, txCount: 0 };
+      if (tx.type === 'income') {
+        existing.income += dailySlice;
+      } else if (tx.type === 'expense') {
+        existing.expense += dailySlice;
+      }
+      if (dateStr === originalDateStr) {
+        existing.txCount += 1;
+      }
+      rowMap.set(dateStr, existing);
+    }
+  }
+
+  // 3. Điền đầy đủ các ngày trong kỳ nếu có startDate & endDate (áp dụng cho tuần, tháng, 2 tháng)
   if (startDateIso && endDateIso) {
     const start = dayjs(startDateIso).startOf('day');
     const endLimit = dayjs(endDateIso).endOf('day');
     const today = dayjs().endOf('day');
 
     let actualEnd = endLimit;
-    if (endLimit.isAfter(today)) {
+    if (!fullMonth && endLimit.isAfter(today)) {
       let maxTxDate = today;
-      for (const r of rows) {
-        const d = dayjs(r.date);
+      for (const [dateKey] of rowMap.entries()) {
+        const d = dayjs(dateKey);
         if (d.isAfter(maxTxDate)) maxTxDate = d;
       }
       actualEnd = maxTxDate;
@@ -1178,8 +1236,8 @@ export async function getDailyBreakdown(
       while (cur.isBefore(actualEnd) || cur.isSame(actualEnd, 'day')) {
         const dateStr = cur.format('YYYY-MM-DD');
         const item = rowMap.get(dateStr);
-        const income = item ? item.income : 0;
-        const expense = item ? item.expense : 0;
+        const income = item ? Math.round(item.income) : 0;
+        const expense = item ? Math.round(item.expense) : 0;
         const txCount = item ? item.txCount : 0;
         fullList.push({
           date: dateStr,
@@ -1194,21 +1252,26 @@ export async function getDailyBreakdown(
     }
   }
 
-  return rows.map(r => ({
-    date: r.date,
-    income: r.income,
-    expense: r.expense,
-    net: r.income - r.expense,
-    txCount: r.txCount,
-  }));
+  const sortedDates = Array.from(rowMap.keys()).sort();
+  return sortedDates.map(dateStr => {
+    const item = rowMap.get(dateStr)!;
+    return {
+      date: dateStr,
+      income: Math.round(item.income),
+      expense: Math.round(item.expense),
+      net: Math.round(item.income - item.expense),
+      txCount: item.txCount,
+    };
+  });
 }
 
 export async function getAdvancedAnalyticsMetrics(
   db: SQLite.SQLiteDatabase,
   startDateIso?: string | null,
-  endDateIso?: string | null
+  endDateIso?: string | null,
+  fullMonth?: boolean
 ): Promise<AdvancedAnalyticsMetrics> {
-  const dailyStats = await getDailyBreakdown(db, startDateIso, endDateIso);
+  const dailyStats = await getDailyBreakdown(db, startDateIso, endDateIso, fullMonth);
 
   // Ngày chi tiêu đỉnh điểm
   let peakExpenseDay: DailyStatItem | null = null;
@@ -1286,6 +1349,167 @@ export async function getAdvancedAnalyticsMetrics(
     totalDaysWithExpense,
     avgExpenseOnSpendDays,
     topSpendingDays,
+  };
+}
+
+export async function getPeriodComparison(
+  db: SQLite.SQLiteDatabase,
+  p1StartIso: string,
+  p1EndIso: string,
+  p2StartIso: string,
+  p2EndIso: string,
+  p1Label: string,
+  p2Label: string
+): Promise<PeriodComparisonResult> {
+  // Query Period 1 summary
+  const p1IncRes = await db.getFirstAsync<{ total: number | null }>(
+    "SELECT SUM(amount) as total FROM transactions WHERE type = 'income' AND transacted_at >= ? AND transacted_at <= ?",
+    [p1StartIso, p1EndIso]
+  );
+  const p1ExpRes = await db.getFirstAsync<{ total: number | null }>(
+    "SELECT SUM(amount) as total FROM transactions WHERE type = 'expense' AND transacted_at >= ? AND transacted_at <= ?",
+    [p1StartIso, p1EndIso]
+  );
+  const p1Income = p1IncRes?.total || 0;
+  const p1Expense = p1ExpRes?.total || 0;
+  const p1Net = p1Income - p1Expense;
+
+  // Query Period 2 summary
+  const p2IncRes = await db.getFirstAsync<{ total: number | null }>(
+    "SELECT SUM(amount) as total FROM transactions WHERE type = 'income' AND transacted_at >= ? AND transacted_at <= ?",
+    [p2StartIso, p2EndIso]
+  );
+  const p2ExpRes = await db.getFirstAsync<{ total: number | null }>(
+    "SELECT SUM(amount) as total FROM transactions WHERE type = 'expense' AND transacted_at >= ? AND transacted_at <= ?",
+    [p2StartIso, p2EndIso]
+  );
+  const p2Income = p2IncRes?.total || 0;
+  const p2Expense = p2ExpRes?.total || 0;
+  const p2Net = p2Income - p2Expense;
+
+  // Query Category Spendings for Period 1
+  const p1CatRows = await db.getAllAsync<{
+    category_id: string;
+    category_name: string;
+    category_icon: string;
+    category_color: string;
+    total_amount: number;
+  }>(
+    `SELECT 
+       c.id as category_id,
+       c.name as category_name,
+       c.icon as category_icon,
+       c.color as category_color,
+       SUM(t.amount) as total_amount
+     FROM transactions t
+     INNER JOIN categories c ON t.category_id = c.id
+     WHERE t.type = 'expense' AND t.transacted_at >= ? AND t.transacted_at <= ?
+     GROUP BY c.id`,
+    [p1StartIso, p1EndIso]
+  );
+
+  // Query Category Spendings for Period 2
+  const p2CatRows = await db.getAllAsync<{
+    category_id: string;
+    category_name: string;
+    category_icon: string;
+    category_color: string;
+    total_amount: number;
+  }>(
+    `SELECT 
+       c.id as category_id,
+       c.name as category_name,
+       c.icon as category_icon,
+       c.color as category_color,
+       SUM(t.amount) as total_amount
+     FROM transactions t
+     INNER JOIN categories c ON t.category_id = c.id
+     WHERE t.type = 'expense' AND t.transacted_at >= ? AND t.transacted_at <= ?
+     GROUP BY c.id`,
+    [p2StartIso, p2EndIso]
+  );
+
+  const p1CatMap = new Map<string, typeof p1CatRows[0]>();
+  for (const r of p1CatRows) p1CatMap.set(r.category_id, r);
+
+  const p2CatMap = new Map<string, typeof p2CatRows[0]>();
+  for (const r of p2CatRows) p2CatMap.set(r.category_id, r);
+
+  const allCatIds = new Set<string>([...p1CatMap.keys(), ...p2CatMap.keys()]);
+  const categories: CategoryComparisonItem[] = [];
+
+  for (const catId of allCatIds) {
+    const p1Item = p1CatMap.get(catId);
+    const p2Item = p2CatMap.get(catId);
+    const p1Amt = p1Item?.total_amount || 0;
+    const p2Amt = p2Item?.total_amount || 0;
+    const name = p1Item?.category_name || p2Item?.category_name || 'Khác';
+    const icon = p1Item?.category_icon || p2Item?.category_icon || 'pricetag-outline';
+    const color = p1Item?.category_color || p2Item?.category_color || '#F43F5E';
+
+    const diffAmt = p1Amt - p2Amt;
+    let diffPct = 0;
+    if (p2Amt > 0) {
+      diffPct = Math.round(((p1Amt - p2Amt) / p2Amt) * 100);
+    } else if (p1Amt > 0) {
+      diffPct = 100;
+    }
+
+    // Tăng đột biến: Tăng từ 20% trở lên và số tiền tăng tối thiểu 200.000đ
+    const isSpike = diffPct >= 20 && diffAmt >= 200000;
+
+    categories.push({
+      category_id: catId,
+      category_name: name,
+      category_icon: icon,
+      category_color: color,
+      p1_amount: p1Amt,
+      p2_amount: p2Amt,
+      diff_amount: diffAmt,
+      diff_percent: diffPct,
+      is_spike: isSpike,
+    });
+  }
+
+  // Sắp xếp: Danh mục tăng nhiều nhất lên đầu
+  categories.sort((a, b) => b.diff_amount - a.diff_amount);
+
+  const spikedCategories = categories.filter(c => c.is_spike);
+
+  const expenseDiff = p1Expense - p2Expense;
+  const expenseDiffPct = p2Expense > 0 ? Math.round((expenseDiff / p2Expense) * 100) : (p1Expense > 0 ? 100 : 0);
+
+  const incomeDiff = p1Income - p2Income;
+  const incomeDiffPct = p2Income > 0 ? Math.round((incomeDiff / p2Income) * 100) : (p1Income > 0 ? 100 : 0);
+
+  const netDiff = p1Net - p2Net;
+
+  return {
+    period1: {
+      label: p1Label,
+      start: p1StartIso,
+      end: p1EndIso,
+      income: p1Income,
+      expense: p1Expense,
+      net: p1Net,
+    },
+    period2: {
+      label: p2Label,
+      start: p2StartIso,
+      end: p2EndIso,
+      income: p2Income,
+      expense: p2Expense,
+      net: p2Net,
+    },
+    diff: {
+      expense_diff: expenseDiff,
+      expense_diff_percent: expenseDiffPct,
+      income_diff: incomeDiff,
+      income_diff_percent: incomeDiffPct,
+      net_diff: netDiff,
+    },
+    categories,
+    spiked_categories: spikedCategories,
   };
 }
 

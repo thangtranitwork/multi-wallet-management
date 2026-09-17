@@ -42,6 +42,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
     updateTransactionCategory,
     updateTransactionWallet,
     updateTransactionTime,
+    updateTransactionAmortized,
     updateCreditTransactionDueDate,
     removeTransaction,
     isBalanceHidden,
@@ -61,6 +62,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   const [linkedPlans, setLinkedPlans] = useState<PlannedExpense[]>([]);
   const [isEditingDueDate, setIsEditingDueDate] = useState(false);
   const [newDueDate, setNewDueDate] = useState<string>('');
+  const [isAmortized, setIsAmortized] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -100,7 +102,23 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
     setIsChangingWallet(false);
     setIsChangingTime(false);
     setShowDeleteConfirm(false);
-  }, [transaction?.id, visible]);
+    setIsAmortized(Boolean(transaction?.is_amortized));
+  }, [transaction?.id, transaction?.is_amortized, visible]);
+
+  const handleToggleAmortized = async () => {
+    if (!transaction) return;
+    const nextVal = !isAmortized;
+    setIsAmortized(nextVal);
+    hapticLight();
+    try {
+      await updateTransactionAmortized(transaction.id, nextVal);
+      hapticSuccess();
+    } catch (err: any) {
+      setIsAmortized(!nextVal);
+      hapticError();
+      showAlert('Lỗi', 'Không thể cập nhật thiết lập trải đều: ' + (err?.message || 'Lỗi không xác định'));
+    }
+  };
 
   if (!transaction) return null;
 
@@ -1226,6 +1244,61 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
               </View>
             )}
 
+            {/* Amortization Setting (Trải đều thống kê theo tháng) */}
+            {(transaction.type === 'expense' || transaction.type === 'income') && (
+              <View style={styles.amortizeCardShadow}>
+                <View style={styles.amortizeCardInner}>
+                  <View style={styles.amortizeHeaderRow}>
+                    <View style={styles.amortizeIconBox}>
+                      <Ionicons name="git-merge-outline" size={20} color="#000000" />
+                    </View>
+                    <View style={{ flex: 1, paddingRight: 8 }}>
+                      <View style={styles.amortizeTitleRow}>
+                        <Text style={styles.amortizeTitle}>Trải đều thống kê theo tháng</Text>
+                        {isAmortized && (
+                          <View style={styles.amortizeActiveBadge}>
+                            <Text style={styles.amortizeActiveBadgeText}>ĐANG BẬT</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={styles.amortizeSubtitle}>
+                        Chia đều số tiền này cho mọi ngày trong tháng trên biểu đồ dòng tiền (tiền trọ, học phí, tiền lương) để không làm lệch biểu đồ.
+                      </Text>
+                    </View>
+
+                    {/* Neo-Brutalist Switch */}
+                    <Pressable
+                      style={[
+                        styles.neoSwitchTrack,
+                        isAmortized && styles.neoSwitchTrackActive,
+                      ]}
+                      onPress={handleToggleAmortized}
+                    >
+                      <View
+                        style={[
+                          styles.neoSwitchThumb,
+                          isAmortized && styles.neoSwitchThumbActive,
+                        ]}
+                      />
+                    </Pressable>
+                  </View>
+
+                  {isAmortized && (
+                    <View style={styles.amortizeDetailBox}>
+                      <Ionicons name="information-circle-outline" size={16} color="#4338CA" />
+                      <Text style={styles.amortizeDetailText}>
+                        Mỗi ngày trong tháng {dayjs(transaction.transacted_at).format('MM/YYYY')} được phân bổ{' '}
+                        <Text style={{ fontWeight: '800', color: '#000000' }}>
+                          {formatVND(Math.round(transaction.amount / dayjs(transaction.transacted_at).daysInMonth()))}
+                        </Text>
+                        /ngày trên biểu đồ thống kê.
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+            )}
+
             {/* Actions: Split Bill & Delete */}
             <View style={styles.actionsSection}>
               {transaction.type === 'expense' && onSplit && (
@@ -2130,6 +2203,106 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
   },
-
-
+  amortizeCardShadow: {
+    backgroundColor: '#000000',
+    borderRadius: 16,
+    marginBottom: 16,
+  },
+  amortizeCardInner: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#000000',
+    padding: 14,
+    transform: [{ translateX: -3 }, { translateY: -3 }],
+  },
+  amortizeHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  amortizeIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#EEF2FF',
+    borderWidth: 2,
+    borderColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  amortizeTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+    marginBottom: 2,
+  },
+  amortizeTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  amortizeActiveBadge: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#000000',
+  },
+  amortizeActiveBadgeText: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#15803D',
+  },
+  amortizeSubtitle: {
+    fontSize: 11,
+    color: '#4B5563',
+    lineHeight: 16,
+    marginTop: 2,
+  },
+  neoSwitchTrack: {
+    width: 48,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#E5E7EB',
+    borderWidth: 2,
+    borderColor: '#000000',
+    padding: 2,
+    justifyContent: 'center',
+  },
+  neoSwitchTrackActive: {
+    backgroundColor: '#10B981',
+  },
+  neoSwitchThumb: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+  },
+  neoSwitchThumbActive: {
+    transform: [{ translateX: 20 }],
+    backgroundColor: '#FFFFFF',
+  },
+  amortizeDetailBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    marginTop: 12,
+  },
+  amortizeDetailText: {
+    fontSize: 11,
+    color: '#374151',
+    flex: 1,
+    lineHeight: 16,
+  },
 });

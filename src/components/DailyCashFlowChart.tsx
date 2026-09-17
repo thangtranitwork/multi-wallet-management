@@ -20,6 +20,9 @@ interface DailyCashFlowChartProps {
   dailyStats: DailyStatItem[];
   isBalanceHidden?: boolean;
   avgDailyExpense?: number;
+  isMonthRange?: boolean;
+  isFullMonth?: boolean;
+  onToggleFullMonth?: () => void;
 }
 
 const CHART_HEIGHT = 120;
@@ -52,11 +55,17 @@ export const DailyCashFlowChart: React.FC<DailyCashFlowChartProps> = ({
   dailyStats,
   isBalanceHidden = false,
   avgDailyExpense = 0,
+  isMonthRange = false,
+  isFullMonth = false,
+  onToggleFullMonth,
 }) => {
   const [mode, setMode] = useState<ChartMode>('both');
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
+
+  const todayStr = dayjs().format('YYYY-MM-DD');
+  const todayIndex = dailyStats.findIndex(d => d.date === todayStr);
 
   const onLayout = useCallback((e: LayoutChangeEvent) => {
     setContainerWidth(e.nativeEvent.layout.width);
@@ -65,10 +74,15 @@ export const DailyCashFlowChart: React.FC<DailyCashFlowChartProps> = ({
   useEffect(() => {
     if (dailyStats.length > 7) {
       setTimeout(() => {
-        scrollRef.current?.scrollToEnd({ animated: true });
+        if (todayIndex >= 0 && scrollRef.current && containerWidth > 0) {
+          const scrollPos = Math.max(0, todayIndex * totalBarWidth - (containerWidth / 2) + (totalBarWidth / 2));
+          scrollRef.current.scrollTo({ x: scrollPos, animated: true });
+        } else {
+          scrollRef.current?.scrollToEnd({ animated: true });
+        }
       }, 150);
     }
-  }, [dailyStats.length]);
+  }, [dailyStats.length, isFullMonth, containerWidth, todayIndex]);
 
   if (dailyStats.length === 0) {
     return (
@@ -111,26 +125,52 @@ export const DailyCashFlowChart: React.FC<DailyCashFlowChartProps> = ({
   const selectedDay = selectedIndex !== null ? dailyStats[selectedIndex] : null;
 
   const renderModeToggle = () => (
-    <View style={styles.modeToggleRow}>
-      {([
-        { key: 'both' as ChartMode, label: 'Thu & Chi' },
-        { key: 'expense' as ChartMode, label: 'Chi tiêu' },
-        { key: 'income' as ChartMode, label: 'Thu nhập' },
-      ]).map(m => (
+    <View style={styles.chartHeaderControls}>
+      <View style={styles.modeToggleRow}>
+        {([
+          { key: 'both' as ChartMode, label: 'Thu & Chi' },
+          { key: 'expense' as ChartMode, label: 'Chi tiêu' },
+          { key: 'income' as ChartMode, label: 'Thu nhập' },
+        ]).map(m => (
+          <Pressable
+            key={m.key}
+            style={[styles.modeChip, mode === m.key && styles.modeChipActive]}
+            onPress={() => {
+              hapticLight();
+              setMode(m.key);
+              setSelectedIndex(null);
+            }}
+          >
+            <Text style={[styles.modeChipText, mode === m.key && styles.modeChipTextActive]}>
+              {m.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {isMonthRange && onToggleFullMonth && (
         <Pressable
-          key={m.key}
-          style={[styles.modeChip, mode === m.key && styles.modeChipActive]}
+          style={[
+            styles.fullMonthBtnShadow,
+            isFullMonth && styles.fullMonthBtnShadowActive,
+          ]}
           onPress={() => {
             hapticLight();
-            setMode(m.key);
-            setSelectedIndex(null);
+            onToggleFullMonth();
           }}
         >
-          <Text style={[styles.modeChipText, mode === m.key && styles.modeChipTextActive]}>
-            {m.label}
-          </Text>
+          <View style={[styles.fullMonthBtnInner, isFullMonth && styles.fullMonthBtnInnerActive]}>
+            <Ionicons
+              name={isFullMonth ? 'calendar' : 'calendar-outline'}
+              size={12}
+              color="#000000"
+            />
+            <Text style={styles.fullMonthBtnText}>
+              {isFullMonth ? 'Trọn tháng' : 'Đến hôm nay'}
+            </Text>
+          </View>
         </Pressable>
-      ))}
+      )}
     </View>
   );
 
@@ -217,6 +257,8 @@ export const DailyCashFlowChart: React.FC<DailyCashFlowChartProps> = ({
 
             {dailyStats.map((day, idx) => {
               const isSelected = selectedIndex === idx;
+              const isToday = day.date === todayStr;
+              const isFuture = dayjs(day.date).isAfter(dayjs().endOf('day'));
               const expenseH = day.expense > 0
                 ? Math.max(Math.round((day.expense / currentMax) * AVAILABLE_HEIGHT), 5)
                 : 0;
@@ -235,7 +277,11 @@ export const DailyCashFlowChart: React.FC<DailyCashFlowChartProps> = ({
               return (
                 <Pressable
                   key={day.date}
-                  style={[styles.barGroup, { width: barItemWidth }]}
+                  style={[
+                    styles.barGroup,
+                    { width: barItemWidth },
+                    isFuture && styles.barGroupFuture,
+                  ]}
                   onPress={() => {
                     hapticLight();
                     setSelectedIndex(isSelected ? null : idx);
@@ -337,20 +383,24 @@ export const DailyCashFlowChart: React.FC<DailyCashFlowChartProps> = ({
                     style={[
                       styles.barDayLabel,
                       isSelected && styles.barDayLabelSelected,
+                      isToday && styles.barDayLabelToday,
                     ]}
                     numberOfLines={1}
                   >
                     {dayLabel}
                   </Text>
-                  <Text
-                    style={[
-                      styles.barDateNum,
-                      isSelected && styles.barDateNumSelected,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {dayNum}
-                  </Text>
+                  <View style={[styles.dayNumContainer, isToday && styles.dayNumContainerToday]}>
+                    <Text
+                      style={[
+                        styles.barDateNum,
+                        isSelected && styles.barDateNumSelected,
+                        isToday && styles.barDateNumToday,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {dayNum}
+                    </Text>
+                  </View>
                 </Pressable>
               );
             })}
@@ -393,10 +443,67 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#9CA3AF',
   },
+  chartHeaderControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+    gap: 8,
+    flexWrap: 'wrap',
+  },
   modeToggleRow: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 14,
+    gap: 6,
+  },
+  fullMonthBtnShadow: {
+    backgroundColor: '#000000',
+    borderRadius: 8,
+  },
+  fullMonthBtnShadowActive: {
+    backgroundColor: '#000000',
+  },
+  fullMonthBtnInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    backgroundColor: '#FFFFFF',
+    transform: [{ translateX: -1 }, { translateY: -1 }],
+  },
+  fullMonthBtnInnerActive: {
+    backgroundColor: THEME.popYellow,
+  },
+  fullMonthBtnText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  barGroupFuture: {
+    opacity: 0.55,
+  },
+  dayNumContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 18,
+    paddingHorizontal: 2,
+    borderRadius: 6,
+  },
+  dayNumContainerToday: {
+    backgroundColor: THEME.popYellow,
+    borderWidth: 1,
+    borderColor: '#000000',
+  },
+  barDayLabelToday: {
+    color: '#000000',
+    fontWeight: '900',
+  },
+  barDateNumToday: {
+    color: '#000000',
+    fontWeight: '900',
   },
   modeChip: {
     paddingHorizontal: 10,

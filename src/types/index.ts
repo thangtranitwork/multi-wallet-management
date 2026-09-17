@@ -47,6 +47,7 @@ export interface Transaction {
   note?: string;
   transacted_at: string;
   created_at: string;
+  is_amortized?: number; // 0 = false, 1 = true (trải đều cho các ngày trong tháng khi thống kê)
   // Joined fields for display
   wallet_name?: string;
   to_wallet_name?: string;
@@ -54,6 +55,46 @@ export interface Transaction {
   category_icon?: string;
   category_color?: string;
   person_name?: string;
+}
+
+export interface CategoryComparisonItem {
+  category_id: string;
+  category_name: string;
+  category_icon: string;
+  category_color: string;
+  p1_amount: number;
+  p2_amount: number;
+  diff_amount: number;      // p1_amount - p2_amount
+  diff_percent: number;     // % thay đổi (+ hoặc -)
+  is_spike: boolean;        // Tăng đột biến: diff_percent >= 20 và diff_amount >= 200.000đ
+}
+
+export interface PeriodComparisonResult {
+  period1: {
+    label: string;
+    start: string;
+    end: string;
+    income: number;
+    expense: number;
+    net: number;
+  };
+  period2: {
+    label: string;
+    start: string;
+    end: string;
+    income: number;
+    expense: number;
+    net: number;
+  };
+  diff: {
+    expense_diff: number;
+    expense_diff_percent: number;
+    income_diff: number;
+    income_diff_percent: number;
+    net_diff: number;
+  };
+  categories: CategoryComparisonItem[];
+  spiked_categories: CategoryComparisonItem[];
 }
 
 export type DebtType = 'lend' | 'borrow'; // lend = người khác nợ mình, borrow = mình nợ người khác

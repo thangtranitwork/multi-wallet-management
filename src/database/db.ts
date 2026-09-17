@@ -56,6 +56,7 @@ export async function initDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
       note TEXT,
       transacted_at TEXT NOT NULL,
       created_at TEXT NOT NULL,
+      is_amortized INTEGER DEFAULT 0,
       FOREIGN KEY (wallet_id) REFERENCES wallets(id) ON DELETE CASCADE,
       FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL,
       FOREIGN KEY (debt_id) REFERENCES debts(id) ON DELETE SET NULL
@@ -115,6 +116,7 @@ export async function initDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
   try { await db.execAsync('ALTER TABLE planned_expenses ADD COLUMN installment_total INTEGER DEFAULT NULL;'); } catch {}
   try { await db.execAsync('ALTER TABLE planned_expenses ADD COLUMN fee REAL DEFAULT 0;'); } catch {}
   try { await db.execAsync('ALTER TABLE planned_expenses ADD COLUMN parent_tx_id TEXT DEFAULT NULL;'); } catch {}
+  try { await db.execAsync('ALTER TABLE transactions ADD COLUMN is_amortized INTEGER DEFAULT 0;'); } catch {}
 
   // ONLY seed default standard categories (no wallets, no transactions, no debts)
   const catCount = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM categories');
