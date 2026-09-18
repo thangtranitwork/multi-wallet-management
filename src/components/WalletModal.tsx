@@ -7,14 +7,17 @@ import {
   Pressable,
   ScrollView,
   TextInput,
+  Image,
   Switch,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Ionicons } from '@expo/vector-icons';
 import { useCustomAlert } from './CustomAlertModal';
 import { useWallet } from '../context/WalletContext';
 import { Wallet, WalletType } from '../types';
 import { THEME, WALLET_TYPES, WALLET_COLORS, WALLET_ICONS, formatVND } from '../constants';
-import { VIETNAMESE_BANKS, findBankByBin, BankInfo } from '../constants/banks';
+import { hapticLight, hapticSuccess, hapticError } from '../utils/haptics';
 
 interface WalletModalProps {
   visible: boolean;
@@ -45,10 +48,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   const [creditLimitStr, setCreditLimitStr] = useState<string>('0');
   const [statementDayStr, setStatementDayStr] = useState<string>('');
   const [dueDayStr, setDueDayStr] = useState<string>('');
-  const [bankBin, setBankBin] = useState<string>('970436');
-  const [bankAccount, setBankAccount] = useState<string>('');
-  const [isBankPickerOpen, setIsBankPickerOpen] = useState<boolean>(false);
-  const [bankSearchText, setBankSearchText] = useState<string>('');
+  const [qrImageUri, setQrImageUri] = useState<string | null>(null);
   const [color, setColor] = useState<string>(WALLET_COLORS[0]);
   const [icon, setIcon] = useState<string>(WALLET_ICONS[0]);
   const [isExcluded, setIsExcluded] = useState<boolean>(false);
@@ -73,10 +73,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
           setCreditLimitStr((currentWallet.credit_limit || 0).toString());
           setStatementDayStr(currentWallet.statement_day ? currentWallet.statement_day.toString() : '');
           setDueDayStr(currentWallet.due_day ? currentWallet.due_day.toString() : '');
-          setBankBin(currentWallet.bank_bin || '970436');
-          setBankAccount(currentWallet.bank_account || '');
-          setIsBankPickerOpen(false);
-          setBankSearchText('');
+          setQrImageUri(currentWallet.qr_image_uri || null);
           setColor(currentWallet.color || WALLET_COLORS[0]);
           setIcon(currentWallet.icon || WALLET_ICONS[0]);
           setIsExcluded(currentWallet.is_excluded === 1);
@@ -89,10 +86,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
         setCreditLimitStr('0');
         setStatementDayStr('');
         setDueDayStr('');
-        setBankBin('970436');
-        setBankAccount('');
-        setIsBankPickerOpen(false);
-        setBankSearchText('');
+        setQrImageUri(null);
         setColor(WALLET_COLORS[1]);
         setIcon('business-outline');
         setIsExcluded(false);
@@ -100,6 +94,47 @@ export const WalletModal: React.FC<WalletModalProps> = ({
       }
     }
   }, [visible, currentWallet, isAdjust]);
+
+  const handlePickQR = async () => {
+    try {
+      hapticLight();
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult.granted) {
+        showAlert('Cần quyền truy cập', 'Vui lòng cấp quyền truy cập thư viện ảnh để tải lên mã QR.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        quality: 1,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const sourceUri = result.assets[0].uri;
+        const qrDir = `${FileSystem.documentDirectory}wallet_qrs/`;
+        const dirInfo = await FileSystem.getInfoAsync(qrDir);
+        if (!dirInfo.exists) {
+          await FileSystem.makeDirectoryAsync(qrDir, { intermediates: true });
+        }
+
+        const ext = sourceUri.split('.').pop() || 'jpg';
+        const targetUri = `${qrDir}qr_${Date.now()}.${ext}`;
+        await FileSystem.copyAsync({ from: sourceUri, to: targetUri });
+
+        setQrImageUri(targetUri);
+        hapticSuccess();
+      }
+    } catch (err: any) {
+      hapticError();
+      showAlert('Lỗi', err?.message || 'Không thể chọn ảnh mã QR');
+    }
+  };
+
+  const handleRemoveQR = () => {
+    hapticLight();
+    setQrImageUri(null);
+  };
 
   const handleSave = async () => {
     if (isAdjust && currentWallet) {
@@ -128,8 +163,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     const dueDayRaw = parseInt(dueDayStr.replace(/[^0-9]/g, ''), 10);
     const stmtDay = stmtDayRaw >= 1 && stmtDayRaw <= 31 ? stmtDayRaw : null;
     const dueDay = dueDayRaw >= 1 && dueDayRaw <= 31 ? dueDayRaw : null;
-    const cleanAccount = bankAccount.trim() || null;
-    const cleanBin = cleanAccount ? (bankBin || null) : null;
+    const finalQr = type === 'cash' ? null : qrImageUri;
 
     try {
       if (currentWallet) {
@@ -140,8 +174,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
           credit_limit: type === 'credit' ? limit : 0,
           statement_day: type === 'credit' ? stmtDay : null,
           due_day: type === 'credit' ? dueDay : null,
-          bank_bin: cleanBin,
-          bank_account: cleanAccount,
+          qr_image_uri: finalQr,
           color,
           icon,
           is_excluded: isExcluded ? 1 : 0,
@@ -155,8 +188,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
           credit_limit: type === 'credit' ? limit : 0,
           statement_day: type === 'credit' ? stmtDay : null,
           due_day: type === 'credit' ? dueDay : null,
-          bank_bin: cleanBin,
-          bank_account: cleanAccount,
+          qr_image_uri: finalQr,
           currency: 'VND',
           color,
           icon,
@@ -404,38 +436,53 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                   </>
                 )}
 
-                {/* Bank Account Linking for VietQR */}
-                {type === 'bank' && (
+                {/* QR Image Upload for Wallets (All types except cash) */}
+                {type !== 'cash' && (
                   <View style={styles.sectionContainer}>
-                    <Text style={styles.sectionLabel}>Tài khoản ngân hàng thụ hưởng (Tạo mã VietQR)</Text>
-                    
-                    <Text style={styles.subFieldLabel}>Ngân hàng thụ hưởng</Text>
-                    <Pressable
-                      style={styles.bankPickerTrigger}
-                      onPress={() => setIsBankPickerOpen(true)}
-                    >
-                      <Ionicons name="business-outline" size={18} color="#000000" />
-                      <Text style={styles.bankPickerTriggerText} numberOfLines={1}>
-                        {(() => {
-                          const b = findBankByBin(bankBin);
-                          return b ? `${b.shortName} - ${b.name}` : 'Chọn ngân hàng...';
-                        })()}
-                      </Text>
-                      <Ionicons name="chevron-down" size={18} color="#6B7280" />
-                    </Pressable>
-
-                    <Text style={[styles.subFieldLabel, { marginTop: 10 }]}>Số tài khoản</Text>
-                    <TextInput
-                      style={styles.input}
-                      keyboardType="numeric"
-                      value={bankAccount}
-                      onChangeText={setBankAccount}
-                      placeholder="VD: 1023456789"
-                      placeholderTextColor={THEME.textMuted}
-                    />
-                    <Text style={styles.helperText}>
-                      Khi thiết lập STK, MultiWallet sẽ tự động sinh mã VietQR chuẩn NAPAS 247 khi bạn chia tiền hoặc thu nợ.
-                    </Text>
+                    <Text style={styles.sectionLabel}>Ảnh mã QR của ví (Thanh toán / Nhận tiền)</Text>
+                    {qrImageUri ? (
+                      <View style={styles.qrPreviewCard}>
+                        <View style={styles.qrThumbWrap}>
+                          <Image
+                            source={{ uri: qrImageUri }}
+                            style={styles.qrThumb}
+                            resizeMode="contain"
+                          />
+                        </View>
+                        <View style={styles.qrPreviewInfo}>
+                          <Text style={styles.qrPreviewTitle}>Đã lưu ảnh mã QR</Text>
+                          <Text style={styles.qrPreviewDesc}>
+                            Mã QR sẵn sàng hiển thị khi bấm icon QR trên thẻ ví
+                          </Text>
+                          <View style={styles.qrPreviewActions}>
+                            <Pressable style={styles.qrActionBtn} onPress={handlePickQR}>
+                              <Ionicons name="image-outline" size={13} color="#000000" />
+                              <Text style={styles.qrActionBtnText}>Đổi ảnh</Text>
+                            </Pressable>
+                            <Pressable
+                              style={[styles.qrActionBtn, styles.qrDeleteBtn]}
+                              onPress={handleRemoveQR}
+                            >
+                              <Ionicons name="trash-outline" size={13} color="#DC2626" />
+                              <Text style={[styles.qrActionBtnText, { color: '#DC2626' }]}>Xóa</Text>
+                            </Pressable>
+                          </View>
+                        </View>
+                      </View>
+                    ) : (
+                      <Pressable style={styles.qrUploadTrigger} onPress={handlePickQR}>
+                        <View style={styles.qrUploadIconCircle}>
+                          <Ionicons name="cloud-upload-outline" size={20} color="#000000" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.qrUploadTitle}>Tải lên ảnh mã QR từ máy</Text>
+                          <Text style={styles.qrUploadSubtitle}>
+                            Ảnh chụp mã QR từ app ngân hàng, MoMo, ZaloPay, Cake...
+                          </Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color="#6B7280" />
+                      </Pressable>
+                    )}
                   </View>
                 )}
 
@@ -530,82 +577,6 @@ export const WalletModal: React.FC<WalletModalProps> = ({
               </Pressable>
             )}
           </ScrollView>
-
-          {/* Sub-view: Chọn ngân hàng (Neo-Brutalist Layer) */}
-          {isBankPickerOpen && (
-            <View style={styles.bankPickerOverlay}>
-              <View style={styles.bankPickerModal}>
-                <View style={styles.bankPickerHeader}>
-                  <Text style={styles.bankPickerTitle}>CHỌN NGÂN HÀNG THỤ HƯỞNG</Text>
-                  <Pressable
-                    style={styles.bankPickerCloseBtn}
-                    onPress={() => setIsBankPickerOpen(false)}
-                  >
-                    <Ionicons name="close" size={20} color="#000000" />
-                  </Pressable>
-                </View>
-
-                <View style={styles.bankSearchBox}>
-                  <Ionicons name="search-outline" size={16} color="#6B7280" />
-                  <TextInput
-                    style={styles.bankSearchInput}
-                    placeholder="Tìm theo tên ngân hàng, VCB, MB, TCB..."
-                    placeholderTextColor={THEME.textMuted}
-                    value={bankSearchText}
-                    onChangeText={setBankSearchText}
-                    autoFocus
-                  />
-                  {bankSearchText ? (
-                    <Pressable onPress={() => setBankSearchText('')}>
-                      <Ionicons name="close-circle" size={16} color="#6B7280" />
-                    </Pressable>
-                  ) : null}
-                </View>
-
-                <ScrollView style={styles.bankListScroll} showsVerticalScrollIndicator={false}>
-                  {VIETNAMESE_BANKS.filter(b => {
-                    if (!bankSearchText.trim()) return true;
-                    const q = bankSearchText.toLowerCase();
-                    return (
-                      b.shortName.toLowerCase().includes(q) ||
-                      b.name.toLowerCase().includes(q) ||
-                      b.code.toLowerCase().includes(q) ||
-                      b.bin.includes(q)
-                    );
-                  }).map(b => {
-                    const isSelected = bankBin === b.bin;
-                    return (
-                      <Pressable
-                        key={b.bin}
-                        style={[
-                          styles.bankListItem,
-                          isSelected && styles.bankListItemSelected,
-                        ]}
-                        onPress={() => {
-                          setBankBin(b.bin);
-                          if (!name.trim() || name === 'Tài khoản ngân hàng') {
-                            setName(b.shortName);
-                          }
-                          setIsBankPickerOpen(false);
-                        }}
-                      >
-                        <View style={styles.bankListCodeBadge}>
-                          <Text style={styles.bankListCodeText}>{b.code}</Text>
-                        </View>
-                        <View style={styles.bankListTextCol}>
-                          <Text style={styles.bankListShortName}>{b.shortName}</Text>
-                          <Text style={styles.bankListFullName} numberOfLines={1}>{b.name}</Text>
-                        </View>
-                        {isSelected && (
-                          <Ionicons name="checkmark-circle" size={20} color="#047857" />
-                        )}
-                      </Pressable>
-                    );
-                  })}
-                </ScrollView>
-              </View>
-            </View>
-          )}
         </View>
         {AlertModalComponent}
       </View>
@@ -855,129 +826,99 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#DC2626',
   },
-  bankPickerTrigger: {
+  qrPreviewCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 12,
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    borderRadius: 12,
+    padding: 12,
+    borderRadius: 14,
     borderWidth: 2,
     borderColor: '#000000',
-    marginBottom: 4,
   },
-  bankPickerTriggerText: {
+  qrThumbWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    backgroundColor: '#F8FAFC',
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  qrThumb: {
+    width: 60,
+    height: 60,
+  },
+  qrPreviewInfo: {
     flex: 1,
+  },
+  qrPreviewTitle: {
     fontSize: 13,
+    fontWeight: '900',
+    color: '#000000',
+    marginBottom: 2,
+  },
+  qrPreviewDesc: {
+    fontSize: 11,
+    color: '#64748B',
+    lineHeight: 15,
+    marginBottom: 8,
+  },
+  qrPreviewActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  qrActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#000000',
+  },
+  qrDeleteBtn: {
+    backgroundColor: '#FEE2E2',
+    borderColor: '#EF4444',
+  },
+  qrActionBtnText: {
+    fontSize: 11,
     fontWeight: '800',
     color: '#000000',
   },
-  bankPickerOverlay: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 16,
-    zIndex: 999,
-  },
-  bankPickerModal: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    borderWidth: 2.5,
-    borderColor: '#000000',
-    width: '100%',
-    maxHeight: '85%',
-    padding: 16,
-    shadowColor: '#000000',
-    shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 6,
-  },
-  bankPickerHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-    paddingBottom: 8,
-    borderBottomWidth: 1.5,
-    borderBottomColor: '#E2E8F0',
-  },
-  bankPickerTitle: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: '#000000',
-    letterSpacing: 0.5,
-  },
-  bankPickerCloseBtn: {
-    padding: 4,
-    borderRadius: 6,
-    borderWidth: 1.5,
-    borderColor: '#000000',
-    backgroundColor: '#F1F5F9',
-  },
-  bankSearchBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: '#000000',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    marginBottom: 10,
-  },
-  bankSearchInput: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#000000',
-    padding: 0,
-  },
-  bankListScroll: {
-    maxHeight: 320,
-  },
-  bankListItem: {
+  qrUploadTrigger: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  bankListItemSelected: {
-    backgroundColor: '#DCFCE7',
-    borderWidth: 1.5,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 2,
     borderColor: '#000000',
   },
-  bankListCodeBadge: {
-    backgroundColor: '#000000',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 6,
-    minWidth: 46,
+  qrUploadIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    backgroundColor: '#00E599',
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  bankListCodeText: {
-    fontSize: 10,
-    fontWeight: '900',
-    color: '#FFE600',
-  },
-  bankListTextCol: {
-    flex: 1,
-  },
-  bankListShortName: {
+  qrUploadTitle: {
     fontSize: 13,
     fontWeight: '900',
     color: '#000000',
   },
-  bankListFullName: {
+  qrUploadSubtitle: {
     fontSize: 11,
     color: '#64748B',
-    marginTop: 1,
+    marginTop: 2,
   },
 });

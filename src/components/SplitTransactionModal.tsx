@@ -15,7 +15,6 @@ import { useWallet } from '../context/WalletContext';
 import { Transaction } from '../types';
 import { THEME, formatVND } from '../constants';
 import { hapticLight, hapticSuccess, hapticError } from '../utils/haptics';
-import { VietQRModal } from './VietQRModal';
 
 interface MemberSplit {
   id: string;
@@ -44,7 +43,6 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
   ]);
   const [activeInputId, setActiveInputId] = useState<string>('1');
   const [isChangingCat, setIsChangingCat] = useState<boolean>(false);
-  const [qrMember, setQrMember] = useState<{ name: string; amount: number } | null>(null);
 
   useEffect(() => {
     if (visible && transaction) {
@@ -390,22 +388,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
                     />
                   </Pressable>
 
-                  {/* VietQR Generator for this Member */}
-                  {mAmt > 0 && (
-                    <Pressable
-                      style={styles.qrMemberBtn}
-                      onPress={() => {
-                        hapticLight();
-                        setQrMember({
-                          name: m.name.trim() || `Người #${idx + 1}`,
-                          amount: mAmt,
-                        });
-                      }}
-                    >
-                      <Ionicons name="qr-code-outline" size={14} color="#000000" />
-                      <Text style={styles.qrMemberBtnText}>Tạo mã VietQR cho người này</Text>
-                    </Pressable>
-                  )}
+
                 </View>
               );
             })}
@@ -506,18 +489,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
           </ScrollView>
         </View>
 
-        {/* Dynamic VietQR Modal */}
-        {qrMember && (
-          <VietQRModal
-            visible={true}
-            onClose={() => setQrMember(null)}
-            defaultWalletId={transaction.wallet_id}
-            amount={qrMember.amount}
-            personName={qrMember.name}
-            purpose={`CHIA TIEN ${transaction.note || transaction.category_name || ''} ${qrMember.name}`}
-            title={`VIETQR CHIA TIỀN (${qrMember.name.toUpperCase()})`}
-          />
-        )}
+
 
         {AlertModalComponent}
       </View>
@@ -963,22 +935,5 @@ const styles = StyleSheet.create({
   catPickerTextSelected: {
     fontWeight: '900',
   },
-  qrMemberBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#00E599',
-    marginTop: 8,
-    paddingVertical: 7,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: '#000000',
-  },
-  qrMemberBtnText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#000000',
-  },
+
 });

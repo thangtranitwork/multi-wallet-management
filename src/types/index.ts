@@ -14,6 +14,7 @@ export interface Wallet {
   due_day?: number | null;       // Ngày đến hạn thanh toán hàng tháng (1-31)
   bank_bin?: string | null;      // Mã BIN ngân hàng (6 chữ số chuẩn NAPAS)
   bank_account?: string | null;  // Số tài khoản ngân hàng thụ hưởng
+  qr_image_uri?: string | null;  // Đường dẫn ảnh mã QR cục bộ của ví
   note?: string;
   created_at: string;
 }

@@ -14,7 +14,6 @@ import { Ionicons } from '@expo/vector-icons';
 import dayjs from 'dayjs';
 import { useWallet } from '../context/WalletContext';
 import { DebtModal } from '../components/DebtModal';
-import { VietQRModal } from '../components/VietQRModal';
 import { NeoDropdown } from '../components/NeoDropdown';
 import { Debt } from '../types';
 import { THEME, formatVND } from '../constants';
@@ -37,7 +36,6 @@ export const DebtsScreen: React.FC = () => {
 
   const [createModalVisible, setCreateModalVisible] = useState<boolean>(false);
   const [targetPaymentDebt, setTargetPaymentDebt] = useState<Debt | null>(null);
-  const [qrDebt, setQrDebt] = useState<Debt | null>(null);
 
   // Filter debts
   const currentDebts = debts.filter(d => {
@@ -443,43 +441,29 @@ export const DebtsScreen: React.FC = () => {
                     {/* Bottom Action Row */}
                     <View style={styles.cardActionsRow}>
                       {!isSettled ? (
-                        <>
-                          <Pressable
-                            style={styles.payBtnShadow}
-                            onPress={() => setTargetPaymentDebt(debt)}
+                        <Pressable
+                          style={styles.payBtnShadow}
+                          onPress={() => setTargetPaymentDebt(debt)}
+                        >
+                          <View
+                            style={[
+                              styles.payBtnInner,
+                              {
+                                backgroundColor:
+                                  activeTab === 'lend' ? THEME.primary : THEME.popYellow,
+                              },
+                            ]}
                           >
-                            <View
-                              style={[
-                                styles.payBtnInner,
-                                {
-                                  backgroundColor:
-                                    activeTab === 'lend' ? THEME.primary : THEME.popYellow,
-                                },
-                              ]}
-                            >
-                              <Ionicons
-                                name={activeTab === 'lend' ? 'cash-outline' : 'send-outline'}
-                                size={15}
-                                color="#000000"
-                              />
-                              <Text style={styles.payBtnText}>
-                                {activeTab === 'lend' ? 'Ghi nhận thu nợ' : 'Ghi nhận trả nợ'}
-                              </Text>
-                            </View>
-                          </Pressable>
-
-                          {activeTab === 'lend' && (
-                            <Pressable
-                              style={styles.qrBtnShadow}
-                              onPress={() => setQrDebt(debt)}
-                            >
-                              <View style={styles.qrBtnInner}>
-                                <Ionicons name="qr-code-outline" size={15} color="#000000" />
-                                <Text style={styles.qrBtnText}>Mã QR</Text>
-                              </View>
-                            </Pressable>
-                          )}
-                        </>
+                            <Ionicons
+                              name={activeTab === 'lend' ? 'cash-outline' : 'send-outline'}
+                              size={15}
+                              color="#000000"
+                            />
+                            <Text style={styles.payBtnText}>
+                              {activeTab === 'lend' ? 'Ghi nhận thu nợ' : 'Ghi nhận trả nợ'}
+                            </Text>
+                          </View>
+                        </Pressable>
                       ) : (
                         <View style={styles.settledBanner}>
                           <Ionicons name="checkmark-circle" size={16} color="#15803D" />
@@ -545,18 +529,6 @@ export const DebtsScreen: React.FC = () => {
         />
       )}
 
-      {/* VietQR Dynamic Generator Modal */}
-      {qrDebt && (
-        <VietQRModal
-          visible={true}
-          onClose={() => setQrDebt(null)}
-          defaultWalletId={qrDebt.wallet_id}
-          amount={qrDebt.remaining_amount}
-          personName={qrDebt.person_name}
-          purpose={`TRA NO ${qrDebt.person_name}`}
-          title={`MÃ VIETQR THU NỢ`}
-        />
-      )}
       {AlertModalComponent}
     </SafeAreaView>
   );
@@ -1044,27 +1016,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '900',
     color: '#000000',
-  },
-  qrBtnShadow: {
-    backgroundColor: '#000000',
-    borderRadius: 12,
-  },
-  qrBtnInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 10,
-    paddingVertical: 9,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#000000',
-    transform: [{ translateX: -2 }, { translateY: -2 }],
-  },
-  qrBtnText: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: '#000000',
-    letterSpacing: 0.5,
   },
 });
