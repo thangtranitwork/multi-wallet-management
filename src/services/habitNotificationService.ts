@@ -3,7 +3,12 @@ import * as Notifications from 'expo-notifications';
 import { File, Paths } from 'expo-file-system';
 import dayjs from 'dayjs';
 import { Transaction, Category } from '../types';
-import { detectRecurringBills, RecurringBillPattern } from './predictionService';
+import {
+  detectRecurringBills,
+  RecurringBillPattern,
+  detectWeeklyHabits,
+  WeeklyHabitPattern,
+} from './predictionService';
 
 // Cấu hình hiển thị thông báo cục bộ
 Notifications.setNotificationHandler({
@@ -20,7 +25,7 @@ export const HABIT_CHANNEL_ID = 'habit-reminders';
 
 export interface LearnedHabit {
   id: string;
-  type: 'daily_time' | 'monthly_bill' | 'daily_wrapup';
+  type: 'daily_time' | 'monthly_bill' | 'weekly_routine' | 'daily_wrapup';
   categoryId?: string;
   categoryName: string;
   categoryIcon: string;
@@ -31,6 +36,9 @@ export interface LearnedHabit {
   triggerHour: number;
   triggerMinute: number;
   dayOfMonth?: number;
+  daysOfWeek?: number[]; // e.g. [1, 2, 3, 4, 5] cho T2-T6, [0, 6] cho cuối tuần, [6] cho Thứ 7
+  scheduleBadge: string; // e.g. "Thứ 2 - Thứ 6", "Cuối tuần", "Thứ Bảy hàng tuần", "Ngày 10 hàng tháng", "Hằng ngày"
+  scheduleBadgeColor: string; // e.g. "#3B82F6", "#F97316", "#8B5CF6", "#EF4444", "#6B7280"
   suggestedNote: string;
   occurrences: number;
   isLoggedTodayOrThisMonth?: boolean;
@@ -300,15 +308,30 @@ export function discoverLearnedHabits(
       }
     });
 
-    // Đếm tần suất theo danh mục trong khung giờ
-    const catCountMap = new Map<string, { count: number; minutes: number[]; notes: string[] }>();
+    // Đếm tần suất theo danh mục trong khung giờ, phân biệt ngày thường và cuối tuần
+    const catCountMap = new Map<
+      string,
+      { count: number; minutes: number[]; notes: string[]; weekdayCount: number; weekendCount: number }
+    >();
 
     windowTxs.forEach(({ tx, minuteOfDay }) => {
       const catId = tx.category_id!;
-      const cur = catCountMap.get(catId) || { count: 0, minutes: [], notes: [] };
+      const cur = catCountMap.get(catId) || {
+        count: 0,
+        minutes: [],
+        notes: [],
+        weekdayCount: 0,
+        weekendCount: 0,
+      };
       cur.count += 1;
       cur.minutes.push(minuteOfDay);
       if (tx.note) cur.notes.push(tx.note);
+      const dow = dayjs(tx.transacted_at).day();
+      if (dow === 0 || dow === 6) {
+        cur.weekendCount += 1;
+      } else {
+        cur.weekdayCount += 1;
+      }
       catCountMap.set(catId, cur);
     });
 
@@ -330,6 +353,9 @@ export function discoverLearnedHabits(
     let detectedPeakStr = '';
     let occurrences = maxCount;
     let suggestedNote = win.defaultNote;
+    let daysOfWeek: number[] = [0, 1, 2, 3, 4, 5, 6];
+    let scheduleBadge = 'Hằng ngày';
+    let scheduleBadgeColor = '#6B7280';
 
     if (topCatId && maxCount >= 2) {
       chosenCat = catMap.get(topCatId);
@@ -352,6 +378,23 @@ export function discoverLearnedHabits(
         data.notes.forEach((n) => (noteCounts[n] = (noteCounts[n] || 0) + 1));
         suggestedNote = Object.entries(noteCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || suggestedNote;
       }
+
+      // Phân tích thói quen ngày thường vs cuối tuần
+      if (
+        (data.weekdayCount >= 2 && data.weekendCount === 0) ||
+        (data.count >= 4 && data.weekdayCount / data.count >= 0.75)
+      ) {
+        daysOfWeek = [1, 2, 3, 4, 5];
+        scheduleBadge = 'Thứ 2 - Thứ 6';
+        scheduleBadgeColor = '#3B82F6';
+      } else if (
+        (data.weekendCount >= 2 && data.weekdayCount === 0) ||
+        (data.count >= 4 && data.weekendCount / data.count >= 0.75)
+      ) {
+        daysOfWeek = [0, 6];
+        scheduleBadge = 'Cuối tuần (T7, CN)';
+        scheduleBadgeColor = '#F97316';
+      }
     } else {
       // Fallback danh mục mặc định
       chosenCat = categories.find(
@@ -369,8 +412,8 @@ export function discoverLearnedHabits(
       const habitId = `habit_daily_${win.key}`;
       const timeStr = `${String(reminderHour).padStart(2, '0')}:${String(reminderMinute).padStart(2, '0')}`;
       const subtitle = detectedPeakStr
-        ? `Nhận diện giờ quen thuộc ~${detectedPeakStr} • Nhắc lúc ${timeStr}`
-        : `Khung giờ vàng chuẩn • Nhắc lúc ${timeStr}`;
+        ? `Giờ quen thuộc ~${detectedPeakStr} • ${scheduleBadge} (${timeStr})`
+        : `Khung giờ vàng sinh hoạt • ${scheduleBadge} (${timeStr})`;
 
       habits.push({
         id: habitId,
@@ -384,6 +427,9 @@ export function discoverLearnedHabits(
         triggerTimeStr: timeStr,
         triggerHour: reminderHour,
         triggerMinute: reminderMinute,
+        daysOfWeek,
+        scheduleBadge,
+        scheduleBadgeColor,
         suggestedNote,
         occurrences,
         isEnabled: !disabledSet.has(habitId),
@@ -392,7 +438,44 @@ export function discoverLearnedHabits(
   });
 
   // ==========================================
-  // PHẦN 2: HÓA ĐƠN ĐỊNH KỲ HÀNG THÁNG
+  // PHẦN 2: THÓI QUEN THEO THỨ TRONG TUẦN (WEEKLY HABITS)
+  // ==========================================
+  try {
+    const weeklyHabits = detectWeeklyHabits(transactions, categories);
+    // Lấy tối đa 3 thói quen định kỳ rõ rệt theo thứ trong tuần
+    weeklyHabits.slice(0, 3).forEach((habit) => {
+      const habitId = `habit_weekly_${habit.categoryId}_dow_${habit.dayOfWeek}`;
+      const triggerHour = Math.floor(habit.preferredHour || 9);
+      const triggerMinute = Math.round(((habit.preferredHour || 9) % 1) * 60);
+      const timeStr = `${String(triggerHour).padStart(2, '0')}:${String(triggerMinute).padStart(2, '0')}`;
+      const dayBadge = `${habit.dayOfWeekName} hàng tuần`;
+
+      habits.push({
+        id: habitId,
+        type: 'weekly_routine',
+        categoryId: habit.categoryId,
+        categoryName: habit.categoryName,
+        categoryIcon: habit.categoryIcon,
+        categoryColor: habit.categoryColor,
+        title: `${habit.dayOfWeekName}: ${habit.categoryName}`,
+        subtitle: `Thói quen ${habit.dayOfWeekName} (~${habit.averageAmount.toLocaleString('vi-VN')} đ) • Nhắc lúc ${timeStr}`,
+        triggerTimeStr: `${habit.dayOfWeekName} (${timeStr})`,
+        triggerHour,
+        triggerMinute,
+        daysOfWeek: [habit.dayOfWeek],
+        scheduleBadge: dayBadge,
+        scheduleBadgeColor: '#8B5CF6',
+        suggestedNote: habit.mostCommonNote,
+        occurrences: habit.occurrences,
+        isEnabled: !disabledSet.has(habitId),
+      });
+    });
+  } catch (e) {
+    console.warn('Lỗi phân tích thói quen theo thứ trong tuần:', e);
+  }
+
+  // ==========================================
+  // PHẦN 3: HÓA ĐƠN ĐỊNH KỲ HÀNG THÁNG
   // ==========================================
   try {
     const billPatterns: RecurringBillPattern[] = detectRecurringBills(transactions, categories);
@@ -415,6 +498,8 @@ export function discoverLearnedHabits(
         triggerHour: 9,
         triggerMinute: 0,
         dayOfMonth: bill.approxDayOfMonth,
+        scheduleBadge: `Ngày ${dayStr} hàng tháng`,
+        scheduleBadgeColor: '#EF4444',
         suggestedNote: bill.mostCommonNote,
         occurrences: bill.occurrences,
         isLoggedTodayOrThisMonth: bill.isPaidThisMonth,
@@ -426,7 +511,7 @@ export function discoverLearnedHabits(
   }
 
   // ==========================================
-  // PHẦN 3: CHỐT SỔ CHI TIÊU CUỐI NGÀY
+  // PHẦN 4: CHỐT SỔ CHI TIÊU CUỐI NGÀY
   // ==========================================
   const dailyWrapId = 'habit_daily_wrapup';
   const [wrapH, wrapM] = (config.dailyWrapUpTime || '21:30')
@@ -444,6 +529,9 @@ export function discoverLearnedHabits(
     triggerTimeStr: config.dailyWrapUpTime || '21:30',
     triggerHour: wrapH || 21,
     triggerMinute: wrapM || 30,
+    daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+    scheduleBadge: 'Hằng ngày',
+    scheduleBadgeColor: '#6B7280',
     suggestedNote: 'Chốt sổ cuối ngày',
     occurrences: 0,
     isEnabled: !disabledSet.has(dailyWrapId),
@@ -460,6 +548,12 @@ export function checkHabitAbsenceToday(
   transactions: Transaction[]
 ): boolean {
   const todayStr = dayjs().format('YYYY-MM-DD');
+  const currentDow = dayjs().day();
+
+  // Nếu thói quen quy định các thứ áp dụng mà hôm nay không thuộc danh sách đó -> coi như đã xong hôm nay
+  if (habit.daysOfWeek && habit.daysOfWeek.length > 0 && !habit.daysOfWeek.includes(currentDow)) {
+    return true;
+  }
 
   if (habit.type === 'monthly_bill') {
     // Hóa đơn hàng tháng: xem tháng này đã chi mục đó chưa
@@ -471,7 +565,7 @@ export function checkHabitAbsenceToday(
     return false;
   }
 
-  // Thói quen theo giờ trong ngày: kiểm tra giao dịch của category đó trong ngày hôm nay
+  // Thói quen theo giờ trong ngày hoặc weekly_routine: kiểm tra giao dịch của category đó trong ngày hôm nay
   const hasLogged = transactions.some((tx) => {
     if (tx.type !== 'expense' || tx.category_id !== habit.categoryId) {
       return false;
@@ -481,9 +575,13 @@ export function checkHabitAbsenceToday(
       return false;
     }
 
-    // Nếu là thói quen theo giờ, kiểm tra thêm giờ giao dịch có gần mốc không (trong vòng ±2 tiếng)
-    const txHour = txDate.hour() + txDate.minute() / 60;
-    return Math.abs(txHour - habit.triggerHour) <= 2.5;
+    // Nếu là thói quen theo giờ, kiểm tra thêm giờ giao dịch có gần mốc không (trong vòng ±2.5 tiếng)
+    if (habit.type === 'daily_time') {
+      const txHour = txDate.hour() + txDate.minute() / 60;
+      return Math.abs(txHour - habit.triggerHour) <= 2.5;
+    }
+
+    return true;
   });
 
   return hasLogged;
@@ -503,7 +601,21 @@ function getNextTriggerDateForHabit(habit: LearnedHabit, isAlreadyLoggedToday: b
     return target.toDate();
   }
 
-  // Daily time
+  // Lập lịch theo danh sách thứ trong tuần (VD: [1,2,3,4,5] hoặc [6] hoặc [0,6])
+  if (habit.daysOfWeek && habit.daysOfWeek.length > 0) {
+    let candidate = dayjs().hour(habit.triggerHour).minute(habit.triggerMinute).second(0).millisecond(0);
+    
+    // Nếu hôm nay không nằm trong thứ áp dụng, hoặc hôm nay đã ghi, hoặc giờ hẹn hôm nay đã qua:
+    if (!habit.daysOfWeek.includes(candidate.day()) || candidate.isBefore(now) || isAlreadyLoggedToday) {
+      candidate = candidate.add(1, 'day');
+      while (!habit.daysOfWeek.includes(candidate.day())) {
+        candidate = candidate.add(1, 'day');
+      }
+    }
+    return candidate.toDate();
+  }
+
+  // Daily time mặc định
   let target = dayjs().hour(habit.triggerHour).minute(habit.triggerMinute).second(0).millisecond(0);
   if (isAlreadyLoggedToday || target.isBefore(now)) {
     target = target.add(1, 'day');
@@ -552,6 +664,9 @@ export async function refreshHabitReminders(
       } else if (habit.type === 'monthly_bill') {
         title = `Ví Của Tôi: Đến hạn ${habit.categoryName} rồi!`;
         body = `Hôm nay là mốc thanh toán định kỳ cho ${habit.suggestedNote || habit.categoryName}. Bạn đã hoàn tất chưa? Vào ghi nhận ngay nhé!`;
+      } else if (habit.type === 'weekly_routine') {
+        title = `Ví Của Tôi: Đến hẹn ${habit.title}!`;
+        body = `Hôm nay là dịp quen thuộc bạn hay chi tiêu cho ${habit.suggestedNote || habit.categoryName}. Vào ghi nhanh 2 giây cho ví nhé!`;
       } else {
         const msg = generateHabitMessage(
           habit.id.replace('habit_daily_', ''),

@@ -15,6 +15,29 @@ export interface PredictionResult {
   predictedNote?: string;
 }
 
+export const VIETNAMESE_DAYS = [
+  'Chủ Nhật',
+  'Thứ Hai',
+  'Thứ Ba',
+  'Thứ Tư',
+  'Thứ Năm',
+  'Thứ Sáu',
+  'Thứ Bảy',
+];
+
+export interface WeeklyHabitPattern {
+  categoryId: string;
+  categoryName: string;
+  categoryIcon: string;
+  categoryColor: string;
+  dayOfWeek: number; // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  dayOfWeekName: string; // e.g. "Thứ Bảy", "Chủ Nhật"
+  averageAmount: number;
+  mostCommonNote: string;
+  occurrences: number;
+  preferredHour: number; // e.g. 9.5
+}
+
 export interface RecurringBillPattern {
   categoryId: string;
   categoryName: string;
@@ -30,7 +53,7 @@ export interface RecurringBillPattern {
 
 export interface DashboardForecast {
   id: string;
-  type: 'recurring_bill' | 'meal_time' | 'routine_habit';
+  type: 'recurring_bill' | 'meal_time' | 'routine_habit' | 'weekly_habit';
   title: string;
   subtitle: string;
   category: Category;
@@ -293,7 +316,7 @@ export function predictCategory({
   // ==========================================
   // SIGNAL 3: Day-of-Month Recurring Patterns (Yêu cầu lặp lại >= 2 tháng)
   // ==========================================
-  const recurringBills = detectRecurringBills(relevantTxs, categories);
+  const recurringBills = detectRecurringBills(relevantTxs, categories, type === 'income' ? 'income' : 'expense');
   let predictedRecurringAmount: number | undefined;
   let predictedRecurringNote: string | undefined;
 
@@ -306,7 +329,9 @@ export function predictCategory({
         if (entry) {
           const multiplier = bill.isPaidThisMonth ? 1.0 : 2.5;
           entry.score += bill.occurrences * 35 * multiplier;
-          entry.reasons.unshift(`Khoản định kỳ ngày ${bill.approxDayOfMonth} (${bill.occurrences} lần: ${bill.mostCommonNote})`);
+          entry.reasons.unshift(
+            `${type === 'income' ? 'Thu nhập' : 'Khoản'} định kỳ ngày ${bill.approxDayOfMonth} (${bill.occurrences} lần: ${bill.mostCommonNote})`
+          );
           
           if (!predictedRecurringAmount) {
             predictedRecurringAmount = bill.averageAmount;
@@ -318,22 +343,62 @@ export function predictCategory({
   }
 
   // ==========================================
-  // SIGNAL 4: Day-of-Week Pattern (Weekend vs Weekday)
+  // SIGNAL 4: Day-of-Week Pattern (Thứ trong tuần & Weekly Habits)
   // ==========================================
-  const dayOfWeekCounts = new Map<string, number>();
+  // 4A. Weekly Habit Pattern Matching (Lặp lại theo thứ cụ thể như Thứ 7 đi siêu thị, Thứ 5 đá bóng)
+  if (type === 'expense') {
+    const weeklyHabits = detectWeeklyHabits(relevantTxs, categories);
+    const todayWeeklyHabit = weeklyHabits.find(h => h.dayOfWeek === currentDayOfWeek);
+    if (todayWeeklyHabit) {
+      const entry = scoreMap.get(todayWeeklyHabit.categoryId);
+      if (entry) {
+        entry.score += todayWeeklyHabit.occurrences * 25;
+        entry.reasons.unshift(
+          `Thói quen ${todayWeeklyHabit.dayOfWeekName} hàng tuần (${todayWeeklyHabit.occurrences} lần: ${todayWeeklyHabit.mostCommonNote})`
+        );
+        if (!predictedRecurringAmount) {
+          predictedRecurringAmount = todayWeeklyHabit.averageAmount;
+        }
+        if (!predictedRecurringNote) {
+          predictedRecurringNote = todayWeeklyHabit.mostCommonNote;
+        }
+      }
+    }
+  }
+
+  // 4B. Exact Day-of-Week & Weekend vs Weekday Frequency
+  const sameDayOfWeekCounts = new Map<string, number>();
+  const weekdayWeekendCounts = new Map<string, number>();
+
   relevantTxs.forEach(t => {
     if (!t.transacted_at || !t.category_id) return;
-    const tDay = dayjs(t.transacted_at).day();
+    const tDate = dayjs(t.transacted_at);
+    if (!tDate.isValid()) return;
+    const tDay = tDate.day();
+
+    // Khớp chính xác thứ trong tuần
+    if (tDay === currentDayOfWeek) {
+      sameDayOfWeekCounts.set(t.category_id, (sameDayOfWeekCounts.get(t.category_id) || 0) + 1);
+    }
+
+    // Khớp nhóm Ngày thường (T2-T6) vs Cuối tuần (T7, CN)
     const tIsWeekend = tDay === 0 || tDay === 6;
     if (tIsWeekend === isWeekend) {
-      dayOfWeekCounts.set(t.category_id, (dayOfWeekCounts.get(t.category_id) || 0) + 1);
+      weekdayWeekendCounts.set(t.category_id, (weekdayWeekendCounts.get(t.category_id) || 0) + 1);
     }
   });
 
-  dayOfWeekCounts.forEach((count, catId) => {
+  sameDayOfWeekCounts.forEach((count, catId) => {
     const entry = scoreMap.get(catId);
     if (entry) {
-      entry.score += count * 2;
+      entry.score += count * 6; // Thưởng điểm cho danh mục hay chi tiêu vào đúng thứ này
+    }
+  });
+
+  weekdayWeekendCounts.forEach((count, catId) => {
+    const entry = scoreMap.get(catId);
+    if (entry) {
+      entry.score += count * 2.5; // Thưởng điểm cho danh mục phù hợp ngày làm việc vs ngày nghỉ
     }
   });
 
@@ -382,15 +447,16 @@ export function predictCategory({
  */
 export function detectRecurringBills(
   transactions: Transaction[],
-  categories: Category[]
+  categories: Category[],
+  filterType: 'expense' | 'income' = 'expense'
 ): RecurringBillPattern[] {
-  // Group expense transactions by category + day of month window
+  // Group transactions by category + day of month window
   const catMap = new Map<string, Category>(categories.map(c => [c.id, c]));
-  const expenses = transactions.filter(t => t.type === 'expense' && t.category_id && t.amount > 0);
+  const targetTxs = transactions.filter(t => t.type === filterType && t.category_id && t.amount > 0);
 
   // Group by category_id
   const byCategory = new Map<string, Transaction[]>();
-  expenses.forEach(t => {
+  targetTxs.forEach(t => {
     const list = byCategory.get(t.category_id!) || [];
     list.push(t);
     byCategory.set(t.category_id!, list);
@@ -457,6 +523,84 @@ export function detectRecurringBills(
 }
 
 /**
+ * Detects recurring habits associated with specific days of the week (e.g. Supermarket on Saturday, Sports on Thursday)
+ */
+export function detectWeeklyHabits(
+  transactions: Transaction[],
+  categories: Category[]
+): WeeklyHabitPattern[] {
+  const catMap = new Map<string, Category>(categories.map(c => [c.id, c]));
+  const expenses = transactions.filter(
+    t => t.type === 'expense' && t.category_id && t.amount > 0 && t.transacted_at
+  );
+
+  // Group by `${categoryId}:::${dayOfWeek}`
+  const groupMap = new Map<string, Transaction[]>();
+  expenses.forEach(t => {
+    const d = dayjs(t.transacted_at);
+    if (!d.isValid()) return;
+    const dow = d.day(); // 0 = Sun, 6 = Sat
+    const key = `${t.category_id}:::${dow}`;
+    const list = groupMap.get(key) || [];
+    list.push(t);
+    groupMap.set(key, list);
+  });
+
+  const patterns: WeeklyHabitPattern[] = [];
+
+  groupMap.forEach((txList, key) => {
+    // Require at least 3 occurrences on this day of week
+    if (txList.length < 3) return;
+
+    // Check distinct calendar dates across weeks
+    const distinctDates = new Set(txList.map(t => dayjs(t.transacted_at).format('YYYY-MM-DD')));
+    if (distinctDates.size < 2) return;
+
+    const [categoryId, dowStr] = key.split(':::');
+    const dayOfWeek = parseInt(dowStr, 10);
+    const cat = catMap.get(categoryId);
+    if (!cat) return;
+
+    // Calculate average amount
+    const totalAmount = txList.reduce((sum, t) => sum + t.amount, 0);
+    const avgAmount = Math.round(totalAmount / txList.length);
+
+    // Most frequent note
+    const noteCounts: Record<string, number> = {};
+    txList.forEach(t => {
+      if (t.note) {
+        noteCounts[t.note] = (noteCounts[t.note] || 0) + 1;
+      }
+    });
+    const mostCommonNote = Object.entries(noteCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || cat.name;
+
+    // Preferred hour (median hour)
+    const hours = txList
+      .map(t => {
+        const d = dayjs(t.transacted_at);
+        return d.hour() + d.minute() / 60;
+      })
+      .sort((a, b) => a - b);
+    const medianHour = hours[Math.floor(hours.length / 2)];
+
+    patterns.push({
+      categoryId,
+      categoryName: cat.name,
+      categoryIcon: cat.icon,
+      categoryColor: cat.color,
+      dayOfWeek,
+      dayOfWeekName: VIETNAMESE_DAYS[dayOfWeek] || `Thứ ${dayOfWeek + 1}`,
+      averageAmount: avgAmount,
+      mostCommonNote,
+      occurrences: txList.length,
+      preferredHour: Math.round(medianHour * 10) / 10,
+    });
+  });
+
+  return patterns.sort((a, b) => b.occurrences - a.occurrences);
+}
+
+/**
  * Generates smart proactive forecast alerts for the Dashboard widget
  */
 export function getDashboardForecast(
@@ -466,10 +610,12 @@ export function getDashboardForecast(
   const now = new Date();
   const currentHour = now.getHours() + now.getMinutes() / 60;
   const currentDayOfMonth = now.getDate();
+  const currentDayOfWeek = now.getDay();
+  const isWeekend = currentDayOfWeek === 0 || currentDayOfWeek === 6;
   const todayStr = dayjs(now).format('YYYY-MM-DD');
 
   // Check 1: Day-of-Month Recurring Bills (e.g. Ngày 10 - Tiền nhà trọ)
-  const recurringBills = detectRecurringBills(transactions, categories);
+  const recurringBills = detectRecurringBills(transactions, categories, 'expense');
   const matchedBill = recurringBills.find(bill => {
     const dayDiff = Math.abs(bill.approxDayOfMonth - currentDayOfMonth);
     return dayDiff <= 2 && !bill.isPaidThisMonth;
@@ -487,7 +633,7 @@ export function getDashboardForecast(
         id: `recurring_${matchedBill.categoryId}_${currentDayOfMonth}`,
         type: 'recurring_bill',
         title: `${dayLabel}: ${matchedBill.mostCommonNote}`,
-        subtitle: `Bạn thường chi trả định kỳ ~${matchedBill.averageAmount.toLocaleString('vi-VN')}đ vào dịp này.`,
+        subtitle: `Bạn thường chi trả định kỳ ~${matchedBill.averageAmount.toLocaleString('vi-VN')} đ vào dịp này.`,
         category,
         suggestedAmount: matchedBill.averageAmount,
         suggestedNote: matchedBill.mostCommonNote,
@@ -498,7 +644,37 @@ export function getDashboardForecast(
     }
   }
 
-  // Check 2: Meal-Time Routine (11:00 - 13:30 Ăn trưa, 18:00 - 20:30 Ăn tối)
+  // Check 2: Day-of-Week Weekly Habit (e.g. Hôm nay Thứ 7: Siêu thị / Cà phê)
+  const weeklyHabits = detectWeeklyHabits(transactions, categories);
+  const matchedWeeklyHabit = weeklyHabits.find(h => {
+    if (h.dayOfWeek !== currentDayOfWeek) return false;
+    // Check if user has already transacted in this category today
+    const alreadyLoggedToday = transactions.some(t => {
+      if (t.type !== 'expense' || t.category_id !== h.categoryId) return false;
+      return dayjs(t.transacted_at).format('YYYY-MM-DD') === todayStr;
+    });
+    return !alreadyLoggedToday;
+  });
+
+  if (matchedWeeklyHabit) {
+    const category = categories.find(c => c.id === matchedWeeklyHabit.categoryId);
+    if (category) {
+      return {
+        id: `weekly_${matchedWeeklyHabit.categoryId}_${matchedWeeklyHabit.dayOfWeek}_${todayStr}`,
+        type: 'weekly_habit',
+        title: `Hôm nay ${matchedWeeklyHabit.dayOfWeekName}: ${matchedWeeklyHabit.mostCommonNote}`,
+        subtitle: `Thói quen ${matchedWeeklyHabit.dayOfWeekName} hàng tuần (~${matchedWeeklyHabit.averageAmount.toLocaleString('vi-VN')} đ).`,
+        category,
+        suggestedAmount: matchedWeeklyHabit.averageAmount,
+        suggestedNote: matchedWeeklyHabit.mostCommonNote,
+        badgeText: `Thói quen ${matchedWeeklyHabit.dayOfWeekName}`,
+        badgeColor: '#8B5CF6',
+        isUrgent: false,
+      };
+    }
+  }
+
+  // Check 3: Meal-Time Routine (11:00 - 13:30 Ăn trưa, 18:00 - 20:30 Ăn tối)
   const isLunchTime = currentHour >= 11.0 && currentHour <= 13.5;
   const isDinnerTime = currentHour >= 18.0 && currentHour <= 20.5;
 
@@ -532,7 +708,9 @@ export function getDashboardForecast(
           categories.find(c => c.type === 'expense');
 
         if (foodCategory) {
-          const mealName = isLunchTime ? 'bữa trưa' : 'bữa tối';
+          const mealName = isLunchTime
+            ? (isWeekend ? 'bữa trưa cuối tuần' : 'bữa trưa')
+            : (isWeekend ? 'bữa tối cuối tuần' : 'bữa tối');
           const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
           return {
@@ -541,8 +719,10 @@ export function getDashboardForecast(
             title: `Đã đến giờ ${mealName} (${timeStr})`,
             subtitle: `Thói quen ăn uống (đã lặp lại ${historicalMealCount} lần). Ghi nhanh để không bị quên nhé!`,
             category: foodCategory,
-            suggestedNote: isLunchTime ? 'Cơm trưa' : 'Cơm tối',
-            badgeText: 'Thói quen giờ ăn',
+            suggestedNote: isLunchTime
+              ? (isWeekend ? 'Ăn trưa cuối tuần' : 'Cơm trưa')
+              : (isWeekend ? 'Ăn tối cuối tuần' : 'Bữa tối'),
+            badgeText: isWeekend ? 'Giờ ăn cuối tuần' : 'Thói quen giờ ăn',
             badgeColor: '#F97316',
           };
         }

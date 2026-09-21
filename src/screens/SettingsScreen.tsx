@@ -940,7 +940,29 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                           />
                         </View>
                         <View style={{ flex: 1, marginRight: 8 }}>
-                          <Text style={styles.habitItemTitle}>{habit.title}</Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                            <Text style={styles.habitItemTitle}>{habit.title}</Text>
+                            {habit.scheduleBadge ? (
+                              <View
+                                style={[
+                                  styles.habitBadgeChip,
+                                  {
+                                    backgroundColor: (habit.scheduleBadgeColor || '#6B7280') + '20',
+                                    borderColor: (habit.scheduleBadgeColor || '#6B7280') + '60',
+                                  },
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    styles.habitBadgeChipText,
+                                    { color: habit.scheduleBadgeColor || '#6B7280' },
+                                  ]}
+                                >
+                                  {habit.scheduleBadge}
+                                </Text>
+                              </View>
+                            ) : null}
+                          </View>
                           <Text style={styles.habitItemSubtitle}>{habit.subtitle}</Text>
                         </View>
                         <Switch
@@ -971,7 +993,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
         <View style={styles.footerContainer}>
           <Text style={styles.footerAppName}>Ví Của Tôi • Multi-Wallet Manager</Text>
           <Text style={styles.footerNote}>
-            Phiên bản 1.1.7 • SQLite Offline Local Storage
+            Phiên bản 1.1.8 • SQLite Offline Local Storage
           </Text>
           <Text style={styles.footerPrivacy}>
             100% dữ liệu được lưu trữ trên thiết bị của bạn, hoàn toàn riêng tư và không tải lên máy chủ ngoài.
@@ -1625,6 +1647,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#4B5563',
     marginTop: 2,
+  },
+  habitBadgeChip: {
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  habitBadgeChipText: {
+    fontSize: 10,
+    fontWeight: '800',
   },
   actionBtnTestNotification: {
     flexDirection: 'row',
