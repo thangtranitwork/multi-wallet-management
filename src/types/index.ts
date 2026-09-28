@@ -51,6 +51,7 @@ export interface Transaction {
   transacted_at: string;
   created_at: string;
   is_amortized?: number; // 0 = false, 1 = true (trải đều cho các ngày trong tháng khi thống kê)
+  image_uris?: string | null; // Danh sách đường dẫn ảnh hóa đơn (JSON array string)
   // Joined fields for display
   wallet_name?: string;
   to_wallet_name?: string;
@@ -58,6 +59,22 @@ export interface Transaction {
   category_icon?: string;
   category_color?: string;
   person_name?: string;
+}
+
+export interface ReceiptItem {
+  name: string;
+  quantity?: number;
+  price?: number;
+}
+
+export interface ReceiptScanResult {
+  amount?: number;
+  note?: string;
+  category_id?: string | null;
+  category_name?: string | null;
+  transacted_at?: string | null;
+  items?: ReceiptItem[];
+  confidence?: number;
 }
 
 export interface CategoryComparisonItem {

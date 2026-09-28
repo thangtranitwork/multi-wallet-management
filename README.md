@@ -1,4 +1,4 @@
-# MultiWallet (v1.1.8) - Personal Finance & Multi-Source Wallet Management
+# MultiWallet (v1.1.9) - Personal Finance & Multi-Source Wallet Management
 
 A modern, high-performance mobile application built with **React Native (Expo SDK 57)**, **TypeScript**, and **Expo SQLite**, crafted with a distinctive, tactile Neo-Brutalist design language. 
 
@@ -135,7 +135,22 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
 - Auto-locks whenever the app is sent to the background or reopened.
 - Configurable toggle and PIN change options in Settings.
 
-### 11. Settings & Complete Data Backup (Import / Export)
+### 12. AI Receipt Scanner & OCR (Google Gemini Vision)
+- **Multi-Photo Receipt Scanning**: Capture photos directly from camera or pick multiple receipts from photo gallery.
+- **Intelligent Financial Extraction**:
+  - Automatically parses total payment amount, merchant name / note, date & time, itemized receipt list with unit prices, and auto-matches the best expense category.
+  - Full itemized receipt breakdown review before saving.
+- **Resilient AI Model Fallback Architecture**:
+  - Seamless support for `gemini-2.5-flash`, `gemini-3.5-flash`, `gemini-3.8-flash`, `gemini-2.0-flash`, `gemini-1.5-flash`, and `gemini-flash-latest`.
+  - Automatic fallback cascade across models when facing rate limits (429), high server load (503), or unavailable models.
+- **Local Receipt Gallery**: Store receipts safely on device, preview full-screen images in Transaction Details, and manage receipt attachments anytime.
+
+### 13. Receipt Storage Management & Smart Purge (Dọn Dẹp Bộ Nhớ)
+- **Storage Analyzer**: Real-time scanner calculating transactions, attached receipt photos, and total disk storage occupied.
+- **Customizable Retention Filters**: Scan files older than 30, 60, 90, 180, 365 days or custom day threshold.
+- **1-Tap Safe Disk Purge**: Safely delete expired local image files from disk while preserving transaction history and financial balances intact.
+
+### 14. Settings & Complete Data Backup (Import / Export)
 - **Google Drive Cloud Sync**: Seamless OAuth 2.0 cloud backup to private Google Drive storage.
 - **Export Backup**:
   - Export all SQLite tables into a standardized JSON file.

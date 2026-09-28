@@ -209,6 +209,7 @@ export async function createTransaction(
     category_id?: string | null;
     note?: string;
     transacted_at: string;
+    image_uris?: string[] | string | null;
   }
 ): Promise<void> {
   await db.withTransactionAsync(async () => {
@@ -236,9 +237,16 @@ export async function createTransaction(
       );
     }
 
+    let serializedUris: string | null = null;
+    if (Array.isArray(tx.image_uris)) {
+      serializedUris = tx.image_uris.length > 0 ? JSON.stringify(tx.image_uris) : null;
+    } else if (typeof tx.image_uris === 'string' && tx.image_uris.trim()) {
+      serializedUris = tx.image_uris.trim();
+    }
+
     await db.runAsync(
-      `INSERT INTO transactions (id, type, amount, wallet_id, to_wallet_id, category_id, note, transacted_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO transactions (id, type, amount, wallet_id, to_wallet_id, category_id, note, transacted_at, created_at, image_uris)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         tx.id,
         tx.type,
@@ -249,9 +257,22 @@ export async function createTransaction(
         tx.note || '',
         tx.transacted_at,
         now,
+        serializedUris,
       ]
     );
   });
+}
+
+export async function updateTransactionImages(
+  db: SQLite.SQLiteDatabase,
+  transactionId: string,
+  imageUris: string[]
+): Promise<void> {
+  const serialized = imageUris && imageUris.length > 0 ? JSON.stringify(imageUris) : null;
+  await db.runAsync(
+    'UPDATE transactions SET image_uris = ? WHERE id = ?',
+    [serialized, transactionId]
+  );
 }
 
 export async function deleteTransaction(
@@ -1739,6 +1760,7 @@ export async function createCreditExpenseWithPlan(
     paidInstallmentCount?: number;
     feePerInstallment?: number;
     firstDueDate: string; // YYYY-MM-DD (Hạn trả của kỳ tiếp theo chưa thanh toán)
+    image_uris?: string[] | string | null;
   }
 ): Promise<void> {
   await db.withTransactionAsync(async () => {
@@ -1779,9 +1801,16 @@ export async function createCreditExpenseWithPlan(
       }
     }
 
+    let serializedUris: string | null = null;
+    if (Array.isArray(params.image_uris)) {
+      serializedUris = params.image_uris.length > 0 ? JSON.stringify(params.image_uris) : null;
+    } else if (typeof params.image_uris === 'string' && params.image_uris.trim()) {
+      serializedUris = params.image_uris.trim();
+    }
+
     await db.runAsync(
-      `INSERT INTO transactions (id, type, amount, wallet_id, to_wallet_id, category_id, note, transacted_at, created_at)
-       VALUES (?, 'expense', ?, ?, NULL, ?, ?, ?, ?)`,
+      `INSERT INTO transactions (id, type, amount, wallet_id, to_wallet_id, category_id, note, transacted_at, created_at, image_uris)
+       VALUES (?, 'expense', ?, ?, NULL, ?, ?, ?, ?, ?)`,
       [
         txId,
         remainingCreditAmount,
@@ -1790,6 +1819,7 @@ export async function createCreditExpenseWithPlan(
         txNote,
         params.transactedAt,
         now,
+        serializedUris,
       ]
     );
 

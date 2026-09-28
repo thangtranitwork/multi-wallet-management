@@ -7,16 +7,25 @@ import {
   Pressable,
   ScrollView,
   TextInput,
+  Image,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import { useSQLiteContext } from 'expo-sqlite';
 import { useCustomAlert } from './CustomAlertModal';
 import dayjs from 'dayjs';
 import { useWallet } from '../context/WalletContext';
 import { NeoDropdown } from './NeoDropdown';
 import { THEME, formatVND } from '../constants';
-import { Wallet } from '../types';
+import { Wallet, ReceiptScanResult } from '../types';
 import { hapticLight, hapticMedium, hapticSuccess, hapticError } from '../utils/haptics';
 import { predictCategory, PredictionResult } from '../services/predictionService';
+import {
+  analyzeReceiptImages,
+  saveReceiptImages,
+  getGeminiApiKey,
+} from '../services/geminiService';
 
 interface QuickAddModalProps {
   visible: boolean;
@@ -75,6 +84,120 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
   const [termAmountStr, setTermAmountStr] = useState<string>('0');
   const [isScheduleExpanded, setIsScheduleExpanded] = useState<boolean>(false);
 
+  const db = useSQLiteContext();
+
+  // Receipt Images & Gemini AI OCR states
+  const [receiptImages, setReceiptImages] = useState<string[]>([]);
+  const [isScanningReceipt, setIsScanningReceipt] = useState<boolean>(false);
+  const [scanResult, setScanResult] = useState<ReceiptScanResult | null>(null);
+  const [showItemsBreakdown, setShowItemsBreakdown] = useState<boolean>(false);
+  const [viewingImageUri, setViewingImageUri] = useState<string | null>(null);
+
+  const triggerGeminiScan = async (imagesToScan: string[]) => {
+    if (!imagesToScan || imagesToScan.length === 0) return;
+    try {
+      const apiKey = await getGeminiApiKey(db);
+      if (!apiKey) {
+        hapticLight();
+        showAlert(
+          'Đã đính kèm ảnh',
+          'Ảnh đã được thêm vào giao dịch. Bạn có thể vào Cài đặt để thêm Gemini API Key nếu muốn AI tự động đọc số tiền & thông tin từ hóa đơn.'
+        );
+        return;
+      }
+
+      hapticMedium();
+      setIsScanningReceipt(true);
+      const res = await analyzeReceiptImages(db, imagesToScan, categories);
+      setScanResult(res);
+
+      if (res.amount && res.amount > 0) {
+        setAmountStr(res.amount.toString());
+      }
+      if (res.note) {
+        setNote(res.note);
+      }
+      if (res.category_id) {
+        setSelectedCategoryId(res.category_id);
+      }
+      if (res.transacted_at) {
+        const parsed = dayjs(res.transacted_at);
+        if (parsed.isValid()) {
+          setSelectedDate(parsed.toDate());
+          setPickerMonth(parsed.toDate());
+        }
+      }
+      hapticSuccess();
+    } catch (err: any) {
+      hapticError();
+      showAlert('Lỗi đọc hóa đơn', err?.message || 'Không thể phân tích ảnh qua Gemini API');
+    } finally {
+      setIsScanningReceipt(false);
+    }
+  };
+
+  const handlePickImagesFromLibrary = async () => {
+    try {
+      hapticLight();
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        showAlert('Cần cấp quyền', 'Vui lòng cấp quyền truy cập thư viện ảnh để đính kèm hóa đơn.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsMultipleSelection: true,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const newUris = result.assets.map((a) => a.uri);
+        const updated = [...receiptImages, ...newUris];
+        setReceiptImages(updated);
+        await triggerGeminiScan(updated);
+      }
+    } catch (err: any) {
+      hapticError();
+      showAlert('Lỗi', err?.message || 'Không thể chọn ảnh từ thư viện');
+    }
+  };
+
+  const handleTakePhoto = async () => {
+    try {
+      hapticLight();
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        showAlert('Cần cấp quyền', 'Vui lòng cấp quyền sử dụng máy ảnh để chụp ảnh hóa đơn.');
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: false,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const newUri = result.assets[0].uri;
+        const updated = [...receiptImages, newUri];
+        setReceiptImages(updated);
+        await triggerGeminiScan(updated);
+      }
+    } catch (err: any) {
+      hapticError();
+      showAlert('Lỗi', err?.message || 'Không thể chụp ảnh');
+    }
+  };
+
+  const handleRemoveReceiptImage = (indexToRemove: number) => {
+    hapticLight();
+    const updated = receiptImages.filter((_, idx) => idx !== indexToRemove);
+    setReceiptImages(updated);
+    if (updated.length === 0) {
+      setScanResult(null);
+    }
+  };
+
   // Helper tính ngày đến hạn gợi ý theo chu kỳ thẻ
   const getSuggestedDueDate = (wallet?: Wallet, baseDate: Date = new Date()): string => {
     const dueDay = wallet?.due_day;
@@ -110,6 +233,13 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
       setSelectedDate(baseD);
       setPickerMonth(baseD);
       setIsPickerExpanded(false);
+
+      // Reset receipt images & AI scan states
+      setReceiptImages([]);
+      setScanResult(null);
+      setIsScanningReceipt(false);
+      setShowItemsBreakdown(false);
+      setViewingImageUri(null);
 
       let currentWId = selectedWalletId;
       if (prefillWalletId) {
@@ -554,6 +684,17 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
       }
     }
 
+    // Lưu vĩnh viễn các ảnh hóa đơn vào thư mục cục bộ của ứng dụng
+    let persistentUris: string[] | null = null;
+    if (receiptImages.length > 0) {
+      try {
+        persistentUris = await saveReceiptImages(receiptImages);
+      } catch (err) {
+        console.warn('Lỗi lưu ảnh hóa đơn:', err);
+        persistentUris = receiptImages;
+      }
+    }
+
     // Xử lý riêng cho chi tiêu thẻ tín dụng có hẹn ngày thanh toán hoặc trả góp
     if (isCreditWallet && enableCreditPlan) {
       try {
@@ -569,6 +710,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
           paidInstallmentCount: creditMode === 'installment' ? paidCount : 0,
           feePerInstallment: creditMode === 'installment' ? feeNumber : 0,
           firstDueDate: creditDueDate,
+          image_uris: persistentUris,
         });
         hapticSuccess();
         onClose();
@@ -589,6 +731,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
         category_id: type === 'transfer' ? null : selectedCategoryId,
         note: note.trim(),
         transacted_at: selectedDate.toISOString(),
+        image_uris: persistentUris,
       });
       hapticSuccess();
       onClose();
@@ -1847,6 +1990,189 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
               />
             </View>
 
+            {/* Receipt Images & Gemini AI OCR Section */}
+            <View style={styles.receiptSectionContainer}>
+              <View style={styles.receiptSectionHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Ionicons name="receipt-outline" size={16} color="#000000" />
+                  <Text style={styles.receiptSectionTitle}>HÓA ĐƠN & CHỨNG TỪ</Text>
+                  <View style={styles.aiTag}>
+                    <Ionicons name="sparkles" size={10} color="#6366F1" />
+                    <Text style={styles.aiTagText}>AI SCAN</Text>
+                  </View>
+                </View>
+                {receiptImages.length > 0 && (
+                  <View style={styles.receiptCountBadge}>
+                    <Ionicons name="images-outline" size={12} color="#000000" />
+                    <Text style={styles.receiptCountBadgeText}>{receiptImages.length}</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Action Buttons when no images */}
+              {receiptImages.length === 0 ? (
+                <View style={styles.receiptEmptyBox}>
+                  <View style={[styles.receiptBtnRow, { marginBottom: 0 }]}>
+                    <Pressable
+                      style={styles.receiptActionBtn}
+                      onPress={handleTakePhoto}
+                    >
+                      <Ionicons name="camera" size={18} color="#000000" />
+                      <Text style={styles.receiptActionBtnText}>Chụp ảnh</Text>
+                    </Pressable>
+
+                    <Pressable
+                      style={styles.receiptActionBtn}
+                      onPress={handlePickImagesFromLibrary}
+                    >
+                      <Ionicons name="images" size={18} color="#000000" />
+                      <Text style={styles.receiptActionBtnText}>Chọn ảnh</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.receiptThumbnailsContainer}>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.receiptThumbnailsList}
+                  >
+                    {receiptImages.map((uri, idx) => (
+                      <View key={idx} style={styles.receiptThumbWrapper}>
+                        <Pressable onPress={() => setViewingImageUri(uri)}>
+                          <Image source={{ uri }} style={styles.receiptThumbnail} />
+                        </Pressable>
+                        <Pressable
+                          style={styles.receiptRemoveBtn}
+                          onPress={() => handleRemoveReceiptImage(idx)}
+                        >
+                          <Ionicons name="close" size={12} color="#FFFFFF" />
+                        </Pressable>
+                      </View>
+                    ))}
+
+                    <View style={styles.receiptAddMoreWrapper}>
+                      <Pressable
+                        style={styles.receiptAddMoreBtn}
+                        onPress={handlePickImagesFromLibrary}
+                      >
+                        <Ionicons name="add" size={18} color="#000000" />
+                        <Text style={styles.receiptAddMoreText}>Thêm</Text>
+                      </Pressable>
+                      <Pressable
+                        style={styles.receiptAddMoreCameraBtn}
+                        onPress={handleTakePhoto}
+                      >
+                        <Ionicons name="camera-outline" size={14} color="#000000" />
+                      </Pressable>
+                    </View>
+                  </ScrollView>
+
+                  {/* Rescan Button */}
+                  <View style={styles.receiptRescanRow}>
+                    <Pressable
+                      style={styles.receiptRescanBtn}
+                      onPress={() => triggerGeminiScan(receiptImages)}
+                      disabled={isScanningReceipt}
+                    >
+                      <Ionicons name="sparkles" size={13} color="#4338CA" />
+                      <Text style={styles.receiptRescanBtnText}>Quét lại bằng Gemini AI</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              )}
+
+              {/* Scanning status banner */}
+              {isScanningReceipt && (
+                <View style={styles.receiptScanningBanner}>
+                  <ActivityIndicator size="small" color="#4F46E5" />
+                  <Text style={styles.receiptScanningText}>
+                    Gemini AI đang phân tích hình ảnh & bóc tách hóa đơn...
+                  </Text>
+                </View>
+              )}
+
+              {/* Scan result display */}
+              {scanResult && !isScanningReceipt && (
+                <View style={styles.receiptResultCard}>
+                  <View style={styles.receiptResultHeader}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                      <Ionicons name="checkmark-circle" size={15} color="#15803D" />
+                      <Text style={styles.receiptResultTitle}>Dữ liệu đọc bởi Gemini AI</Text>
+                    </View>
+                    {scanResult.confidence !== undefined && (
+                      <Text style={styles.receiptConfidenceText}>
+                        {Math.round(scanResult.confidence * 100)}% độ tin cậy
+                      </Text>
+                    )}
+                  </View>
+
+                  <View style={styles.receiptResultDetails}>
+                    {scanResult.amount ? (
+                      <View style={styles.receiptResultRow}>
+                        <Text style={styles.receiptResultLabel}>Số tiền nhận diện:</Text>
+                        <Text style={styles.receiptResultValueBold}>{formatVND(scanResult.amount)}</Text>
+                      </View>
+                    ) : null}
+
+                    {scanResult.note ? (
+                      <View style={styles.receiptResultRow}>
+                        <Text style={styles.receiptResultLabel}>Hóa đơn/Quán:</Text>
+                        <Text style={styles.receiptResultValue} numberOfLines={1}>{scanResult.note}</Text>
+                      </View>
+                    ) : null}
+
+                    {scanResult.category_name ? (
+                      <View style={styles.receiptResultRow}>
+                        <Text style={styles.receiptResultLabel}>Danh mục gợi ý:</Text>
+                        <Text style={styles.receiptResultValue}>{scanResult.category_name}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+
+                  {/* Items breakdown toggle */}
+                  {scanResult.items && scanResult.items.length > 0 && (
+                    <View style={styles.receiptItemsSection}>
+                      <Pressable
+                        style={styles.receiptItemsToggleBtn}
+                        onPress={() => setShowItemsBreakdown(!showItemsBreakdown)}
+                      >
+                        <Text style={styles.receiptItemsToggleText}>
+                          Bóc tách chi tiết ({scanResult.items.length} món)
+                        </Text>
+                        <Ionicons
+                          name={showItemsBreakdown ? 'chevron-up' : 'chevron-down'}
+                          size={14}
+                          color="#000000"
+                        />
+                      </Pressable>
+
+                      {showItemsBreakdown && (
+                        <View style={styles.receiptItemsTable}>
+                          {scanResult.items.map((item, iIdx) => (
+                            <View key={iIdx} style={styles.receiptItemRow}>
+                              <Text style={styles.receiptItemName} numberOfLines={1}>
+                                {item.name}
+                              </Text>
+                              {item.quantity && item.quantity > 1 ? (
+                                <Text style={styles.receiptItemQty}>x{item.quantity}</Text>
+                              ) : null}
+                              {item.price ? (
+                                <Text style={styles.receiptItemPrice}>
+                                  {formatVND(item.price)}
+                                </Text>
+                              ) : null}
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  )}
+                </View>
+              )}
+            </View>
+
+
             {/* Amount Display - Placed right above the keypad */}
             <View style={styles.amountDisplayContainer}>
               <Text style={styles.amountLabel}>
@@ -1932,6 +2258,30 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
           </ScrollView>
         </View>
         {AlertModalComponent}
+
+        {/* Fullscreen Image Preview Modal */}
+        <Modal
+          visible={!!viewingImageUri}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setViewingImageUri(null)}
+        >
+          <View style={styles.fullscreenModalBackdrop}>
+            <Pressable
+              style={styles.fullscreenCloseBtn}
+              onPress={() => setViewingImageUri(null)}
+            >
+              <Ionicons name="close" size={24} color="#FFFFFF" />
+            </Pressable>
+            {viewingImageUri && (
+              <Image
+                source={{ uri: viewingImageUri }}
+                style={styles.fullscreenImage}
+                resizeMode="contain"
+              />
+            )}
+          </View>
+        </Modal>
       </View>
     </Modal>
   );
@@ -3137,5 +3487,329 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#15803D',
     lineHeight: 13,
+  },
+  receiptSectionContainer: {
+    marginBottom: 16,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 2,
+    borderColor: '#000000',
+    borderRadius: 14,
+    padding: 12,
+  },
+  receiptSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  receiptSectionTitle: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#000000',
+    letterSpacing: 0.5,
+  },
+  aiTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#E0E7FF',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#6366F1',
+  },
+  aiTagText: {
+    fontSize: 9.5,
+    fontWeight: '900',
+    color: '#4338CA',
+  },
+  receiptCountBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+  },
+  receiptCountBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  receiptEmptyBox: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    borderStyle: 'dashed',
+    borderRadius: 10,
+    padding: 12,
+    alignItems: 'center',
+  },
+  receiptBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+    marginBottom: 8,
+  },
+  receiptActionBtn: {
+    flex: 1,
+    height: 40,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#000000',
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  receiptActionBtnText: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  receiptHelperText: {
+    fontSize: 11,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 15,
+  },
+  receiptThumbnailsContainer: {
+    marginTop: 4,
+  },
+  receiptThumbnailsList: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 4,
+  },
+  receiptThumbWrapper: {
+    position: 'relative',
+    width: 68,
+    height: 68,
+  },
+  receiptThumbnail: {
+    width: 68,
+    height: 68,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#000000',
+    backgroundColor: '#E2E8F0',
+  },
+  receiptRemoveBtn: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#EF4444',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  receiptAddMoreWrapper: {
+    flexDirection: 'row',
+    gap: 6,
+    height: 68,
+    alignItems: 'center',
+  },
+  receiptAddMoreBtn: {
+    width: 60,
+    height: 68,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    borderStyle: 'dashed',
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  receiptAddMoreText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  receiptAddMoreCameraBtn: {
+    width: 34,
+    height: 68,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  receiptRescanRow: {
+    marginTop: 8,
+    alignItems: 'flex-start',
+  },
+  receiptRescanBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1.5,
+    borderColor: '#6366F1',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  receiptRescanBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#4338CA',
+  },
+  receiptScanningBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1.5,
+    borderColor: '#6366F1',
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 10,
+  },
+  receiptScanningText: {
+    flex: 1,
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#3730A3',
+    lineHeight: 16,
+  },
+  receiptResultCard: {
+    marginTop: 10,
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1.5,
+    borderColor: '#16A34A',
+    borderRadius: 10,
+    padding: 10,
+  },
+  receiptResultHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+    paddingBottom: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#BBF7D0',
+  },
+  receiptResultTitle: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  receiptConfidenceText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#16A34A',
+  },
+  receiptResultDetails: {
+    gap: 3,
+  },
+  receiptResultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  receiptResultLabel: {
+    fontSize: 11,
+    color: '#4B5563',
+    fontWeight: '600',
+  },
+  receiptResultValue: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#111827',
+    maxWidth: '65%',
+  },
+  receiptResultValueBold: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#15803D',
+  },
+  receiptItemsSection: {
+    marginTop: 8,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#BBF7D0',
+  },
+  receiptItemsToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  receiptItemsToggleText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#166534',
+  },
+  receiptItemsTable: {
+    marginTop: 6,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#DCFCE7',
+    borderRadius: 6,
+    padding: 6,
+    gap: 4,
+  },
+  receiptItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 2,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#F3F4F6',
+  },
+  receiptItemName: {
+    flex: 1,
+    fontSize: 11,
+    color: '#1F2937',
+    fontWeight: '600',
+  },
+  receiptItemQty: {
+    fontSize: 11,
+    color: '#6B7280',
+    fontWeight: '700',
+    marginHorizontal: 8,
+  },
+  receiptItemPrice: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  fullscreenModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullscreenCloseBtn: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 100,
+  },
+  fullscreenImage: {
+    width: '94%',
+    height: '80%',
   },
 });

@@ -3,7 +3,7 @@
     "name": "Ví Của Tôi",
     "slug": "multi-wallet-management",
     "scheme": "com.thang.multiwallet",
-    "version": "1.1.8",
+    "version": "1.1.9",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -34,6 +34,13 @@
       "expo-sharing",
       "expo-local-authentication",
       "expo-web-browser",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Ứng dụng cần quyền truy cập thư viện ảnh để đính kèm hóa đơn và chứng từ giao dịch.",
+          "cameraPermission": "Ứng dụng cần quyền sử dụng máy ảnh để chụp ảnh hóa đơn và chứng từ giao dịch."
+        }
+      ],
       [
         "expo-notifications",
         {

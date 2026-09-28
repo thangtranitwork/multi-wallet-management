@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Sharing from 'expo-sharing';
 import { File, Paths } from 'expo-file-system';
+import * as LegacyFileSystem from 'expo-file-system/legacy';
 import * as DocumentPicker from 'expo-document-picker';
 import dayjs from 'dayjs';
 import { useWallet } from '../context/WalletContext';
@@ -28,6 +29,14 @@ import { loadCloudBackupConfig } from '../services/cloudBackupStorage';
 import { useSQLiteContext } from 'expo-sqlite';
 import { THEME } from '../constants';
 import { hapticLight, hapticMedium, hapticSuccess, hapticError } from '../utils/haptics';
+import {
+  getGeminiApiKey,
+  saveGeminiApiKey,
+  testGeminiConnection,
+  getReceiptStorageStats,
+  ReceiptStorageStats,
+  GEMINI_MODELS,
+} from '../services/geminiService';
 import {
   loadHabitConfig,
   saveHabitConfig,
@@ -57,6 +66,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
     exportDataToJsonString,
     importDataFromJsonString,
     resetAllData,
+    purgeReceiptImages,
   } = useWallet();
 
   const {
@@ -94,6 +104,129 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
 
   const [categoryModalVisible, setCategoryModalVisible] = useState<boolean>(false);
   const [habitConfig, setHabitConfig] = useState<HabitReminderConfig>(DEFAULT_HABIT_CONFIG);
+
+  // Gemini AI Settings
+  const [geminiApiKey, setGeminiApiKey] = useState<string>('');
+  const [showApiKey, setShowApiKey] = useState<boolean>(false);
+  const [isTestingGemini, setIsTestingGemini] = useState<boolean>(false);
+  const [geminiStatus, setGeminiStatus] = useState<{ checked: boolean; success: boolean; message: string; model?: string }>({
+    checked: false,
+    success: false,
+    message: '',
+  });
+
+  // Receipt Image Storage Cleanup states
+  const [selectedPurgeDays, setSelectedPurgeDays] = useState<number>(30);
+  const [customPurgeDays, setCustomPurgeDays] = useState<string>('30');
+  const [isCustomDays, setIsCustomDays] = useState<boolean>(false);
+  const [storageStats, setStorageStats] = useState<ReceiptStorageStats | null>(null);
+  const [isScanningStorage, setIsScanningStorage] = useState<boolean>(false);
+  const [isPurging, setIsPurging] = useState<boolean>(false);
+
+  const refreshStorageStats = useCallback(async (days: number) => {
+    if (days <= 0) return;
+    setIsScanningStorage(true);
+    try {
+      const stats = await getReceiptStorageStats(db, days);
+      setStorageStats(stats);
+    } catch (err) {
+      console.warn('Lỗi quét bộ nhớ ảnh:', err);
+    } finally {
+      setIsScanningStorage(false);
+    }
+  }, [db]);
+
+  useEffect(() => {
+    const days = isCustomDays ? parseInt(customPurgeDays, 10) : selectedPurgeDays;
+    if (!isNaN(days) && days > 0) {
+      refreshStorageStats(days);
+    }
+  }, [selectedPurgeDays, isCustomDays, refreshStorageStats]);
+
+  const handleExecutePurge = () => {
+    const days = isCustomDays ? parseInt(customPurgeDays, 10) : selectedPurgeDays;
+    if (isNaN(days) || days <= 0) {
+      showAlert('Lỗi', 'Vui lòng nhập số ngày hợp lệ (lớn hơn 0)');
+      return;
+    }
+
+    if (!storageStats || storageStats.imageCount === 0) {
+      showAlert('Không có ảnh', `Không có ảnh hóa đơn nào cũ hơn ${days} ngày.`);
+      return;
+    }
+
+    showConfirm(
+      'Xác nhận dọn dẹp ảnh',
+      `Hành động này sẽ xóa vĩnh viễn ${storageStats.imageCount} ảnh hóa đơn (${storageStats.totalFormatted}) của ${storageStats.transactionCount} giao dịch trước ngày ${storageStats.cutoffDateStr} để giải phóng bộ nhớ máy.\n\nThông tin giao dịch (số tiền, danh mục, ghi chú) vẫn được lưu giữ nguyên vẹn. Ngài có chắc chắn muốn dọn dẹp không?`,
+      async () => {
+        try {
+          hapticMedium();
+          setIsPurging(true);
+          const result = await purgeReceiptImages(days);
+          setIsPurging(false);
+          hapticSuccess();
+          showAlert(
+            'Dọn dẹp thành công!',
+            `Đã giải phóng ${result.freedFormatted} bộ nhớ máy.\nĐã xóa ${result.cleanedImages} ảnh của ${result.cleanedTransactions} giao dịch trước ngày ${result.cutoffDateStr}.`
+          );
+          await refreshStorageStats(days);
+        } catch (err: any) {
+          setIsPurging(false);
+          hapticError();
+          showAlert('Lỗi dọn dẹp', err?.message || 'Không thể xóa ảnh');
+        }
+      }
+    );
+  };
+
+  useEffect(() => {
+    getGeminiApiKey(db).then((key) => {
+      setGeminiApiKey(key);
+      if (key) {
+        setGeminiStatus({ checked: true, success: true, message: 'Đã lưu API Key' });
+      }
+    });
+  }, [db]);
+
+  const handleSaveGeminiKey = async () => {
+    hapticLight();
+    await saveGeminiApiKey(db, geminiApiKey);
+    hapticSuccess();
+    showAlert('Thành công', 'Đã lưu Gemini API Key');
+    setGeminiStatus({
+      checked: true,
+      success: !!geminiApiKey.trim(),
+      message: geminiApiKey.trim() ? 'Đã lưu API Key' : 'Chưa nhập Key',
+    });
+  };
+
+  const handleTestGeminiConnection = async () => {
+    if (!geminiApiKey.trim()) {
+      hapticError();
+      showAlert('Chưa nhập Key', 'Vui lòng nhập Gemini API Key trước khi kiểm tra.');
+      return;
+    }
+    hapticMedium();
+    setIsTestingGemini(true);
+    try {
+      const res = await testGeminiConnection(db, geminiApiKey.trim());
+      setIsTestingGemini(false);
+      if (res.success) {
+        hapticSuccess();
+        setGeminiStatus({ checked: true, success: true, message: res.message, model: res.model });
+        showAlert('Kết nối thành công', `Đã kết nối thành công tới Gemini API qua mô hình: ${res.model || 'Gemini'}`);
+      } else {
+        hapticError();
+        setGeminiStatus({ checked: true, success: false, message: res.message });
+        showAlert('Kết nối thất bại', res.message);
+      }
+    } catch (err: any) {
+      setIsTestingGemini(false);
+      hapticError();
+      setGeminiStatus({ checked: true, success: false, message: err?.message || 'Lỗi không xác định' });
+      showAlert('Lỗi', err?.message || 'Không thể kết nối đến Gemini API');
+    }
+  };
 
   useEffect(() => {
     loadHabitConfig().then((conf) => setHabitConfig(conf));
@@ -230,8 +363,16 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
       const asset = result.assets[0];
       setIsProcessing(true);
 
-      const pickedFile = new File(asset.uri);
-      const content = await pickedFile.text();
+      let content = '';
+      try {
+        content = await LegacyFileSystem.readAsStringAsync(asset.uri, {
+          encoding: LegacyFileSystem.EncodingType.UTF8,
+        });
+      } catch (readErr) {
+        // Fallback đọc qua fetch cho URI content:// hoặc file:// trên Android
+        const resp = await fetch(asset.uri);
+        content = await resp.text();
+      }
 
       let parsed: any;
       try {
@@ -621,6 +762,293 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
           </View>
         </View>
 
+        {/* Gemini AI & Invoice Scanning Section */}
+        <View style={styles.cardShadow}>
+          <View style={styles.cardInner}>
+            <View style={[styles.folderTab, { backgroundColor: '#C7D2FE' }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name="sparkles-outline" size={15} color="#000000" />
+                <Text style={styles.folderTabText}>TRÍ TUỆ NHÂN TẠO (GEMINI AI)</Text>
+              </View>
+            </View>
+
+            <View style={styles.cardBody}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, marginRight: 8 }}>
+                  <Text style={[styles.cardSectionTitle, { marginBottom: 0 }]} numberOfLines={1}>
+                    Nhận diện hóa đơn AI
+                  </Text>
+                  <Pressable
+                    hitSlop={8}
+                    onPress={() => {
+                      hapticLight();
+                      showAlert(
+                        'Nhận diện hóa đơn AI (Gemini)',
+                        'Tự động đọc hóa đơn & chứng từ nhiều ảnh, tự động trích xuất số tiền, ngày giờ, danh mục và bóc tách chi tiết từng món hàng.\n\n• Nhận API Key miễn phí tại: aistudio.google.com/app/apikey\n• Hệ thống tự động chuyển model dự phòng chống nghẽn: gemini-2.5-flash ➔ gemini-2.0-flash ➔ gemini-1.5-flash'
+                      );
+                    }}
+                  >
+                    <Ionicons name="help-circle-outline" size={18} color="#6B7280" />
+                  </Pressable>
+                </View>
+                <View style={[
+                  styles.gdriveBadge,
+                  { backgroundColor: geminiStatus.success ? '#DCFCE7' : '#F3F4F6' }
+                ]}>
+                  <View style={[
+                    styles.gdriveDot,
+                    { backgroundColor: geminiStatus.success ? '#15803D' : '#9CA3AF' }
+                  ]} />
+                  <Text style={[
+                    styles.gdriveBadgeText,
+                    { color: geminiStatus.success ? '#15803D' : '#6B7280' }
+                  ]}>
+                    {geminiStatus.success ? 'Đã kết nối' : 'Chưa kết nối'}
+                  </Text>
+                </View>
+              </View>
+
+              {/* API Key Input */}
+              <View style={styles.geminiInputContainer}>
+                <TextInput
+                  style={styles.geminiInput}
+                  placeholder="Dán Gemini API Key tại đây..."
+                  placeholderTextColor={THEME.textMuted}
+                  value={geminiApiKey}
+                  onChangeText={setGeminiApiKey}
+                  secureTextEntry={!showApiKey}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <Pressable
+                  style={styles.geminiEyeBtn}
+                  onPress={() => setShowApiKey(!showApiKey)}
+                >
+                  <Ionicons
+                    name={showApiKey ? 'eye-off-outline' : 'eye-outline'}
+                    size={20}
+                    color="#6B7280"
+                  />
+                </Pressable>
+              </View>
+
+              {/* Action Buttons Row */}
+              <View style={[styles.geminiButtonsRow, { marginBottom: 0 }]}>
+                <Pressable
+                  style={[styles.geminiBtn, styles.geminiBtnPrimary]}
+                  onPress={handleSaveGeminiKey}
+                >
+                  <Ionicons name="save-outline" size={16} color="#000000" />
+                  <Text style={styles.geminiBtnPrimaryText}>Lưu Key</Text>
+                </Pressable>
+
+                <Pressable
+                  style={[styles.geminiBtn, styles.geminiBtnSecondary]}
+                  onPress={handleTestGeminiConnection}
+                  disabled={isTestingGemini}
+                >
+                  {isTestingGemini ? (
+                    <ActivityIndicator size="small" color="#000000" />
+                  ) : (
+                    <>
+                      <Ionicons name="flash-outline" size={16} color="#000000" />
+                      <Text style={styles.geminiBtnSecondaryText}>Kiểm tra kết nối</Text>
+                    </>
+                  )}
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* Receipt Storage & Photo Cleanup Section */}
+        <View style={styles.cardShadow}>
+          <View style={styles.cardInner}>
+            <View style={[styles.folderTab, { backgroundColor: '#FDE047' }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name="images-outline" size={15} color="#000000" />
+                <Text style={styles.folderTabText}>QUẢN LÝ BỘ NHỚ ẢNH HÓA ĐƠN</Text>
+              </View>
+            </View>
+
+            <View style={styles.cardBody}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                  <Text style={[styles.cardSectionTitle, { marginBottom: 0 }]}>Dọn dẹp ảnh cũ</Text>
+                  <Pressable
+                    hitSlop={8}
+                    onPress={() => {
+                      hapticLight();
+                      showAlert(
+                        'Dọn dẹp ảnh hóa đơn',
+                        'Giải phóng dung lượng bộ nhớ máy bằng cách xóa các ảnh hóa đơn chụp từ lâu. Số tiền, ghi chú và danh mục của giao dịch vẫn được lưu giữ an toàn 100%.'
+                      );
+                    }}
+                  >
+                    <Ionicons name="help-circle-outline" size={18} color="#6B7280" />
+                  </Pressable>
+                </View>
+              </View>
+
+              {/* Day presets chips - 4 equal-width buttons on 1 row */}
+              <View style={styles.purgeChipsRow}>
+                {[30, 60, 90].map((d) => {
+                  const isSelected = !isCustomDays && selectedPurgeDays === d;
+                  return (
+                    <Pressable
+                      key={d}
+                      style={[
+                        styles.purgeChip,
+                        isSelected && styles.purgeChipActive,
+                      ]}
+                      onPress={() => {
+                        hapticLight();
+                        setIsCustomDays(false);
+                        setSelectedPurgeDays(d);
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.purgeChipText,
+                          isSelected && styles.purgeChipTextActive,
+                        ]}
+                      >
+                        {d} ngày
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+
+                <Pressable
+                  style={[
+                    styles.purgeChip,
+                    isCustomDays && styles.purgeChipActive,
+                  ]}
+                  onPress={() => {
+                    hapticLight();
+                    setIsCustomDays(true);
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.purgeChipText,
+                      isCustomDays && styles.purgeChipTextActive,
+                    ]}
+                  >
+                    Tùy chọn
+                  </Text>
+                </Pressable>
+              </View>
+
+              {/* Custom days input if selected */}
+              {isCustomDays && (
+                <View style={styles.customDaysInputContainer}>
+                  <Text style={styles.customDaysLabel}>Xóa ảnh của giao dịch cũ hơn:</Text>
+                  <View style={styles.customDaysInputRow}>
+                    <TextInput
+                      style={styles.customDaysInput}
+                      keyboardType="number-pad"
+                      value={customPurgeDays}
+                      onChangeText={(val) => {
+                        setCustomPurgeDays(val);
+                        const n = parseInt(val, 10);
+                        if (!isNaN(n) && n > 0) {
+                          refreshStorageStats(n);
+                        }
+                      }}
+                      placeholder="Số ngày"
+                      placeholderTextColor={THEME.textMuted}
+                    />
+                    <Text style={styles.customDaysSuffix}>ngày</Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Cutoff Date Info & Refresh */}
+              <View style={styles.storageCutoffRow}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <Ionicons name="calendar-outline" size={13} color="#6B7280" />
+                  <Text style={styles.storageCutoffText}>
+                    Giao dịch trước: {storageStats?.cutoffDateStr || '...'}
+                  </Text>
+                </View>
+                <Pressable
+                  hitSlop={8}
+                  style={styles.storageRefreshBtn}
+                  onPress={() => {
+                    hapticLight();
+                    const d = isCustomDays ? parseInt(customPurgeDays, 10) : selectedPurgeDays;
+                    if (!isNaN(d) && d > 0) refreshStorageStats(d);
+                  }}
+                  disabled={isScanningStorage}
+                >
+                  {isScanningStorage ? (
+                    <ActivityIndicator size="small" color="#000000" />
+                  ) : (
+                    <Ionicons name="refresh" size={13} color="#000000" />
+                  )}
+                </Pressable>
+              </View>
+
+              {/* 3 Neo-brutalism Stat Boxes */}
+              <View style={styles.storageStatsGrid}>
+                <View style={styles.storageStatBox}>
+                  <Text style={styles.storageStatVal}>
+                    {storageStats?.transactionCount ?? 0}
+                  </Text>
+                  <Text style={styles.storageStatLabel}>GIAO DỊCH</Text>
+                </View>
+
+                <View style={styles.storageStatBox}>
+                  <Text style={styles.storageStatVal}>
+                    {storageStats?.imageCount ?? 0}
+                  </Text>
+                  <Text style={styles.storageStatLabel}>HÌNH ẢNH</Text>
+                </View>
+
+                <View style={styles.storageStatBox}>
+                  <Text style={[styles.storageStatVal, { color: '#E11D48' }]}>
+                    {storageStats?.totalFormatted || '0 B'}
+                  </Text>
+                  <Text style={styles.storageStatLabel}>DUNG LƯỢNG</Text>
+                </View>
+              </View>
+
+              {/* Action Button */}
+              <Pressable
+                style={[
+                  styles.purgeActionBtn,
+                  (!storageStats || storageStats.imageCount === 0 || isPurging) && styles.purgeActionBtnDisabled,
+                ]}
+                onPress={handleExecutePurge}
+                disabled={!storageStats || storageStats.imageCount === 0 || isPurging}
+              >
+                {isPurging ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons
+                      name="trash-outline"
+                      size={16}
+                      color={storageStats && storageStats.imageCount > 0 ? '#FFFFFF' : '#9CA3AF'}
+                    />
+                    <Text
+                      style={[
+                        styles.purgeActionBtnText,
+                        (!storageStats || storageStats.imageCount === 0) && styles.purgeActionBtnTextDisabled,
+                      ]}
+                    >
+                      {storageStats && storageStats.imageCount > 0
+                        ? `Dọn dẹp ${storageStats.imageCount} ảnh (${storageStats.totalFormatted})`
+                        : 'Không có ảnh nào cần dọn dẹp'}
+                    </Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+
         {/* Export Data Section */}
         <View style={styles.cardShadow}>
           <View style={styles.cardInner}>
@@ -993,7 +1421,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
         <View style={styles.footerContainer}>
           <Text style={styles.footerAppName}>Ví Của Tôi • Multi-Wallet Manager</Text>
           <Text style={styles.footerNote}>
-            Phiên bản 1.1.8 • SQLite Offline Local Storage
+            Phiên bản 1.1.9 • SQLite Offline Local Storage
           </Text>
           <Text style={styles.footerPrivacy}>
             100% dữ liệu được lưu trữ trên thiết bị của bạn, hoàn toàn riêng tư và không tải lên máy chủ ngoài.
@@ -1962,5 +2390,191 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     color: '#6B7280',
+  },
+  geminiInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    borderWidth: 2,
+    borderColor: '#000000',
+    borderRadius: 12,
+    marginBottom: 12,
+    paddingHorizontal: 12,
+  },
+  geminiInput: {
+    flex: 1,
+    height: 44,
+    fontSize: 13.5,
+    color: '#000000',
+    fontWeight: '600',
+  },
+  geminiEyeBtn: {
+    padding: 8,
+  },
+  geminiButtonsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 12,
+  },
+  geminiBtn: {
+    flex: 1,
+    height: 42,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#000000',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  geminiBtnPrimary: {
+    backgroundColor: '#FFE600',
+  },
+  geminiBtnPrimaryText: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  geminiBtnSecondary: {
+    backgroundColor: '#FFFFFF',
+  },
+  geminiBtnSecondaryText: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  purgeChipsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  purgeChip: {
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  purgeChipActive: {
+    backgroundColor: '#FFE600',
+  },
+  purgeChipText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#4B5563',
+  },
+  purgeChipTextActive: {
+    color: '#000000',
+  },
+  customDaysInputContainer: {
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 12,
+  },
+  customDaysLabel: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#374151',
+    marginBottom: 6,
+  },
+  customDaysInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  customDaysInput: {
+    width: 100,
+    height: 36,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  customDaysSuffix: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#4B5563',
+  },
+  storageCutoffRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    paddingHorizontal: 2,
+  },
+  storageCutoffText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6B7280',
+  },
+  storageRefreshBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 7,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  storageStatsGrid: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  storageStatBox: {
+    flex: 1,
+    backgroundColor: '#FAF8F5',
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+  },
+  storageStatVal: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  storageStatLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#6B7280',
+    marginTop: 2,
+    letterSpacing: 0.3,
+  },
+  purgeActionBtn: {
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#000000',
+    backgroundColor: '#EF4444',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  purgeActionBtnDisabled: {
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1.5,
+    borderColor: '#D1D5DB',
+  },
+  purgeActionBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  purgeActionBtnTextDisabled: {
+    color: '#9CA3AF',
   },
 });

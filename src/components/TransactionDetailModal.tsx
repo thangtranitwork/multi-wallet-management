@@ -6,9 +6,12 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  Image,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import dayjs from 'dayjs';
+import * as ImagePicker from 'expo-image-picker';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useWallet } from '../context/WalletContext';
 import { Transaction, Category, Wallet, PlannedExpense } from '../types';
@@ -17,6 +20,11 @@ import { THEME, formatVND } from '../constants';
 import { hapticLight, hapticSuccess, hapticError } from '../utils/haptics';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { useCustomAlert } from './CustomAlertModal';
+import {
+  parseImageUris,
+  saveReceiptImages,
+  deleteReceiptFiles,
+} from '../services/geminiService';
 
 interface TransactionDetailModalProps {
   visible: boolean;
@@ -44,6 +52,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
     updateTransactionTime,
     updateTransactionAmortized,
     updateCreditTransactionDueDate,
+    updateTransactionImages,
     removeTransaction,
     isBalanceHidden,
   } = useWallet();
@@ -63,6 +72,93 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   const [isEditingDueDate, setIsEditingDueDate] = useState(false);
   const [newDueDate, setNewDueDate] = useState<string>('');
   const [isAmortized, setIsAmortized] = useState(false);
+
+  // Receipt image states
+  const [viewingImageUri, setViewingImageUri] = useState<string | null>(null);
+  const [isAttachingImages, setIsAttachingImages] = useState<boolean>(false);
+
+  const handleAddImagesFromLibrary = async () => {
+    if (!transaction) return;
+    try {
+      hapticLight();
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        showAlert('Cần cấp quyền', 'Vui lòng cấp quyền truy cập ảnh để thêm hóa đơn.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsMultipleSelection: true,
+        quality: 0.8,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setIsAttachingImages(true);
+        const newUris = result.assets.map(a => a.uri);
+        const persistentUris = await saveReceiptImages(newUris);
+        const currentUris = parseImageUris(transaction.image_uris);
+        const updatedUris = [...currentUris, ...persistentUris];
+        await updateTransactionImages(transaction.id, updatedUris);
+        hapticSuccess();
+      }
+    } catch (err: any) {
+      hapticError();
+      showAlert('Lỗi', err?.message || 'Không thể chọn ảnh');
+    } finally {
+      setIsAttachingImages(false);
+    }
+  };
+
+  const handleAddImageFromCamera = async () => {
+    if (!transaction) return;
+    try {
+      hapticLight();
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        showAlert('Cần cấp quyền', 'Vui lòng cấp quyền máy ảnh để chụp hóa đơn.');
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: false,
+        quality: 0.8,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setIsAttachingImages(true);
+        const persistentUris = await saveReceiptImages([result.assets[0].uri]);
+        const currentUris = parseImageUris(transaction.image_uris);
+        const updatedUris = [...currentUris, ...persistentUris];
+        await updateTransactionImages(transaction.id, updatedUris);
+        hapticSuccess();
+      }
+    } catch (err: any) {
+      hapticError();
+      showAlert('Lỗi', err?.message || 'Không thể chụp ảnh');
+    } finally {
+      setIsAttachingImages(false);
+    }
+  };
+
+  const handleRemoveImage = (indexToRemove: number) => {
+    if (!transaction) return;
+    showConfirm(
+      'Xóa ảnh hóa đơn',
+      'Bạn có chắc chắn muốn xóa ảnh hóa đơn này khỏi giao dịch?',
+      async () => {
+        try {
+          const currentUris = parseImageUris(transaction.image_uris);
+          const uriToRemove = currentUris[indexToRemove];
+          const remainingUris = currentUris.filter((_, idx) => idx !== indexToRemove);
+          await updateTransactionImages(transaction.id, remainingUris);
+          if (uriToRemove) {
+            await deleteReceiptFiles([uriToRemove]);
+          }
+          hapticSuccess();
+        } catch (err: any) {
+          hapticError();
+          showAlert('Lỗi', err?.message || 'Không thể xóa ảnh');
+        }
+      }
+    );
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -969,6 +1065,70 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
               </View>
             )}
 
+            {/* Receipt Images Section */}
+            {transaction && (
+              <View style={styles.sectionCard}>
+                <View style={styles.sectionHeaderRow}>
+                  <View style={styles.sectionTitleGroup}>
+                    <Ionicons name="receipt-outline" size={18} color="#000000" />
+                    <Text style={styles.sectionTitle}>
+                      Hóa đơn & Chứng từ {parseImageUris(transaction.image_uris).length > 0 ? `(${parseImageUris(transaction.image_uris).length})` : ''}
+                    </Text>
+                  </View>
+
+                  <View style={{ flexDirection: 'row', gap: 6 }}>
+                    <Pressable
+                      style={styles.actionToggleBtn}
+                      onPress={handleAddImageFromCamera}
+                      disabled={isAttachingImages}
+                    >
+                      <Ionicons name="camera-outline" size={14} color="#000000" />
+                      <Text style={styles.actionToggleText}>Chụp</Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.actionToggleBtn}
+                      onPress={handleAddImagesFromLibrary}
+                      disabled={isAttachingImages}
+                    >
+                      <Ionicons name="images-outline" size={14} color="#000000" />
+                      <Text style={styles.actionToggleText}>Thêm</Text>
+                    </Pressable>
+                  </View>
+                </View>
+
+                {isAttachingImages ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, gap: 8 }}>
+                    <ActivityIndicator size="small" color="#000000" />
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#4B5563' }}>Đang lưu hình ảnh...</Text>
+                  </View>
+                ) : parseImageUris(transaction.image_uris).length > 0 ? (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.receiptGalleryScroll}
+                  >
+                    {parseImageUris(transaction.image_uris).map((uri, idx) => (
+                      <View key={idx} style={styles.receiptThumbWrapper}>
+                        <Pressable onPress={() => setViewingImageUri(uri)}>
+                          <Image source={{ uri }} style={styles.receiptThumbnail} />
+                        </Pressable>
+                        <Pressable
+                          style={styles.receiptRemoveBtn}
+                          onPress={() => handleRemoveImage(idx)}
+                        >
+                          <Ionicons name="close" size={12} color="#FFFFFF" />
+                        </Pressable>
+                      </View>
+                    ))}
+                  </ScrollView>
+                ) : (
+                  <View style={styles.emptyReceiptBox}>
+                    <Text style={styles.emptyReceiptText}>Chưa có hóa đơn hoặc chứng từ đính kèm cho giao dịch này.</Text>
+                  </View>
+                )}
+              </View>
+            )}
+
             {/* Credit Installment & Linked Planned Expenses Section */}
             {linkedPlans.length > 0 && (
               <View style={styles.sectionCard}>
@@ -1360,6 +1520,30 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
         } : undefined}
       />
       {AlertModalComponent}
+
+      {/* Fullscreen Image Preview Modal */}
+      <Modal
+        visible={!!viewingImageUri}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setViewingImageUri(null)}
+      >
+        <View style={styles.fullscreenModalBackdrop}>
+          <Pressable
+            style={styles.fullscreenCloseBtn}
+            onPress={() => setViewingImageUri(null)}
+          >
+            <Ionicons name="close" size={24} color="#FFFFFF" />
+          </Pressable>
+          {viewingImageUri && (
+            <Image
+              source={{ uri: viewingImageUri }}
+              style={styles.fullscreenImage}
+              resizeMode="contain"
+            />
+          )}
+        </View>
+      </Modal>
     </Modal>
   );
 };
@@ -2304,5 +2488,75 @@ const styles = StyleSheet.create({
     color: '#374151',
     flex: 1,
     lineHeight: 16,
+  },
+  receiptGalleryScroll: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingTop: 8,
+  },
+  receiptThumbWrapper: {
+    position: 'relative',
+    width: 72,
+    height: 72,
+  },
+  receiptThumbnail: {
+    width: 72,
+    height: 72,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#000000',
+    backgroundColor: '#E2E8F0',
+  },
+  receiptRemoveBtn: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#EF4444',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  emptyReceiptBox: {
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderStyle: 'dashed',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  emptyReceiptText: {
+    fontSize: 11.5,
+    color: '#9CA3AF',
+    fontStyle: 'italic',
+  },
+  fullscreenModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullscreenCloseBtn: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 100,
+  },
+  fullscreenImage: {
+    width: '94%',
+    height: '80%',
   },
 });

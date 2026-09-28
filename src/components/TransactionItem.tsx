@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import dayjs from 'dayjs';
 import { Transaction } from '../types';
 import { THEME, formatVND } from '../constants';
+import { parseImageUris } from '../services/geminiService';
 
 interface TransactionItemProps {
   transaction: Transaction;
@@ -19,6 +20,8 @@ export const TransactionItem: React.FC<TransactionItemProps> = ({
   onDelete,
 }) => {
   const [pressed, setPressed] = useState(false);
+
+  const imageCount = parseImageUris(transaction.image_uris).length;
 
   const isIncome =
     transaction.type === 'income' ||
@@ -111,6 +114,12 @@ export const TransactionItem: React.FC<TransactionItemProps> = ({
                 <Text style={styles.walletBadgeText} numberOfLines={1}>
                   {transaction.wallet_name}
                 </Text>
+              </View>
+            )}
+            {imageCount > 0 && (
+              <View style={styles.imageBadge}>
+                <Ionicons name="images-outline" size={11} color="#000000" style={{ marginRight: 2.5 }} />
+                <Text style={styles.imageBadgeText}>{imageCount}</Text>
               </View>
             )}
             <Text style={styles.note} numberOfLines={1}>
@@ -206,6 +215,21 @@ const styles = StyleSheet.create({
     borderColor: '#000000',
   },
   walletBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  imageBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF08A',
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#000000',
+  },
+  imageBadgeText: {
     fontSize: 9.5,
     fontWeight: '800',
     color: '#000000',

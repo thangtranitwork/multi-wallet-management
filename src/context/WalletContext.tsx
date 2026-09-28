@@ -18,6 +18,7 @@ import { loadCloudBackupConfig, saveCloudBackupConfig } from '../services/cloudB
 import { uploadBackupToDrive } from '../services/googleDriveService';
 import { syncWidgetData } from '../services/widgetSyncService';
 import { refreshHabitReminders } from '../services/habitNotificationService';
+import { deleteReceiptFiles, parseImageUris, purgeReceiptImagesOlderThan } from '../services/geminiService';
 
 interface WalletContextType {
   wallets: Wallet[];
@@ -46,12 +47,15 @@ interface WalletContextType {
     category_id?: string | null;
     note?: string;
     transacted_at?: string;
+    image_uris?: string[] | null;
   }) => Promise<void>;
   removeTransaction: (id: string) => Promise<void>;
   updateTransactionCategory: (transactionId: string, categoryId: string | null) => Promise<void>;
   updateTransactionWallet: (transactionId: string, walletId: string, toWalletId?: string | null) => Promise<void>;
   updateTransactionTime: (transactionId: string, transactedAt: string) => Promise<void>;
   updateTransactionAmortized: (transactionId: string, isAmortized: boolean) => Promise<void>;
+  updateTransactionImages: (transactionId: string, imageUris: string[]) => Promise<void>;
+  purgeReceiptImages: (olderThanDays: number) => Promise<{ cleanedTransactions: number; cleanedImages: number; freedFormatted: string; cutoffDateStr: string }>;
   splitTransaction: (transactionId: string, splits: queries.SplitItem[]) => Promise<void>;
   addWallet: (wallet: Omit<Wallet, 'id' | 'created_at'>) => Promise<void>;
   editWallet: (wallet: Partial<Wallet> & { id: string }) => Promise<void>;
@@ -68,6 +72,7 @@ interface WalletContextType {
     paidInstallmentCount?: number;
     feePerInstallment?: number;
     firstDueDate: string;
+    image_uris?: string[] | null;
   }) => Promise<void>;
   addDebt: (debt: {
     type: 'lend' | 'borrow';
@@ -315,6 +320,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     category_id?: string | null;
     note?: string;
     transacted_at?: string;
+    image_uris?: string[] | null;
   }) => {
     const id = 'tx_' + Date.now();
     await queries.createTransaction(db, {
@@ -327,9 +333,26 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const removeTransaction = async (id: string) => {
+    const targetTx = transactions.find((t) => t.id === id);
+    if (targetTx?.image_uris) {
+      deleteReceiptFiles(parseImageUris(targetTx.image_uris));
+    }
     await queries.deleteTransaction(db, id);
     await refreshData();
     triggerAutoBackup();
+  };
+
+  const updateTransactionImages = async (transactionId: string, imageUris: string[]) => {
+    await queries.updateTransactionImages(db, transactionId, imageUris);
+    await refreshData();
+    triggerAutoBackup();
+  };
+
+  const purgeReceiptImages = async (olderThanDays: number) => {
+    const result = await purgeReceiptImagesOlderThan(db, olderThanDays);
+    await refreshData();
+    triggerAutoBackup();
+    return result;
   };
 
   const updateTransactionCategory = async (transactionId: string, categoryId: string | null) => {
@@ -410,6 +433,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     paidInstallmentCount?: number;
     feePerInstallment?: number;
     firstDueDate: string;
+    image_uris?: string[] | null;
   }) => {
     await queries.createCreditExpenseWithPlan(db, params);
     await refreshData();
@@ -572,6 +596,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         updateTransactionWallet,
         updateTransactionTime,
         updateTransactionAmortized,
+        updateTransactionImages,
+        purgeReceiptImages,
         splitTransaction,
         addWallet,
         editWallet,
