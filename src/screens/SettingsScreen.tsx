@@ -36,6 +36,7 @@ import {
   getReceiptStorageStats,
   ReceiptStorageStats,
   GEMINI_MODELS,
+  formatGeminiErrorMessage,
 } from '../services/geminiService';
 import {
   loadHabitConfig,
@@ -223,8 +224,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
     } catch (err: any) {
       setIsTestingGemini(false);
       hapticError();
-      setGeminiStatus({ checked: true, success: false, message: err?.message || 'Lỗi không xác định' });
-      showAlert('Lỗi', err?.message || 'Không thể kết nối đến Gemini API');
+      const friendlyMsg = formatGeminiErrorMessage(err);
+      setGeminiStatus({ checked: true, success: false, message: friendlyMsg });
+      showAlert('Lỗi kết nối', friendlyMsg);
     }
   };
 
@@ -784,7 +786,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                       hapticLight();
                       showAlert(
                         'Nhận diện hóa đơn AI (Gemini)',
-                        'Tự động đọc hóa đơn & chứng từ nhiều ảnh, tự động trích xuất số tiền, ngày giờ, danh mục và bóc tách chi tiết từng món hàng.\n\n• Nhận API Key miễn phí tại: aistudio.google.com/app/apikey\n• Hệ thống tự động chuyển model dự phòng chống nghẽn: gemini-2.5-flash ➔ gemini-2.0-flash ➔ gemini-1.5-flash'
+                        'Tự động đọc hóa đơn & chứng từ nhiều ảnh, tự động trích xuất số tiền, ngày giờ, danh mục và bóc tách chi tiết từng món hàng.\n\n• Nhận API Key miễn phí tại: aistudio.google.com/app/apikey\n• Hệ thống tự động chuyển model dự phòng chống nghẽn: gemini-2.0-flash ➔ gemini-1.5-flash ➔ gemini-1.5-flash-8b'
                       );
                     }}
                   >

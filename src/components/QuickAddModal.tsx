@@ -25,6 +25,7 @@ import {
   analyzeReceiptImages,
   saveReceiptImages,
   getGeminiApiKey,
+  formatGeminiErrorMessage,
 } from '../services/geminiService';
 
 interface QuickAddModalProps {
@@ -130,7 +131,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
       hapticSuccess();
     } catch (err: any) {
       hapticError();
-      showAlert('Lỗi đọc hóa đơn', err?.message || 'Không thể phân tích ảnh qua Gemini API');
+      showAlert('Lỗi đọc hóa đơn', formatGeminiErrorMessage(err));
     } finally {
       setIsScanningReceipt(false);
     }

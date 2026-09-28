@@ -10,13 +10,81 @@ export const GEMINI_SETTING_KEYS = {
 };
 
 export const GEMINI_MODELS = [
-  'gemini-2.5-flash',
-  'gemini-3.5-flash',
-  'gemini-3.8-flash',
   'gemini-2.0-flash',
   'gemini-1.5-flash',
-  'gemini-flash-latest',
+  'gemini-1.5-flash-8b',
+  'gemini-2.0-flash-lite',
+  'gemini-1.5-pro',
 ];
+
+/**
+ * Kiểm tra xem lỗi có phải do mạng / offline / DNS không giải quyết được hostname không
+ */
+export function isNetworkError(err: any): boolean {
+  if (!err) return false;
+  const msg = typeof err === 'string' ? err : String(err?.message || err || '');
+  const lower = msg.toLowerCase();
+  return (
+    lower.includes('unknownhostexception') ||
+    lower.includes('unable to resolve host') ||
+    lower.includes('no address associated with hostname') ||
+    lower.includes('enotfound') ||
+    lower.includes('enetunreach') ||
+    lower.includes('econnrefused') ||
+    lower.includes('network request failed') ||
+    lower.includes('failed to fetch') ||
+    lower.includes('offline')
+  );
+}
+
+/**
+ * Định dạng thông điệp lỗi sang tiếng Việt thân thiện, rõ ràng
+ */
+export function formatGeminiErrorMessage(err: any): string {
+  if (!err) return 'Đã có lỗi xảy ra khi kết nối tới AI.';
+  const msg = typeof err === 'string' ? err : String(err?.message || err);
+  const lower = msg.toLowerCase();
+
+  if (isNetworkError(err)) {
+    return 'Không có kết nối Internet hoặc không thể kết nối tới máy chủ Google AI.\n\nVui lòng kiểm tra lại kết nối mạng (Wi-Fi/4G/5G) hoặc VPN của thiết bị.';
+  }
+
+  if (lower.includes('timeout') || lower.includes('etimedout') || lower.includes('timed out')) {
+    return 'Quá thời gian kết nối (Timeout).\n\nVui lòng kiểm tra lại tốc độ mạng và thử lại.';
+  }
+
+  if (
+    lower.includes('api_key_invalid') ||
+    lower.includes('api key not valid') ||
+    lower.includes('ip_referrer_blocked') ||
+    lower.includes('unauthenticated') ||
+    lower.includes('key not found') ||
+    lower.includes('(401)') ||
+    lower.includes('(403)')
+  ) {
+    return 'Gemini API Key không hợp lệ hoặc đã bị chặn.\n\nVui lòng vào Cài đặt để cập nhật lại API Key.';
+  }
+
+  if (
+    lower.includes('resource_exhausted') ||
+    lower.includes('429') ||
+    lower.includes('quota')
+  ) {
+    return 'Đã vượt quá giới hạn lượt dùng Gemini API miễn phí (Quota limit).\n\nVui lòng chờ 1-2 phút rồi thử lại.';
+  }
+
+  if (
+    lower.includes('503') ||
+    lower.includes('500') ||
+    lower.includes('502') ||
+    lower.includes('overloaded') ||
+    lower.includes('service unavailable')
+  ) {
+    return 'Máy chủ Google Gemini hiện đang quá tải.\n\nVui lòng thử lại sau giây lát.';
+  }
+
+  return msg.replace(/^Error:\s*/i, '');
+}
 
 export async function getGeminiApiKey(db: SQLite.SQLiteDatabase): Promise<string> {
   return await getAppSetting(db, GEMINI_SETTING_KEYS.API_KEY, '');
@@ -192,7 +260,7 @@ export async function testGeminiConnection(
   };
 
   const models = await getModelFallbackList(db, apiKey);
-  let lastError = '';
+  let lastError: any = null;
 
   for (const model of models) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
@@ -209,17 +277,15 @@ export async function testGeminiConnection(
         const errMsg = String(data?.error?.message || response.statusText || '');
         lastError = `[${model}] (${errCode}): ${errMsg}`;
 
-        // Nếu lỗi tạm thời (503 Service Unavailable / High demand, 429 Rate Limit, 404 Model Not Found, hoặc 5xx Server Error)
-        // thì tự động chuyển sang model tiếp theo
         const isAuthError =
           errMsg.includes('API_KEY_INVALID') ||
           errMsg.includes('API key not valid') ||
           errMsg.includes('IP_REFERRER_BLOCKED');
         if (isAuthError) {
-          return { success: false, message: lastError };
+          return { success: false, message: formatGeminiErrorMessage(lastError) };
         }
 
-        // Với tất cả các lỗi khác (400 modal AUDIO không hỗ trợ TEXT, 404 không có model, 429 quota, 503 overload, 5xx server):
+        // Với tất cả các lỗi khác (400, 404, 429 quota, 503 overload, 5xx server):
         // Luôn tự động thử model tiếp theo trong danh sách
         continue;
       }
@@ -233,11 +299,17 @@ export async function testGeminiConnection(
         };
       }
     } catch (err: any) {
-      lastError = `[${model}] Lỗi mạng: ${err?.message || err}`;
+      lastError = err;
+      if (isNetworkError(err)) {
+        return { success: false, message: formatGeminiErrorMessage(err) };
+      }
     }
   }
 
-  return { success: false, message: lastError || 'Tất cả mô hình Gemini đều bận hoặc hết Quota.' };
+  return {
+    success: false,
+    message: lastError ? formatGeminiErrorMessage(lastError) : 'Tất cả mô hình Gemini đều bận hoặc hết Quota.',
+  };
 }
 
 /**
@@ -356,10 +428,10 @@ LƯU Ý QUAN TRỌNG:
           errMsg.includes('API key not valid') ||
           errMsg.includes('IP_REFERRER_BLOCKED');
         if (isAuthError) {
-          throw lastError;
+          throw new Error(formatGeminiErrorMessage(lastError));
         }
 
-        // Với tất cả các lỗi khác (400 modal AUDIO không hỗ trợ TEXT, 404 không có model, 429 quota, 503 overload, 5xx server):
+        // Với tất cả các lỗi khác (400, 404, 429 quota, 503 overload, 5xx server):
         // Luôn tự động thử model tiếp theo trong danh sách
         continue;
       }
@@ -393,12 +465,17 @@ LƯU Ý QUAN TRỌNG:
       }
     } catch (err: any) {
       lastError = err;
-      // Nếu là lỗi mạng hoặc parse JSON, tiếp tục thử model khác
+      if (isNetworkError(err)) {
+        throw new Error(formatGeminiErrorMessage(err));
+      }
+      // Nếu là lỗi khác, tiếp tục thử model tiếp theo
       continue;
     }
   }
 
-  throw lastError || new Error('Không thể phân tích hóa đơn qua các mô hình Gemini hiện có.');
+  throw new Error(
+    lastError ? formatGeminiErrorMessage(lastError) : 'Không thể phân tích hóa đơn qua các mô hình Gemini hiện có.'
+  );
 }
 
 export interface ReceiptStorageStats {
