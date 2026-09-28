@@ -25,6 +25,7 @@ import {
   analyzeReceiptImages,
   saveReceiptImages,
   getGeminiApiKey,
+  savePreferredGeminiModel,
   formatGeminiErrorMessage,
 } from '../services/geminiService';
 
@@ -58,7 +59,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
     addTransaction,
     addCreditExpenseWithPlan,
   } = useWallet();
-  const { showAlert, AlertModalComponent } = useCustomAlert(false);
+  const { showAlert, showConfirm, AlertModalComponent } = useCustomAlert(false);
 
   const [type, setType] = useState<'expense' | 'income' | 'transfer'>(defaultType);
   const [prediction, setPrediction] = useState<PredictionResult | null>(null);
@@ -129,6 +130,27 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
         }
       }
       hapticSuccess();
+
+      // Nếu xảy ra fallback sang model khác, hỏi người dùng có muốn đổi sang model mới không
+      if (res.is_fallback && res.used_model && res.original_model && res.used_model !== res.original_model) {
+        setTimeout(() => {
+          hapticMedium();
+          showConfirm(
+            'Đổi mô hình mặc định?',
+            `Mô hình "${res.original_model}" đang gặp sự cố. AI đã hoàn tất đọc hóa đơn bằng mô hình dự phòng "${res.used_model}".\n\nBạn có muốn đổi mô hình mặc định sang "${res.used_model}" không?`,
+            async () => {
+              await savePreferredGeminiModel(db, res.used_model!);
+              hapticSuccess();
+              showAlert('Đã đổi mô hình', `Đã chuyển mô hình mặc định sang "${res.used_model}".`);
+            },
+            {
+              confirmText: 'Đồng ý đổi',
+              cancelText: 'Giữ nguyên',
+              type: 'info',
+            }
+          );
+        }, 500);
+      }
     } catch (err: any) {
       hapticError();
       showAlert('Lỗi đọc hóa đơn', formatGeminiErrorMessage(err));
@@ -814,6 +836,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 style={styles.horizontalChips}
+                contentContainerStyle={styles.horizontalChipsContainer}
               >
                 {wallets.map(w => {
                   const isSelected = selectedWalletId === w.id;
@@ -1573,6 +1596,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                   horizontal
                   showsHorizontalScrollIndicator={false}
                   style={styles.horizontalChips}
+                  contentContainerStyle={styles.horizontalChipsContainer}
                 >
                   {wallets
                     .filter(w => w.id !== selectedWalletId)
@@ -1611,11 +1635,11 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
             {type !== 'transfer' && (
               <View style={styles.sectionContainer}>
                 <View style={styles.categoryHeaderRow}>
-                  <Text style={styles.sectionLabel}>Hạng mục danh mục</Text>
+                  <Text style={styles.sectionLabel}>Hạng mục</Text>
                   {prediction?.primarySuggestion?.reason && (
                     <View style={styles.smartBadge}>
                       <Ionicons name="sparkles" size={10} color="#D97706" style={{ marginRight: 3 }} />
-                      <Text style={styles.smartBadgeText} numberOfLines={1}>
+                      <Text style={styles.smartBadgeText} numberOfLines={1} ellipsizeMode="tail">
                         {prediction.primarySuggestion.reason}
                       </Text>
                     </View>
@@ -1628,7 +1652,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                     <ScrollView
                       horizontal
                       showsHorizontalScrollIndicator={false}
-                      style={styles.smartChipsScroll}
+                      contentContainerStyle={styles.smartChipsScrollContainer}
                     >
                       {prediction.topSuggestions.map(s => {
                         const isSelected = selectedCategoryId === s.category.id;
@@ -1685,22 +1709,9 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
             <View style={styles.sectionContainer}>
               <View style={styles.dateSectionHeaderRow}>
                 <Text style={styles.sectionLabel}>Thời gian ghi nhận</Text>
-                <Pressable
-                  style={styles.dateToggleBtn}
-                  onPress={() => setIsPickerExpanded(prev => !prev)}
-                >
-                  <Ionicons
-                    name={isPickerExpanded ? 'chevron-up-circle' : 'calendar-outline'}
-                    size={16}
-                    color="#000000"
-                  />
-                  <Text style={styles.dateToggleText}>
-                    {isPickerExpanded ? 'Thu gọn' : 'Đổi ngày/giờ'}
-                  </Text>
-                </Pressable>
               </View>
 
-              {/* Quick Date Chips */}
+              {/* Quick Date Chips (3 Equal Columns) */}
               <View style={styles.quickDateChipsContainer}>
                 <Pressable
                   style={[
@@ -1752,34 +1763,18 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                     2 ngày trước
                   </Text>
                 </Pressable>
-
-                <Pressable
-                  style={[
-                    styles.quickDateChip,
-                    isPickerExpanded && styles.quickDateChipActive,
-                  ]}
-                  onPress={() => setIsPickerExpanded(prev => !prev)}
-                >
-                  <Ionicons
-                    name="calendar"
-                    size={13}
-                    color={isPickerExpanded ? '#FFFFFF' : '#000000'}
-                  />
-                  <Text
-                    style={[
-                      styles.quickDateChipText,
-                      isPickerExpanded && styles.quickDateChipTextActive,
-                    ]}
-                  >
-                    Lịch & Giờ
-                  </Text>
-                </Pressable>
               </View>
 
               {/* Selected Date & Time Indicator Bar */}
               <Pressable
-                style={styles.selectedDateBanner}
-                onPress={() => setIsPickerExpanded(prev => !prev)}
+                style={[
+                  styles.selectedDateBanner,
+                  isPickerExpanded && styles.selectedDateBannerActive,
+                ]}
+                onPress={() => {
+                  hapticLight();
+                  setIsPickerExpanded(prev => !prev);
+                }}
               >
                 <View style={styles.dateBannerLeft}>
                   <View style={styles.dateBannerIconBox}>
@@ -1794,11 +1789,23 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                     </Text>
                   </View>
                 </View>
-                <Ionicons
-                  name={isPickerExpanded ? 'chevron-up' : 'chevron-down'}
-                  size={18}
-                  color="#000000"
-                />
+                <View style={styles.dateBannerRight}>
+                  <View style={[styles.datePickerActionTag, isPickerExpanded && styles.datePickerActionTagActive]}>
+                    <Ionicons
+                      name="calendar"
+                      size={12}
+                      color={isPickerExpanded ? '#000000' : '#4B5563'}
+                    />
+                    <Text style={[styles.datePickerActionTagText, isPickerExpanded && styles.datePickerActionTagTextActive]}>
+                      {isPickerExpanded ? 'Đóng lịch' : 'Đổi lịch & giờ'}
+                    </Text>
+                    <Ionicons
+                      name={isPickerExpanded ? 'chevron-up' : 'chevron-down'}
+                      size={13}
+                      color={isPickerExpanded ? '#000000' : '#4B5563'}
+                    />
+                  </View>
+                </View>
               </Pressable>
 
               {/* Expandable Calendar & Time Picker Panel */}
@@ -2407,7 +2414,12 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   horizontalChips: {
+    marginHorizontal: -2,
+  },
+  horizontalChipsContainer: {
     flexDirection: 'row',
+    paddingHorizontal: 2,
+    paddingVertical: 2,
   },
   chip: {
     flexDirection: 'row',
@@ -2573,17 +2585,15 @@ const styles = StyleSheet.create({
   },
   quickDateChipsContainer: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 6,
     marginBottom: 8,
   },
   quickDateChip: {
-    flexDirection: 'row',
+    flex: 1,
     alignItems: 'center',
-    gap: 4,
+    justifyContent: 'center',
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderRadius: 10,
     borderWidth: 1.5,
     borderColor: '#000000',
@@ -2595,9 +2605,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     color: '#000000',
+    textAlign: 'center',
   },
   quickDateChipTextActive: {
     color: '#FFFFFF',
+    fontWeight: '900',
   },
   selectedDateBanner: {
     flexDirection: 'row',
@@ -2609,10 +2621,40 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#000000',
   },
+  selectedDateBannerActive: {
+    backgroundColor: '#FAF8F5',
+  },
   dateBannerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    flex: 1,
+  },
+  dateBannerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  datePickerActionTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+  },
+  datePickerActionTagActive: {
+    backgroundColor: THEME.popYellow,
+  },
+  datePickerActionTagText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  datePickerActionTagTextActive: {
+    fontWeight: '900',
   },
   dateBannerIconBox: {
     width: 32,
@@ -2815,19 +2857,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 6,
+    gap: 8,
   },
   smartBadge: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FEF3C7',
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 3,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#FDE68A',
-    maxWidth: '65%',
+    maxWidth: '70%',
   },
   smartBadgeText: {
+    flex: 1,
     fontSize: 10,
     fontWeight: '700',
     color: '#B45309',
@@ -2835,8 +2880,10 @@ const styles = StyleSheet.create({
   smartChipsWrapper: {
     marginBottom: 8,
   },
-  smartChipsScroll: {
+  smartChipsScrollContainer: {
     flexDirection: 'row',
+    paddingHorizontal: 2,
+    paddingVertical: 2,
   },
   smartChip: {
     flexDirection: 'row',

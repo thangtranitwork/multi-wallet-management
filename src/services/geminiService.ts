@@ -17,6 +17,45 @@ export const GEMINI_MODELS = [
   'gemini-1.5-pro',
 ];
 
+export interface GeminiModelInfo {
+  id: string;
+  name: string;
+  badge?: string;
+  desc: string;
+}
+
+export const GEMINI_MODEL_OPTIONS: GeminiModelInfo[] = [
+  {
+    id: 'gemini-2.0-flash',
+    name: 'Gemini 2.0 Flash',
+    badge: 'Khuyên dùng',
+    desc: 'Thế hệ mới nhất, phản hồi tức thì & thị giác chuẩn xác',
+  },
+  {
+    id: 'gemini-1.5-flash',
+    name: 'Gemini 1.5 Flash',
+    badge: 'Ổn định',
+    desc: 'Mô hình tiêu chuẩn, quota cao, vận hành bền bỉ',
+  },
+  {
+    id: 'gemini-1.5-flash-8b',
+    name: 'Gemini 1.5 Flash-8B',
+    badge: 'Siêu nhẹ',
+    desc: 'Bản rút gọn siêu nhanh cho hóa đơn gọn gàng',
+  },
+  {
+    id: 'gemini-2.0-flash-lite',
+    name: 'Gemini 2.0 Flash Lite',
+    desc: 'Tối ưu độ trễ thấp và tiết kiệm tài nguyên',
+  },
+  {
+    id: 'gemini-1.5-pro',
+    name: 'Gemini 1.5 Pro',
+    badge: 'Chuyên sâu',
+    desc: 'Phân tích hóa đơn phức tạp, dài hoặc chữ viết tay',
+  },
+];
+
 /**
  * Kiểm tra xem lỗi có phải do mạng / offline / DNS không giải quyết được hostname không
  */
@@ -94,14 +133,27 @@ export async function saveGeminiApiKey(db: SQLite.SQLiteDatabase, apiKey: string
   await setAppSetting(db, GEMINI_SETTING_KEYS.API_KEY, apiKey.trim());
 }
 
+export async function getPreferredGeminiModel(db: SQLite.SQLiteDatabase): Promise<string> {
+  const model = await getAppSetting(db, GEMINI_SETTING_KEYS.PREFERRED_MODEL, '');
+  return model || GEMINI_MODELS[0];
+}
+
+export async function savePreferredGeminiModel(
+  db: SQLite.SQLiteDatabase,
+  model: string
+): Promise<void> {
+  await setAppSetting(db, GEMINI_SETTING_KEYS.PREFERRED_MODEL, model.trim());
+}
+
 /**
  * Lấy danh sách model dự phòng theo thứ tự ưu tiên
  */
 export async function getModelFallbackList(
   db: SQLite.SQLiteDatabase,
-  apiKey?: string
+  apiKey?: string,
+  preferredOverride?: string
 ): Promise<string[]> {
-  const preferred = await getAppSetting(db, GEMINI_SETTING_KEYS.PREFERRED_MODEL, '');
+  const preferred = preferredOverride || (await getPreferredGeminiModel(db));
   const candidateList = [...GEMINI_MODELS];
 
   if (apiKey) {
@@ -146,16 +198,11 @@ export async function getModelFallbackList(
     }
   }
 
-  if (
-    preferred &&
-    candidateList.includes(preferred) &&
-    !preferred.includes('tts') &&
-    !preferred.includes('audio')
-  ) {
-    return [preferred, ...candidateList.filter((m) => m !== preferred)];
+  const selectedModel = preferred || candidateList[0];
+  if (candidateList.includes(selectedModel)) {
+    return [selectedModel, ...candidateList.filter((m) => m !== selectedModel)];
   }
-
-  return candidateList;
+  return [selectedModel, ...candidateList];
 }
 
 /**
@@ -241,8 +288,15 @@ export async function deleteReceiptFiles(uris: string[]): Promise<void> {
  */
 export async function testGeminiConnection(
   db: SQLite.SQLiteDatabase,
-  apiKeyOverride?: string
-): Promise<{ success: boolean; message: string; model?: string }> {
+  apiKeyOverride?: string,
+  preferredModelOverride?: string
+): Promise<{
+  success: boolean;
+  message: string;
+  model?: string;
+  isFallback?: boolean;
+  originalModel?: string;
+}> {
   const apiKey = apiKeyOverride !== undefined ? apiKeyOverride.trim() : await getGeminiApiKey(db);
   if (!apiKey) {
     return { success: false, message: 'Chưa cấu hình Gemini API Key' };
@@ -259,7 +313,8 @@ export async function testGeminiConnection(
     },
   };
 
-  const models = await getModelFallbackList(db, apiKey);
+  const chosenModel = preferredModelOverride || (await getPreferredGeminiModel(db));
+  const models = await getModelFallbackList(db, apiKey, chosenModel);
   let lastError: any = null;
 
   for (const model of models) {
@@ -291,11 +346,15 @@ export async function testGeminiConnection(
       }
 
       if (data?.candidates && data.candidates.length > 0) {
-        await setAppSetting(db, GEMINI_SETTING_KEYS.PREFERRED_MODEL, model).catch(() => {});
+        const isFallback = model !== chosenModel;
         return {
           success: true,
-          message: `Kết nối thành công qua mô hình ${model}`,
+          message: isFallback
+            ? `Đã kết nối qua mô hình dự phòng ${model}`
+            : `Kết nối thành công qua mô hình ${model}`,
           model,
+          isFallback,
+          originalModel: chosenModel,
         };
       }
     } catch (err: any) {
@@ -406,7 +465,8 @@ LƯU Ý QUAN TRỌNG:
   };
 
   let lastError: any = null;
-  const models = await getModelFallbackList(db, apiKey);
+  const originalPreferredModel = await getPreferredGeminiModel(db);
+  const models = await getModelFallbackList(db, apiKey, originalPreferredModel);
 
   for (const model of models) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
@@ -443,10 +503,8 @@ LƯU Ý QUAN TRỌNG:
           throw new Error('AI không trả về nội dung.');
         }
 
-        // Lưu model đang hoạt động tốt nhất
-        await setAppSetting(db, GEMINI_SETTING_KEYS.PREFERRED_MODEL, model).catch(() => {});
-
         const parsed = JSON.parse(rawText);
+        const isFallback = model !== originalPreferredModel;
         return {
           amount: typeof parsed.amount === 'number' ? Math.round(parsed.amount) : 0,
           note: typeof parsed.note === 'string' ? parsed.note.trim() : '',
@@ -461,6 +519,9 @@ LƯU Ý QUAN TRỌNG:
               }))
             : [],
           confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.9,
+          used_model: model,
+          is_fallback: isFallback,
+          original_model: originalPreferredModel,
         };
       }
     } catch (err: any) {

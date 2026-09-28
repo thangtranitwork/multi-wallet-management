@@ -75,6 +75,9 @@ export interface ReceiptScanResult {
   transacted_at?: string | null;
   items?: ReceiptItem[];
   confidence?: number;
+  used_model?: string;
+  is_fallback?: boolean;
+  original_model?: string;
 }
 
 export interface CategoryComparisonItem {

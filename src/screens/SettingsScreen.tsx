@@ -24,6 +24,7 @@ import { useWallet } from '../context/WalletContext';
 import { useSecurity } from '../context/SecurityContext';
 import { CategoryManagementModal } from '../components/CategoryManagementModal';
 import { GoogleDriveSyncModal } from '../components/GoogleDriveSyncModal';
+import { NeoDropdown, DropdownOption } from '../components/NeoDropdown';
 import { syncWidgetData } from '../services/widgetSyncService';
 import { loadCloudBackupConfig } from '../services/cloudBackupStorage';
 import { useSQLiteContext } from 'expo-sqlite';
@@ -32,10 +33,13 @@ import { hapticLight, hapticMedium, hapticSuccess, hapticError } from '../utils/
 import {
   getGeminiApiKey,
   saveGeminiApiKey,
+  getPreferredGeminiModel,
+  savePreferredGeminiModel,
   testGeminiConnection,
   getReceiptStorageStats,
   ReceiptStorageStats,
   GEMINI_MODELS,
+  GEMINI_MODEL_OPTIONS,
   formatGeminiErrorMessage,
 } from '../services/geminiService';
 import {
@@ -108,6 +112,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
 
   // Gemini AI Settings
   const [geminiApiKey, setGeminiApiKey] = useState<string>('');
+  const [selectedGeminiModel, setSelectedGeminiModel] = useState<string>(GEMINI_MODELS[0]);
   const [showApiKey, setShowApiKey] = useState<boolean>(false);
   const [isTestingGemini, setIsTestingGemini] = useState<boolean>(false);
   const [geminiStatus, setGeminiStatus] = useState<{ checked: boolean; success: boolean; message: string; model?: string }>({
@@ -115,6 +120,25 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
     success: false,
     message: '',
   });
+
+  const geminiModelDropdownOptions = useMemo<DropdownOption[]>(() => {
+    return GEMINI_MODEL_OPTIONS.map(m => ({
+      id: m.id,
+      label: `${m.name}${m.badge ? ` (${m.badge})` : ''}`,
+      badge: m.badge,
+    }));
+  }, []);
+
+  const currentModelInfo = useMemo(() => {
+    return GEMINI_MODEL_OPTIONS.find(m => m.id === selectedGeminiModel) || GEMINI_MODEL_OPTIONS[0];
+  }, [selectedGeminiModel]);
+
+  const handleSelectModel = async (modelId: string | null) => {
+    if (!modelId) return;
+    hapticLight();
+    setSelectedGeminiModel(modelId);
+    await savePreferredGeminiModel(db, modelId);
+  };
 
   // Receipt Image Storage Cleanup states
   const [selectedPurgeDays, setSelectedPurgeDays] = useState<number>(30);
@@ -187,13 +211,19 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
         setGeminiStatus({ checked: true, success: true, message: 'Đã lưu API Key' });
       }
     });
+    getPreferredGeminiModel(db).then((model) => {
+      if (model) {
+        setSelectedGeminiModel(model);
+      }
+    });
   }, [db]);
 
   const handleSaveGeminiKey = async () => {
     hapticLight();
     await saveGeminiApiKey(db, geminiApiKey);
+    await savePreferredGeminiModel(db, selectedGeminiModel);
     hapticSuccess();
-    showAlert('Thành công', 'Đã lưu Gemini API Key');
+    showAlert('Thành công', 'Đã lưu cấu hình Gemini API & Mô hình ưu tiên');
     setGeminiStatus({
       checked: true,
       success: !!geminiApiKey.trim(),
@@ -210,12 +240,31 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
     hapticMedium();
     setIsTestingGemini(true);
     try {
-      const res = await testGeminiConnection(db, geminiApiKey.trim());
+      const res = await testGeminiConnection(db, geminiApiKey.trim(), selectedGeminiModel);
       setIsTestingGemini(false);
       if (res.success) {
         hapticSuccess();
         setGeminiStatus({ checked: true, success: true, message: res.message, model: res.model });
-        showAlert('Kết nối thành công', `Đã kết nối thành công tới Gemini API qua mô hình: ${res.model || 'Gemini'}`);
+
+        if (res.isFallback && res.model && res.model !== selectedGeminiModel) {
+          showConfirm(
+            'Đổi mô hình mặc định?',
+            `Mô hình "${selectedGeminiModel}" đang gặp sự cố hoặc nghẽn mạng. Đã kết nối thành công qua mô hình dự phòng "${res.model}".\n\nBạn có muốn đặt "${res.model}" làm mô hình mặc định không?`,
+            async () => {
+              await savePreferredGeminiModel(db, res.model!);
+              setSelectedGeminiModel(res.model!);
+              hapticSuccess();
+              showAlert('Thành công', `Đã chuyển mô hình mặc định sang "${res.model}".`);
+            },
+            {
+              confirmText: 'Đồng ý đổi',
+              cancelText: 'Giữ nguyên',
+              type: 'info',
+            }
+          );
+        } else {
+          showAlert('Kết nối thành công', `Đã kết nối thành công tới Gemini API qua mô hình: ${res.model || selectedGeminiModel}`);
+        }
       } else {
         hapticError();
         setGeminiStatus({ checked: true, success: false, message: res.message });
@@ -786,7 +835,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                       hapticLight();
                       showAlert(
                         'Nhận diện hóa đơn AI (Gemini)',
-                        'Tự động đọc hóa đơn & chứng từ nhiều ảnh, tự động trích xuất số tiền, ngày giờ, danh mục và bóc tách chi tiết từng món hàng.\n\n• Nhận API Key miễn phí tại: aistudio.google.com/app/apikey\n• Hệ thống tự động chuyển model dự phòng chống nghẽn: gemini-2.0-flash ➔ gemini-1.5-flash ➔ gemini-1.5-flash-8b'
+                        'Tự động đọc hóa đơn & chứng từ nhiều ảnh, tự động trích xuất số tiền, ngày giờ, danh mục và bóc tách chi tiết từng món hàng.\n\n• Nhận API Key miễn phí tại: aistudio.google.com/app/apikey\n• Hệ thống tự động chuyển model dự phòng chống nghẽn: gemini-2.0-flash -> gemini-1.5-flash -> gemini-1.5-flash-8b'
                       );
                     }}
                   >
@@ -832,6 +881,31 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                     color="#6B7280"
                   />
                 </Pressable>
+              </View>
+
+              {/* Preferred Model Selection */}
+              <View style={styles.geminiModelSection}>
+                <View style={styles.geminiModelHeaderRow}>
+                  <Text style={styles.geminiModelHeaderTitle}>
+                    Mô hình AI ưu tiên
+                  </Text>
+                  {currentModelInfo?.badge && (
+                    <View style={styles.modelBadge}>
+                      <Text style={styles.modelBadgeText}>{currentModelInfo.badge}</Text>
+                    </View>
+                  )}
+                </View>
+                <NeoDropdown
+                  title="Chọn mô hình Gemini"
+                  triggerLabel={currentModelInfo?.name || selectedGeminiModel}
+                  isActive={true}
+                  options={geminiModelDropdownOptions}
+                  selectedValue={selectedGeminiModel}
+                  onSelect={handleSelectModel}
+                />
+                <Text style={styles.geminiModelDesc}>
+                  {currentModelInfo?.desc || 'Tự động chuyển mô hình dự phòng khi gặp sự cố mạng hoặc hết Quota.'}
+                </Text>
               </View>
 
               {/* Action Buttons Row */}
@@ -2402,6 +2476,40 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 12,
     paddingHorizontal: 12,
+  },
+  geminiModelSection: {
+    marginBottom: 14,
+  },
+  geminiModelHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  geminiModelHeaderTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  geminiModelDesc: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginTop: 5,
+    lineHeight: 15,
+  },
+  modelBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  modelBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#B45309',
   },
   geminiInput: {
     flex: 1,
