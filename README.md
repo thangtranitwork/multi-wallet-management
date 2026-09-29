@@ -1,4 +1,4 @@
-# MultiWallet (v1.2.0) - Personal Finance & Multi-Source Wallet Management
+# MultiWallet (v1.2.1) - Personal Finance & Multi-Source Wallet Management
 
 A modern, high-performance mobile application built with **React Native (Expo SDK 57)**, **TypeScript**, and **Expo SQLite**, crafted with a distinctive, tactile Neo-Brutalist design language. 
 
@@ -169,6 +169,44 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
   - Pick `.json` file from device storage or paste raw JSON text.
   - Pre-import validation and confirmation dialogs to prevent accidental data loss.
 
+### 16. Cloudinary Cloud Storage & Offline-First Image Sync (Lưu Trữ Ảnh Đám Mây)
+- **High-Security Direct Uploads**: Utilizes **Unsigned Upload Presets** directly via Cloudinary REST API. Zero API Secrets on client devices for airtight security.
+- **Hybrid Offline-First Architecture**:
+  - Automatically uploads captured receipt photos and wallet QR codes to Cloudinary when enabled.
+  - Automatically falls back to local on-device storage (`transaction_receipts/` and `wallet_qrs/`) if offline or unconfigured.
+  - Retains existing web URLs seamlessly without redundant re-uploads.
+- **Resilient Dual Streaming & Base64 Pipeline**:
+  - Attempts native high-speed streaming via `FileSystem.uploadAsync` (multipart).
+  - Automatically falls back to Base64 data URIs via standard fetch to ensure 100% compatibility with Expo SDK 57 WinterCG runtime without `FormDataPart` issues.
+- **1-Tap Cloud Migration Tool**:
+  - Scans all local `file://` receipt and wallet QR images on device.
+  - 1-tap batch upload with real-time visual progress bar (`current / total`).
+  - Automatically updates SQLite database records to remote HTTPS URLs and purges local files to free up 100% of device storage.
+  - Smart sandbox path resolution across development builds and runtime environments.
+- **Dedicated Cloudinary Settings Modal**:
+  - Elegant Neo-Brutalist card on Settings screen with realtime status badge.
+  - Dedicated bottom sheet modal with connection tester, preset configuration, and collapsible setup guide.
+
+### 17. Itemized Bill Splitting & Contact Selector (Chia Đơn Theo Món & Quản Lý Người)
+- **Flexible Bill Splitting Modes**:
+  - **Equal Split (Chia đều)**: Divide total amount evenly across all participants.
+  - **Itemized Split (Chia theo món)**: Assign individual items (food, drinks, items) to specific people with multiple assignees per item.
+- **Intelligent Extra Fee & Discount Allocation**:
+  - Automatic distribution of shipping fees, service charges, and promo discounts.
+  - Choose between **Proportional Distribution (Theo tỷ lệ tiền món)** or **Equal Headcount (Chia đều theo đầu người)**.
+- **Quick Contact & Friend Selector (`Chọn người nhanh`)**:
+  - Tactile friend selection sheet allowing instant multi-select from recent participants.
+  - Seamlessly links with **Debt & Loan Ledger (Ghi sổ nợ)** to track receivables from participants with 1 tap.
+
+### 18. Android System Share Intent Direct Receipt Import (Nhận Ảnh Chia Sẻ Trực Tiếp)
+- **Direct System Share Receiver**:
+  - Share payment success receipts or transfer confirmations directly from banking apps (Vietcombank, Techcombank, MB Bank, BIDV, etc.) and e-wallets (MoMo, ZaloPay, VNPay).
+  - Select **MultiWallet** from the Android system share sheet.
+- **Instant Pre-filled Transaction Creator**:
+  - Automatically launches the app and opens `QuickAddModal` with the incoming photo pre-attached.
+  - Immediately triggers Gemini AI Vision scanner to extract total amount, transfer notes, and auto-match categories without manual typing.
+- **Custom Native Config Plugin**: Integrated via `plugins/withShareIntent.js` and Android native intent filters for full EAS Build and local prebuild compatibility.
+
 ---
 
 ## Technology Stack
@@ -256,18 +294,24 @@ adb install android/app/build/outputs/apk/release/app-release.apk
 ├── .github/
 │   └── workflows/
 │       └── build-apk.yml           # Automated CI/CD GitHub Actions APK builder
+├── plugins/
+│   └── withShareIntent.js          # Expo Config Plugin injecting Android SEND action for receipts
 ├── src/
 │   ├── components/                 # Reusable Neo-Brutalist UI components
 │   │   ├── CategoryManagementModal.tsx # Custom category creation & color/icon picker
+│   │   ├── CloudinaryModal.tsx     # Cloudinary cloud sync & local image migration sheet
 │   │   ├── DebtModal.tsx           # Loan creation & payment modal
 │   │   ├── LockScreenOverlay.tsx   # Biometric & PIN lock overlay
 │   │   ├── NeoCard.tsx             # Tactile card component
 │   │   ├── NeoDropdown.tsx         # Custom dropdown selector
 │   │   ├── PlannedExpensesModal.tsx# Planned expenses & safe-to-spend manager
-│   │   ├── QuickAddModal.tsx       # Transaction logger with date & time picker
+│   │   ├── QuickAddModal.tsx       # Transaction logger with receipt OCR & date/time picker
+│   │   ├── SplitTransactionModal.tsx # Itemized & equal bill splitting with fee allocation
+│   │   ├── TransactionDetailModal.tsx # Transaction details with cloud/local receipt viewer
 │   │   ├── TransactionItem.tsx     # Individual transaction card
 │   │   ├── WalletCard.tsx          # Interactive wallet balance card
-│   │   └── WalletModal.tsx         # Wallet creation & editing modal
+│   │   ├── WalletModal.tsx         # Wallet creation & editing modal
+│   │   └── WalletQRModal.tsx       # Fullscreen Banking QR code modal & download/share
 │   ├── constants/                  # Theme tokens, palettes & formatters
 │   ├── context/
 │   │   ├── SecurityContext.tsx     # Biometrics & PIN lock state
@@ -280,15 +324,18 @@ adb install android/app/build/outputs/apk/release/app-release.apk
 │   │   └── RootNavigator.tsx       # Tab navigator & notification routing
 │   ├── screens/                    # Core screens (Dashboard, Analytics, Wallets, Debts, Transactions, Settings)
 │   ├── services/
-│   │   ├── habitNotificationService.ts # Habit learning, absence check & local notifications
-│   │   ├── widgetSyncService.ts    # Android Home Widget persistent state sync
+│   │   ├── cloudinaryService.ts    # Cloudinary REST upload, signed streaming & offline sync
+│   │   ├── geminiService.ts        # Gemini Vision API client for receipt OCR & parsing
 │   │   ├── googleDriveService.ts   # Google Drive OAuth & file backup API
-│   │   └── predictionService.ts    # Category heuristic prediction
+│   │   ├── habitNotificationService.ts # Habit learning, absence check & local notifications
+│   │   ├── predictionService.ts    # Category heuristic prediction
+│   │   └── widgetSyncService.ts    # Android Home Widget persistent state sync
+│   ├── utils/
+│   │   ├── haptics.ts              # Fine-tuned vibration & haptic helpers
+│   │   └── imageUtils.ts           # Unified image Base64/URI conversion helper
 │   ├── widgets/
 │   │   ├── WalletWidget.tsx        # Neo-brutalist Android Home Screen Widget (4x2)
 │   │   └── widgetTaskHandler.tsx   # Background click & update task handler
-│   ├── utils/
-│   │   └── haptics.ts              # Fine-tuned vibration & haptic helpers
 │   └── types/                      # TypeScript data interfaces
 ├── app.json                        # Expo configuration & plugins
 ├── eas.json                        # EAS build profiles

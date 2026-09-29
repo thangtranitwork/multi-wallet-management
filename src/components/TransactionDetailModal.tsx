@@ -111,7 +111,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
       if (!result.canceled && result.assets && result.assets.length > 0) {
         setIsAttachingImages(true);
         const newUris = result.assets.map(a => a.uri);
-        const persistentUris = await saveReceiptImages(newUris);
+        const persistentUris = await saveReceiptImages(newUris, db);
         const currentUris = parseImageUris(transaction.image_uris);
         const updatedUris = [...currentUris, ...persistentUris];
         await updateTransactionImages(transaction.id, updatedUris);
@@ -141,7 +141,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
       });
       if (!result.canceled && result.assets && result.assets.length > 0) {
         setIsAttachingImages(true);
-        const persistentUris = await saveReceiptImages([result.assets[0].uri]);
+        const persistentUris = await saveReceiptImages([result.assets[0].uri], db);
         const currentUris = parseImageUris(transaction.image_uris);
         const updatedUris = [...currentUris, ...persistentUris];
         await updateTransactionImages(transaction.id, updatedUris);

@@ -12,8 +12,10 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
+import { useSQLiteContext } from 'expo-sqlite';
 import { Ionicons } from '@expo/vector-icons';
 import { useCustomAlert } from './CustomAlertModal';
+import { getCloudinaryConfig, uploadToCloudinary } from '../services/cloudinaryService';
 import { useWallet } from '../context/WalletContext';
 import { useSecurity } from '../context/SecurityContext';
 import { Wallet, WalletType } from '../types';
@@ -40,6 +42,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   const { addWallet, editWallet, adjustBalance, removeWallet } = useWallet();
   const { temporarilyBypassLock } = useSecurity();
   const { showAlert, showConfirm, AlertModalComponent } = useCustomAlert(false);
+  const db = useSQLiteContext();
 
   const currentWallet = wallet || targetWallet || null;
   const isAdjust = mode === 'adjust' || isAdjustMode;
@@ -114,18 +117,34 @@ export const WalletModal: React.FC<WalletModalProps> = ({
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        const sourceUri = result.assets[0].uri;
-        const qrDir = `${FileSystem.documentDirectory}wallet_qrs/`;
-        const dirInfo = await FileSystem.getInfoAsync(qrDir);
-        if (!dirInfo.exists) {
-          await FileSystem.makeDirectoryAsync(qrDir, { intermediates: true });
+        const src = result.assets[0].uri;
+        let finalUri = src;
+
+        try {
+          const cfg = await getCloudinaryConfig(db);
+          if (cfg.enabled && cfg.cloudName && cfg.uploadPreset) {
+            const uploadRes = await uploadToCloudinary(src, cfg, 'multi_wallet_qrs');
+            if (uploadRes.secureUrl) {
+              finalUri = uploadRes.secureUrl;
+            }
+          }
+        } catch (e) {
+          console.warn('Lỗi tải QR lên Cloudinary:', e);
         }
 
-        const ext = sourceUri.split('.').pop() || 'jpg';
-        const targetUri = `${qrDir}qr_${Date.now()}.${ext}`;
-        await FileSystem.copyAsync({ from: sourceUri, to: targetUri });
+        if (finalUri === src) {
+          const qrDir = `${FileSystem.documentDirectory}wallet_qrs/`;
+          const dirInfo = await FileSystem.getInfoAsync(qrDir);
+          if (!dirInfo.exists) {
+            await FileSystem.makeDirectoryAsync(qrDir, { intermediates: true });
+          }
 
-        setQrImageUri(targetUri);
+          const ext = src.split('.').pop() || 'jpg';
+          finalUri = `${qrDir}qr_${Date.now()}.${ext}`;
+          await FileSystem.copyAsync({ from: src, to: finalUri });
+        }
+
+        setQrImageUri(finalUri);
         hapticSuccess();
       }
     } catch (err: any) {

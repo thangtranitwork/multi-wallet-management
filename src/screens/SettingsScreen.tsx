@@ -24,6 +24,7 @@ import { useWallet } from '../context/WalletContext';
 import { useSecurity } from '../context/SecurityContext';
 import { CategoryManagementModal } from '../components/CategoryManagementModal';
 import { GoogleDriveSyncModal } from '../components/GoogleDriveSyncModal';
+import { CloudinaryModal } from '../components/CloudinaryModal';
 import { NeoDropdown, DropdownOption } from '../components/NeoDropdown';
 import { syncWidgetData } from '../services/widgetSyncService';
 import { loadCloudBackupConfig } from '../services/cloudBackupStorage';
@@ -42,6 +43,10 @@ import {
   GEMINI_MODEL_OPTIONS,
   formatGeminiErrorMessage,
 } from '../services/geminiService';
+import {
+  getCloudinaryConfig,
+  getLocalImagesStats,
+} from '../services/cloudinaryService';
 import {
   loadHabitConfig,
   saveHabitConfig,
@@ -142,6 +147,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
     setSelectedGeminiModel(modelId);
     await savePreferredGeminiModel(db, modelId);
   };
+
+  // Cloudinary Settings states
+  const [cloudinaryModalVisible, setCloudinaryModalVisible] = useState<boolean>(false);
+  const [cloudinaryEnabled, setCloudinaryEnabled] = useState<boolean>(false);
+  const [cloudinaryCloudName, setCloudinaryCloudName] = useState<string>('');
+  const [localImagesCount, setLocalImagesCount] = useState<number>(0);
 
   // Receipt Image Storage Cleanup states
   const [selectedPurgeDays, setSelectedPurgeDays] = useState<number>(30);
@@ -281,6 +292,24 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
       showAlert('Lỗi kết nối', friendlyMsg);
     }
   };
+
+  const refreshCloudinarySummary = useCallback(async () => {
+    try {
+      const [cfg, stats] = await Promise.all([
+        getCloudinaryConfig(db),
+        getLocalImagesStats(db),
+      ]);
+      setCloudinaryEnabled(cfg.enabled);
+      setCloudinaryCloudName(cfg.cloudName);
+      setLocalImagesCount(stats.totalCount);
+    } catch (e) {
+      console.warn('Lỗi đọc cấu hình Cloudinary:', e);
+    }
+  }, [db]);
+
+  useEffect(() => {
+    refreshCloudinarySummary();
+  }, [refreshCloudinarySummary]);
 
   useEffect(() => {
     loadHabitConfig().then((conf) => setHabitConfig(conf));
@@ -1191,6 +1220,66 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
           </View>
         </View>
 
+        {/* Cloudinary Cloud Storage Section */}
+        <View style={styles.cardShadow}>
+          <View style={styles.cardInner}>
+            <View style={[styles.folderTab, { backgroundColor: '#38BDF8' }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name="cloud-upload-outline" size={15} color="#000000" />
+                <Text style={styles.folderTabText}>LƯU TRỮ ĐÁM MÂY (CLOUDINARY)</Text>
+              </View>
+            </View>
+
+            <View style={styles.cardBody}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <Text style={styles.cardSectionTitle}>Đồng bộ hình ảnh</Text>
+                <View style={[
+                  styles.gdriveBadge,
+                  { backgroundColor: cloudinaryEnabled ? '#DCFCE7' : '#F3F4F6' }
+                ]}>
+                  <View style={[
+                    styles.gdriveDot,
+                    { backgroundColor: cloudinaryEnabled ? '#15803D' : '#9CA3AF' }
+                  ]} />
+                  <Text style={[
+                    styles.gdriveBadgeText,
+                    { color: cloudinaryEnabled ? '#15803D' : '#6B7280' }
+                  ]}>
+                    {cloudinaryEnabled ? 'Đang bật' : 'Đang tắt'}
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={{ fontSize: 12, fontWeight: '600', color: '#6B7280', marginBottom: 12 }}>
+                {cloudinaryCloudName
+                  ? `Cloud: ${cloudinaryCloudName} • Tự động lưu trữ ảnh chứng từ & mã QR lên mây.`
+                  : 'Lưu trữ ảnh hóa đơn & mã QR lên đám mây để giải phóng 100% dung lượng máy.'}
+              </Text>
+
+              <Pressable
+                style={styles.actionBtnGoogle}
+                onPress={() => {
+                  hapticMedium();
+                  setCloudinaryModalVisible(true);
+                }}
+              >
+                <Ionicons name="cloud-outline" size={18} color="#000000" />
+                <Text style={[styles.actionBtnText, { flex: 1 }]} numberOfLines={1}>
+                  {cloudinaryCloudName ? 'Quản lý lưu trữ Cloudinary' : 'Thiết lập lưu trữ Cloudinary'}
+                </Text>
+                {localImagesCount > 0 && (
+                  <View style={styles.cloudinaryBadgeNotice}>
+                    <Text style={styles.cloudinaryBadgeNoticeText}>
+                      {localImagesCount}
+                    </Text>
+                  </View>
+                )}
+                <Ionicons name="chevron-forward" size={16} color="#000000" />
+              </Pressable>
+            </View>
+          </View>
+        </View>
+
         {/* Export Data Section */}
         <View style={styles.cardShadow}>
           <View style={styles.cardInner}>
@@ -1578,6 +1667,16 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
           setGoogleDriveModalVisible(false);
           checkDriveStatus();
         }}
+      />
+
+      {/* Cloudinary Modal */}
+      <CloudinaryModal
+        visible={cloudinaryModalVisible}
+        onClose={() => {
+          setCloudinaryModalVisible(false);
+          refreshCloudinarySummary();
+        }}
+        onConfigChanged={refreshCloudinarySummary}
       />
 
       {/* Loading Overlay */}
@@ -2774,5 +2873,19 @@ const styles = StyleSheet.create({
   timeoutPillTextActive: {
     color: '#000000',
     fontWeight: '900',
+  },
+  cloudinaryBadgeNotice: {
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    marginRight: 6,
+  },
+  cloudinaryBadgeNoticeText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#FFFFFF',
   },
 });

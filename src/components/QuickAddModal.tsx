@@ -746,11 +746,11 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
       }
     }
 
-    // Lưu vĩnh viễn các ảnh hóa đơn vào thư mục cục bộ của ứng dụng
+    // Lưu vĩnh viễn các ảnh hóa đơn (Cloudinary hoặc cục bộ)
     let persistentUris: string[] | null = null;
     if (receiptImages.length > 0) {
       try {
-        persistentUris = await saveReceiptImages(receiptImages);
+        persistentUris = await saveReceiptImages(receiptImages, db);
       } catch (err) {
         console.warn('Lỗi lưu ảnh hóa đơn:', err);
         persistentUris = receiptImages;

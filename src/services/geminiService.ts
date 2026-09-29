@@ -3,6 +3,12 @@ import * as SQLite from 'expo-sqlite';
 import dayjs from 'dayjs';
 import { Category, ReceiptScanResult, Wallet } from '../types';
 import { getAppSetting, setAppSetting } from '../database/queries';
+import {
+  getCloudinaryConfig,
+  uploadToCloudinary,
+  CloudinaryConfig,
+} from './cloudinaryService';
+import { parseImageUris } from '../utils/imageUtils';
 
 export const GEMINI_SETTING_KEYS = {
   API_KEY: 'gemini_api_key',
@@ -205,48 +211,78 @@ export async function getModelFallbackList(
   return [selectedModel, ...candidateList];
 }
 
-/**
- * Phân tích chuỗi JSON lưu trong DB thành danh sách đường dẫn ảnh
- */
-export function parseImageUris(raw?: string | null): string[] {
-  if (!raw) return [];
-  const trimmed = raw.trim();
-  if (!trimmed) return [];
-
-  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (Array.isArray(parsed)) {
-        return parsed.filter((item): item is string => typeof item === 'string' && item.length > 0);
-      }
-    } catch {
-      // Fallback nếu chuỗi JSON lỗi
-    }
-  }
-  return [trimmed];
-}
+export { parseImageUris } from '../utils/imageUtils';
 
 /**
- * Lưu các ảnh tạm từ ImagePicker vào thư mục lưu trữ cục bộ lâu dài của ứng dụng
+ * Lưu các ảnh hóa đơn (lên Cloudinary nếu có cấu hình hoặc fallback vào thư mục cục bộ)
  */
-export async function saveReceiptImages(sourceUris: string[]): Promise<string[]> {
+export async function saveReceiptImages(
+  sourceUris: string[],
+  db?: SQLite.SQLiteDatabase
+): Promise<string[]> {
   if (!sourceUris || sourceUris.length === 0) return [];
 
-  const receiptDir = `${FileSystem.documentDirectory}transaction_receipts/`;
-  const dirInfo = await FileSystem.getInfoAsync(receiptDir);
-  if (!dirInfo.exists) {
-    await FileSystem.makeDirectoryAsync(receiptDir, { intermediates: true });
+  // 1. Kiểm tra cấu hình Cloudinary nếu có db
+  let cloudinaryConfig: CloudinaryConfig | null = null;
+  if (db) {
+    try {
+      const cfg = await getCloudinaryConfig(db);
+      if (cfg.enabled && cfg.cloudName && cfg.uploadPreset) {
+        cloudinaryConfig = cfg;
+      }
+    } catch {}
   }
+
+  const receiptDir = `${FileSystem.documentDirectory}transaction_receipts/`;
+  let dirChecked = false;
 
   const savedUris: string[] = [];
   const timestamp = Date.now();
 
   for (let i = 0; i < sourceUris.length; i++) {
     const src = sourceUris[i];
-    // Nếu ảnh đã nằm trong thư mục receipts của app thì không cần copy lại
+
+    // Nếu đã là link Cloudinary (hoặc URL https) thì giữ nguyên
+    if (src.startsWith('http://') || src.startsWith('https://')) {
+      savedUris.push(src);
+      continue;
+    }
+
+    // Nếu Cloudinary được kích hoạt, ưu tiên upload lên mây
+    if (cloudinaryConfig) {
+      try {
+        const uploadRes = await uploadToCloudinary(src, cloudinaryConfig);
+        if (uploadRes.secureUrl) {
+          savedUris.push(uploadRes.secureUrl);
+          // Dọn file tạm ban đầu nếu nằm trong cache
+          if (
+            src.includes('ImagePicker') ||
+            src.includes('cache') ||
+            src.includes('shared_bank_receipt')
+          ) {
+            try {
+              await FileSystem.deleteAsync(src, { idempotent: true });
+            } catch {}
+          }
+          continue;
+        }
+      } catch (cloudErr) {
+        console.warn('Lỗi tải ảnh lên Cloudinary, fallback lưu local:', cloudErr);
+      }
+    }
+
+    // Fallback: Lưu vào bộ nhớ máy cục bộ
     if (src.includes('transaction_receipts/')) {
       savedUris.push(src);
       continue;
+    }
+
+    if (!dirChecked) {
+      const dirInfo = await FileSystem.getInfoAsync(receiptDir);
+      if (!dirInfo.exists) {
+        await FileSystem.makeDirectoryAsync(receiptDir, { intermediates: true });
+      }
+      dirChecked = true;
     }
 
     try {
@@ -257,7 +293,6 @@ export async function saveReceiptImages(sourceUris: string[]): Promise<string[]>
       savedUris.push(targetUri);
     } catch (err) {
       console.warn('Lỗi copy ảnh hóa đơn:', err);
-      // Nếu copy lỗi thì giữ URI gốc
       savedUris.push(src);
     }
   }
@@ -419,9 +454,26 @@ ${wallets
       if (ext === 'png') mimeType = 'image/png';
       else if (ext === 'webp') mimeType = 'image/webp';
 
-      const base64Data = await FileSystem.readAsStringAsync(uri, {
+      let localPath = uri;
+      let needCleanTemp = false;
+
+      // Nếu là ảnh từ xa (Cloudinary), tải về temp cache để đọc Base64
+      if (uri.startsWith('http://') || uri.startsWith('https://')) {
+        const tempPath = `${FileSystem.cacheDirectory}gemini_download_${Date.now()}_${Math.random().toString(36).substring(2, 6)}.jpg`;
+        const downloadRes = await FileSystem.downloadAsync(uri, tempPath);
+        localPath = downloadRes.uri;
+        needCleanTemp = true;
+      }
+
+      const base64Data = await FileSystem.readAsStringAsync(localPath, {
         encoding: FileSystem.EncodingType.Base64,
       });
+
+      if (needCleanTemp) {
+        try {
+          await FileSystem.deleteAsync(localPath, { idempotent: true });
+        } catch {}
+      }
 
       if (base64Data && base64Data.length > 0) {
         imageParts.push({
