@@ -3,7 +3,7 @@
     "name": "Ví Của Tôi",
     "slug": "multi-wallet-management",
     "scheme": "com.thang.multiwallet",
-    "version": "1.2.1",
+    "version": "1.2.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -78,6 +78,12 @@
               "updatePeriodMillis": 1800000
             }
           ]
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Ứng dụng cần quyền truy cập microphone để ghi âm câu lệnh giọng nói cho Trợ lý Tài chính AI."
         }
       ]
     ],

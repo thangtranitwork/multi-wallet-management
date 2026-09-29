@@ -15,6 +15,7 @@ import { THEME } from '../constants';
 export interface DropdownOption {
   id: string | null;
   label: string;
+  subtitle?: string;
   icon?: string;
   color?: string;
   badge?: string | number;
@@ -144,14 +145,28 @@ export const NeoDropdown: React.FC<NeoDropdownProps> = ({
                             />
                           </View>
                         ) : null}
-                        <Text
-                          style={[
-                            styles.optionLabel,
-                            isSelected && styles.optionLabelSelected,
-                          ]}
-                        >
-                          {opt.label}
-                        </Text>
+                        <View style={{ flex: 1 }}>
+                          <Text
+                            style={[
+                              styles.optionLabel,
+                              isSelected && styles.optionLabelSelected,
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {opt.label}
+                          </Text>
+                          {opt.subtitle ? (
+                            <Text
+                              style={[
+                                styles.optionSubtitle,
+                                isSelected && styles.optionSubtitleSelected,
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {opt.subtitle}
+                            </Text>
+                          ) : null}
+                        </View>
                       </View>
 
                       <View style={styles.optionRight}>
@@ -309,13 +324,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   optionLabel: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: '800',
     color: '#000000',
-    flex: 1,
   },
   optionLabelSelected: {
     fontWeight: '900',
+  },
+  optionSubtitle: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginTop: 1,
+  },
+  optionSubtitleSelected: {
+    color: '#1F2937',
+    fontWeight: '700',
   },
   optionRight: {
     flexDirection: 'row',

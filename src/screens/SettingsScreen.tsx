@@ -48,6 +48,14 @@ import {
   getLocalImagesStats,
 } from '../services/cloudinaryService';
 import {
+  getInAppMicEnabled,
+  setInAppMicEnabled,
+  getCopilotPersonality,
+  setCopilotPersonality,
+  COPILOT_PERSONALITIES,
+  CopilotPersonalityId,
+} from '../services/aiCopilotService';
+import {
   loadHabitConfig,
   saveHabitConfig,
   refreshHabitReminders,
@@ -123,6 +131,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
   const [selectedGeminiModel, setSelectedGeminiModel] = useState<string>(GEMINI_MODELS[0]);
   const [showApiKey, setShowApiKey] = useState<boolean>(false);
   const [isTestingGemini, setIsTestingGemini] = useState<boolean>(false);
+  const [inAppMicEnabled, setInAppMicEnabledState] = useState<boolean>(true);
   const [geminiStatus, setGeminiStatus] = useState<{ checked: boolean; success: boolean; message: string; model?: string }>({
     checked: false,
     success: false,
@@ -135,6 +144,20 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
       label: `${m.name}${m.badge ? ` (${m.badge})` : ''}`,
       badge: m.badge,
     }));
+  }, []);
+
+  const personalityDropdownOptions = useMemo<DropdownOption[]>(() => {
+    return (Object.keys(COPILOT_PERSONALITIES) as CopilotPersonalityId[]).map(key => {
+      const p = COPILOT_PERSONALITIES[key];
+      return {
+        id: p.id,
+        label: p.name,
+        subtitle: p.desc,
+        icon: p.icon,
+        color: p.color,
+        badge: p.badge,
+      };
+    });
   }, []);
 
   const currentModelInfo = useMemo(() => {
@@ -230,7 +253,28 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
         setSelectedGeminiModel(model);
       }
     });
+    getInAppMicEnabled(db).then((enabled) => {
+      setInAppMicEnabledState(enabled);
+    });
+    getCopilotPersonality(db).then((p) => {
+      setCopilotPersonalityState(p);
+    });
   }, [db]);
+
+  const [copilotPersonality, setCopilotPersonalityState] =
+    useState<CopilotPersonalityId>('cheerful');
+
+  const handleToggleInAppMic = async (val: boolean) => {
+    hapticLight();
+    setInAppMicEnabledState(val);
+    await setInAppMicEnabled(db, val);
+  };
+
+  const handleSelectPersonality = async (id: CopilotPersonalityId) => {
+    hapticLight();
+    setCopilotPersonalityState(id);
+    await setCopilotPersonality(db, id);
+  };
 
   const handleSaveGeminiKey = async () => {
     hapticLight();
@@ -1027,6 +1071,92 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                     </>
                   )}
                 </Pressable>
+              </View>
+
+              {/* Divider */}
+              <View style={{ height: 1.5, backgroundColor: '#E5E7EB', marginVertical: 14 }} />
+
+              {/* In-App Voice Mic Setting (Gemini Audio) */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <View style={{ flex: 1, marginRight: 12 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Ionicons name="mic" size={17} color="#000000" />
+                    <Text style={{ fontSize: 13, fontWeight: '800', color: '#000000' }}>
+                      Nút Micro trong App (Gemini Audio)
+                    </Text>
+                  </View>
+                  <Text style={{ fontSize: 11, color: '#6B7280', marginTop: 3, lineHeight: 15 }}>
+                    Nhấn giữ nút Micro trong Trợ lý Copilot để ghi âm và gửi thẳng lên Gemini 2.0 Flash (~1.2s). Tắt để dùng mic bàn phím (~0.3s).
+                  </Text>
+                </View>
+
+                <Switch
+                  value={inAppMicEnabled}
+                  onValueChange={handleToggleInAppMic}
+                  trackColor={{ false: '#D1D5DB', true: '#86EFAC' }}
+                  thumbColor={inAppMicEnabled ? '#15803D' : '#9CA3AF'}
+                />
+              </View>
+
+              {/* Divider */}
+              <View style={{ height: 1.5, backgroundColor: '#E5E7EB', marginVertical: 14 }} />
+
+              {/* AI Personality Setting (NeoDropdown gọn gàng, không tràn layout) */}
+              <View style={styles.geminiModelSection}>
+                <View style={styles.geminiModelHeaderRow}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, marginRight: 8 }}>
+                    <Ionicons name="sparkles" size={15} color="#6D28D9" />
+                    <Text style={[styles.geminiModelHeaderTitle, { flexShrink: 1 }]} numberOfLines={1}>
+                      Tính cách Trợ lý AI
+                    </Text>
+                  </View>
+                  <View
+                    style={{
+                      backgroundColor: (COPILOT_PERSONALITIES[copilotPersonality] || COPILOT_PERSONALITIES.cheerful).color,
+                      borderWidth: 1.5,
+                      borderColor: '#000000',
+                      borderRadius: 6,
+                      paddingHorizontal: 7,
+                      paddingVertical: 1.5,
+                    }}
+                  >
+                    <Text style={{ fontSize: 10, fontWeight: '900', color: '#000000' }}>
+                      {(COPILOT_PERSONALITIES[copilotPersonality] || COPILOT_PERSONALITIES.cheerful).badge}
+                    </Text>
+                  </View>
+                </View>
+
+                <NeoDropdown
+                  title="Chọn tính cách Trợ lý AI"
+                  triggerLabel={(COPILOT_PERSONALITIES[copilotPersonality] || COPILOT_PERSONALITIES.cheerful).name}
+                  triggerIcon={(COPILOT_PERSONALITIES[copilotPersonality] || COPILOT_PERSONALITIES.cheerful).icon}
+                  isActive={true}
+                  options={personalityDropdownOptions}
+                  selectedValue={copilotPersonality}
+                  onSelect={val => {
+                    if (val) handleSelectPersonality(val as CopilotPersonalityId);
+                  }}
+                />
+
+                <Text style={styles.geminiModelDesc}>
+                  {(COPILOT_PERSONALITIES[copilotPersonality] || COPILOT_PERSONALITIES.cheerful).desc}
+                </Text>
+
+                <View
+                  style={{
+                    backgroundColor: '#FFFFFF',
+                    borderWidth: 1.5,
+                    borderColor: '#000000',
+                    borderRadius: 8,
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
+                    marginTop: 6,
+                  }}
+                >
+                  <Text style={{ fontSize: 11, fontStyle: 'italic', color: '#1F2937' }}>
+                    💬 "{(COPILOT_PERSONALITIES[copilotPersonality] || COPILOT_PERSONALITIES.cheerful).sampleQuote}"
+                  </Text>
+                </View>
               </View>
             </View>
           </View>

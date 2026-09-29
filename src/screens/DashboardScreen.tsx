@@ -22,6 +22,7 @@ import { SplitTransactionModal } from '../components/SplitTransactionModal';
 import { TransactionDetailModal } from '../components/TransactionDetailModal';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
 import { SmartForecastCard } from '../components/SmartForecastCard';
+import { FinancialCopilotModal } from '../components/ai/FinancialCopilotModal';
 import { getDashboardForecast, DashboardForecast } from '../services/predictionService';
 import { Wallet, Transaction } from '../types';
 import { THEME, formatVND } from '../constants';
@@ -67,6 +68,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
   const [splitTargetTx, setSplitTargetTx] = useState<Transaction | null>(null);
   const [selectedDetailTx, setSelectedDetailTx] = useState<Transaction | null>(null);
   const [txToDelete, setTxToDelete] = useState<Transaction | null>(null);
+  const [copilotVisible, setCopilotVisible] = useState(false);
 
   const dashboardForecast = useMemo(() => {
     return getDashboardForecast(transactions, categories);
@@ -172,33 +174,6 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
           />
         }
       >
-        {/* Quick Add / Search Bar + Pop Yellow (+) Button */}
-        <View style={styles.quickBarRow}>
-          <Pressable
-            style={styles.quickSearchInputShadow}
-            onPress={() => setQuickAddVisible(true)}
-          >
-            <View style={styles.quickSearchInputInner}>
-              <View style={styles.inputLeftGroup}>
-                <Text style={styles.hashSymbol}>#</Text>
-                <Text style={styles.inputPlaceholderText}>
-                  Ghi nhanh thu chi, nợ...
-                </Text>
-              </View>
-              <Ionicons name="copy-outline" size={17} color="#000000" />
-            </View>
-          </Pressable>
-
-          <Pressable
-            style={styles.yellowAddBtnShadow}
-            onPress={() => setQuickAddVisible(true)}
-          >
-            <View style={styles.yellowAddBtnInner}>
-              <Ionicons name="add" size={30} color="#000000" />
-            </View>
-          </Pressable>
-        </View>
-
         {/* Smart Forecast & Reminder Card */}
         <SmartForecastCard
           forecast={dashboardForecast}
@@ -744,6 +719,29 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
           setQuickAddVisible(true);
         }}
       />
+
+      {/* Floating Copilot FAB */}
+      <View style={styles.floatingCopilotWrapper} pointerEvents="box-none">
+        <Pressable
+          style={styles.floatingCopilotShadow}
+          onPress={() => {
+            hapticMedium();
+            setCopilotVisible(true);
+          }}
+        >
+          <View style={styles.floatingCopilotInner}>
+            <Ionicons name="sparkles" size={24} color="#000000" />
+            <View style={styles.floatingCopilotBadge}>
+              <Text style={styles.floatingCopilotBadgeText}>AI</Text>
+            </View>
+          </View>
+        </Pressable>
+      </View>
+
+      <FinancialCopilotModal
+        visible={copilotVisible}
+        onClose={() => setCopilotVisible(false)}
+      />
     </SafeAreaView>
   );
 };
@@ -824,6 +822,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
+    paddingBottom: 110,
   },
   headlineSection: {
     marginTop: 8,
@@ -843,63 +842,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.8,
     lineHeight: 38,
   },
-  quickBarRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 20,
-  },
-  quickSearchInputShadow: {
-    flex: 1,
-    backgroundColor: '#000000',
-    borderRadius: 14,
-    height: 50,
-  },
-  quickSearchInputInner: {
-    flex: 1,
-    height: 50,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    borderWidth: 2.5,
-    borderColor: '#000000',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    transform: [{ translateX: -3.5 }, { translateY: -3.5 }],
-  },
-  inputLeftGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  hashSymbol: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#000000',
-  },
-  inputPlaceholderText: {
-    fontSize: 13.5,
-    fontWeight: '700',
-    color: '#6B7280',
-  },
-  yellowAddBtnShadow: {
-    backgroundColor: '#000000',
-    borderRadius: 14,
-    width: 50,
-    height: 50,
-  },
-  yellowAddBtnInner: {
-    width: 50,
-    height: 50,
-    borderRadius: 14,
-    backgroundColor: THEME.popYellow,
-    borderWidth: 2.5,
-    borderColor: '#000000',
-    justifyContent: 'center',
-    alignItems: 'center',
-    transform: [{ translateX: -3.5 }, { translateY: -3.5 }],
-  },
+
   netWorthCardShadow: {
     backgroundColor: '#000000',
     borderRadius: 20,
@@ -912,9 +855,9 @@ const styles = StyleSheet.create({
   },
   netWorthFolderTab: {
     position: 'absolute',
-    top: -14,
+    top: -11,
     left: 14,
-    height: 16,
+    height: 20,
     paddingHorizontal: 12,
     backgroundColor: THEME.primary,
     borderTopLeftRadius: 8,
@@ -1168,13 +1111,13 @@ const styles = StyleSheet.create({
   },
   debtFolderTab: {
     position: 'absolute',
-    top: -12,
+    top: -11,
     left: 10,
-    width: 74,
-    height: 14,
+    width: 76,
+    height: 18,
     borderTopLeftRadius: 8,
     borderTopRightRadius: 8,
-    borderWidth: 2.5,
+    borderWidth: 2,
     borderColor: '#000000',
     borderBottomWidth: 0,
     justifyContent: 'center',
@@ -1182,7 +1125,7 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   debtFolderTabText: {
-    fontSize: 8.5,
+    fontSize: 9,
     fontWeight: '900',
     color: '#000000',
   },
@@ -1312,9 +1255,9 @@ const styles = StyleSheet.create({
   },
   plannedFolderTab: {
     position: 'absolute',
-    top: -12,
+    top: -11,
     left: 14,
-    height: 16,
+    height: 20,
     paddingHorizontal: 10,
     backgroundColor: THEME.primary,
     borderTopLeftRadius: 8,
@@ -1324,11 +1267,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 4,
     zIndex: 2,
   },
   plannedFolderTabText: {
-    fontSize: 9,
+    fontSize: 9.5,
     fontWeight: '900',
     color: '#000000',
     letterSpacing: 0.5,
@@ -1416,6 +1360,45 @@ const styles = StyleSheet.create({
   },
   upcomingPillBadgeText: {
     fontSize: 10,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  floatingCopilotWrapper: {
+    position: 'absolute',
+    bottom: 20,
+    right: 18,
+    zIndex: 99,
+  },
+  floatingCopilotShadow: {
+    backgroundColor: '#000000',
+    borderRadius: 28,
+    width: 52,
+    height: 52,
+  },
+  floatingCopilotInner: {
+    width: 52,
+    height: 52,
+    borderRadius: 28,
+    backgroundColor: THEME.popBlue,
+    borderWidth: 2.5,
+    borderColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transform: [{ translateX: -3 }, { translateY: -3 }],
+  },
+  floatingCopilotBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    backgroundColor: THEME.popYellow,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    borderRadius: 6,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+  },
+  floatingCopilotBadgeText: {
+    fontSize: 9,
     fontWeight: '900',
     color: '#000000',
   },

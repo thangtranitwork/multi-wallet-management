@@ -1,4 +1,4 @@
-# MultiWallet (v1.2.1) - Personal Finance & Multi-Source Wallet Management
+# MultiWallet (v1.2.2) - Personal Finance & Multi-Source Wallet Management
 
 A modern, high-performance mobile application built with **React Native (Expo SDK 57)**, **TypeScript**, and **Expo SQLite**, crafted with a distinctive, tactile Neo-Brutalist design language. 
 
@@ -207,6 +207,33 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
   - Immediately triggers Gemini AI Vision scanner to extract total amount, transfer notes, and auto-match categories without manual typing.
 - **Custom Native Config Plugin**: Integrated via `plugins/withShareIntent.js` and Android native intent filters for full EAS Build and local prebuild compatibility.
 
+### 19. Gemini AI Financial Copilot (Trợ lý Tài chính AI đa phương thức & Dual STT)
+- **Natural Language Expense & Debt Logging**:
+  - Speak or type casually in Vietnamese: *"Trưa nay ăn bún chả 55k ví MoMo"*, *"Đổ xăng 80k tiền mặt"*, *"Cho Tuấn mượn 200k"*.
+  - Gemini AI parses amounts (recognizing `k`, `tr`, `triệu`, `nghìn`), transaction types (expense, income, lend, borrow), finds the closest matching wallet & category, and drafts the entry.
+- **Dual STT (Speech-to-Text) Architecture**:
+  - **In-App Dedicated Mic (`expo-audio`)**: Hold the micro button to record audio in-app $\to$ sends directly to Gemini 2.0 Flash Multimodal Audio API for simultaneous transcription and entity parsing (~1.2s).
+  - **Keyboard Native Mic**: Speak directly into the text input using system STT (Gboard / iOS / Laban Key) $\to$ sends raw text to Gemini (~0.3s ultra-fast).
+  - **Customizable In-App Mic Switch**: Toggle the dedicated in-app micro button on or off in Settings.
+- **6 Rich AI Personalities (Copilot Personas)**:
+  - Selectable in Settings via an elegant, space-efficient `NeoDropdown`:
+    1. **Vui vẻ, dí dỏm** (`cheerful`): Lạc quan, tràn đầy năng lượng, khen ngợi và trêu đùa vui tươi.
+    2. **Khó tính, nghiêm khắc** (`strict`): Viên kiểm toán thép, phê bình chi tiêu bốc đồng, siết chặt kỷ luật.
+    3. **Tài phiệt, sang chảnh** (`affluent`): Luôn xưng hô gọi người dùng là Chủ tịch/Sếp, xem tiền bạc là nghệ thuật luân chuyển dòng vốn.
+    4. **Bạn thân tâm sự** (`confidant`): Ấm áp, biết lắng nghe, chia sẻ chân thành như tri kỷ.
+    5. **Thực tế, tối giản** (`minimalist`): Siêu ngắn gọn, trực diện, chỉ tập trung vào số liệu cốt lõi.
+    6. **Gen Z lầy lội** (`genz`): Ngôn ngữ giới trẻ ("ét ô ét", "cháy ví", "10 điểm không có nhưng", "flex").
+  - Persistent in SQLite (`app_settings`), dynamically driving both prompt generation and vivid opening greetings.
+- **Interactive Financial Q&A with SQLite Context**:
+  - Ask natural questions: *"Tháng này uống cafe hết bao nhiêu tiền?"*, *"Ai đang nợ tiền tui?"*, *"Tình hình tài chính tuần này thế nào?"*.
+  - AI accesses real-time aggregated SQLite context (wallets, recent spendings, debt ledger) to answer with concrete numbers and insights.
+- **Tactile 1-Tap Confirmation Card**:
+  - Prevents accidental database writes: displays a Neo-Brutalist interactive preview card (`CopilotTransactionCard`) showing parsed wallet, category, and formatted amount.
+  - Simply tap `[✓ Xác nhận ghi sổ]` to write atomically to SQLite and refresh the app state.
+- **Polished Neo-Brutalist Layout & Zero Redundancy**:
+  - Compact circular FAB (`52x52`, `#38BDF8`, `✨ AI`) pinned at bottom-right with anti-clipping scroll padding.
+  - Removed duplicate top input bars from the dashboard, placing Smart Habit Reminders and Net Worth directly at the forefront.
+
 ---
 
 ## Technology Stack
@@ -298,6 +325,9 @@ adb install android/app/build/outputs/apk/release/app-release.apk
 │   └── withShareIntent.js          # Expo Config Plugin injecting Android SEND action for receipts
 ├── src/
 │   ├── components/                 # Reusable Neo-Brutalist UI components
+│   │   ├── ai/                     # Gemini AI Financial Copilot components & confirmation cards
+│   │   │   ├── CopilotTransactionCard.tsx # 1-tap confirmation card for AI parsed transactions/debts
+│   │   │   └── FinancialCopilotModal.tsx  # Natural language Q&A & dual STT voice logger modal
 │   │   ├── analytics/              # Modular analytics sub-tabs & burn-down velocity charts
 │   │   ├── CategoryManagementModal.tsx # Custom category creation & color/icon picker
 │   │   ├── CloudinaryModal.tsx     # Cloudinary cloud sync & local image migration sheet
@@ -325,6 +355,7 @@ adb install android/app/build/outputs/apk/release/app-release.apk
 │   │   └── RootNavigator.tsx       # Tab navigator & notification routing
 │   ├── screens/                    # Core screens (Dashboard, Analytics, Wallets, Debts, Transactions, Settings)
 │   ├── services/
+│   │   ├── aiCopilotService.ts     # Gemini Copilot multimodal audio & natural language parser
 │   │   ├── cloudinaryService.ts    # Cloudinary REST upload, signed streaming & offline sync
 │   │   ├── geminiService.ts        # Gemini Vision API client for receipt OCR & parsing
 │   │   ├── googleDriveService.ts   # Google Drive OAuth & file backup API
