@@ -97,7 +97,7 @@ export const DebtsScreen: React.FC = () => {
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.screenTitle}>Sổ Nợ & Cho Vay</Text>
+          <Text style={styles.screenTitle}>Sổ Nợ</Text>
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>

@@ -1,4 +1,4 @@
-# MultiWallet (v1.2.2) - Personal Finance & Multi-Source Wallet Management
+# MultiWallet (v1.2.3) - Personal Finance & Multi-Source Wallet Management
 
 A modern, high-performance mobile application built with **React Native (Expo SDK 57)**, **TypeScript**, and **Expo SQLite**, crafted with a distinctive, tactile Neo-Brutalist design language. 
 
@@ -207,14 +207,30 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
   - Immediately triggers Gemini AI Vision scanner to extract total amount, transfer notes, and auto-match categories without manual typing.
 - **Custom Native Config Plugin**: Integrated via `plugins/withShareIntent.js` and Android native intent filters for full EAS Build and local prebuild compatibility.
 
-### 19. Gemini AI Financial Copilot (Trợ lý Tài chính AI đa phương thức & Dual STT)
-- **Natural Language Expense & Debt Logging**:
-  - Speak or type casually in Vietnamese: *"Trưa nay ăn bún chả 55k ví MoMo"*, *"Đổ xăng 80k tiền mặt"*, *"Cho Tuấn mượn 200k"*.
-  - Gemini AI parses amounts (recognizing `k`, `tr`, `triệu`, `nghìn`), transaction types (expense, income, lend, borrow), finds the closest matching wallet & category, and drafts the entry.
+### 19. Gemini AI Financial Copilot (Trợ lý Tài chính AI Đa Năng, Voice TTS & Batch Parsing)
+- **Batch Multi-Transaction Parsing (Bóc tách chuỗi giao dịch & Hóa đơn nhiều món)**:
+  - Tự động nhận diện nhiều khoản chi tiêu / thu nhập cùng lúc trong một câu nói hoặc văn bản (ví dụ: *"Sáng ăn phở 45k, cafe 25k, đổ xăng 50k ví Tiền mặt"*).
+  - Tự động gán danh mục và ví tiền phù hợp cho từng món riêng lẻ.
+  - Hiển thị thẻ xác nhận Neo-Brutalist trực quan với tổng số tiền, số lượng giao dịch, danh sách chi tiết và nút `[✓ Lưu tất cả (N giao dịch)]` ghi đồng thời vào SQLite chỉ với 1 chạm.
+- **Full Action Tools Suite (Bộ công cụ hành động mở rộng)**:
+  - **Chuyển tiền giữa các ví (`transfer_money`)**: Hiểu câu lệnh *"Chuyển 500k từ VCB sang MoMo"* $\rightarrow$ sinh thẻ xác nhận chuyển ví nguồn - ví đích tức thì.
+  - **Tất toán nợ thông minh (`settle_debt`)**: Hiểu câu lệnh *"Tuấn vừa trả 200k vào MoMo"* hoặc *"Trả nợ anh Nam 500k tiền mặt"* $\rightarrow$ tự động tra cứu danh sách nợ trong SQLite để khớp người vay/chủ nợ và sinh thẻ thu/trả nợ.
+  - **Lên kế hoạch chi tiêu (`create_planned`)**: Hiểu câu lệnh *"Lên lịch ngày 15 đóng tiền nhà 3 triệu"* $\rightarrow$ sinh thẻ tạo Planned Expense vào đúng ngày hẹn.
+  - **Ghi nhận nợ mới (`create_debt`)**: Nhận diện khoản cho vay hoặc đi vay với ngày hẹn trả linh hoạt.
+- **Natural Vietnamese Text-to-Speech (TTS Voice Phản Hồi Giọng Nói)**:
+  - Giọng đọc tiếng Việt mượt mà (`expo-speech`), tự động điều chỉnh cao độ (pitch) và tốc độ (rate) theo đúng 6 tính cách Copilot (Kỷ luật nghiêm khắc đọc dứt khoát, Vui vẻ đọc nhanh hào hứng, v.v.).
+  - Bộ làm sạch Markdown & đơn vị tiền tệ thông minh (`50k` $\rightarrow$ `50 nghìn`, `100.000₫` $\rightarrow$ `100 nghìn đồng`), loại bỏ ký tự lạ giúp giọng đọc trôi chảy.
+  - Tự động ngắt phát âm tức thì khi chạm/giữ micro hoặc gõ phím để tránh dính âm thanh.
+  - Nút chuyển đổi nhanh Giọng đọc (`volume-high` / `volume-mute`) ngay trên thanh tiêu đề và toggle bật/tắt trong màn hình Cài đặt.
+- **In-Chat Multi-Image Receipt Scanning & Persistence (Quét Nhiều Hóa Đơn & Lưu Ảnh Vào Giao Dịch)**:
+  - Tích hợp nút Chụp ảnh (Camera) và Chọn nhiều ảnh thư viện (Gallery) trực tiếp ngay cạnh thanh soạn thảo chat.
+  - Thanh xem trước ảnh ngang trực quan với nút gỡ nhanh từng ảnh và xóa tất cả.
+  - Gửi đồng thời mảng ảnh Multimodal Base64 đến Gemini 2.0 Flash để bóc tách hóa đơn nhiều trang/nhiều biên lai cùng lúc.
+  - Khi xác nhận (`Lưu tất cả` / `Xác nhận ghi sổ`), ảnh hóa đơn được tự động lưu vĩnh viễn (hoặc đồng bộ Cloudinary) và gắn trực tiếp vào giao dịch.
 - **Dual STT (Speech-to-Text) Architecture**:
-  - **In-App Dedicated Mic (`expo-audio`)**: Hold the micro button to record audio in-app $\to$ sends directly to Gemini 2.0 Flash Multimodal Audio API for simultaneous transcription and entity parsing (~1.2s).
-  - **Keyboard Native Mic**: Speak directly into the text input using system STT (Gboard / iOS / Laban Key) $\to$ sends raw text to Gemini (~0.3s ultra-fast).
-  - **Customizable In-App Mic Switch**: Toggle the dedicated in-app micro button on or off in Settings.
+  - **In-App Dedicated Mic (`expo-audio`)**: Giữ nút micro trong app $\rightarrow$ gửi thẳng audio stream đến Gemini 2.0 Flash Multimodal API (~1.2s).
+  - **Keyboard Native Mic**: Đọc trực tiếp qua bàn phím hệ thống (Gboard / iOS / Laban Key) $\rightarrow$ gửi text tới Gemini (~0.3s ultra-fast).
+  - **Tùy biến Mic trong Cài đặt**: Bật/tắt nút ghi âm trong app tùy nhu cầu.
 - **6 Rich AI Personalities (Copilot Personas)**:
   - Selectable in Settings via an elegant, space-efficient `NeoDropdown`:
     1. **Vui vẻ, dí dỏm** (`cheerful`): Lạc quan, tràn đầy năng lượng, khen ngợi và trêu đùa vui tươi.
@@ -225,14 +241,11 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
     6. **Gen Z lầy lội** (`genz`): Ngôn ngữ giới trẻ ("ét ô ét", "cháy ví", "10 điểm không có nhưng", "flex").
   - Persistent in SQLite (`app_settings`), dynamically driving both prompt generation and vivid opening greetings.
 - **Interactive Financial Q&A with SQLite Context**:
-  - Ask natural questions: *"Tháng này uống cafe hết bao nhiêu tiền?"*, *"Ai đang nợ tiền tui?"*, *"Tình hình tài chính tuần này thế nào?"*.
-  - AI accesses real-time aggregated SQLite context (wallets, recent spendings, debt ledger) to answer with concrete numbers and insights.
-- **Tactile 1-Tap Confirmation Card**:
-  - Prevents accidental database writes: displays a Neo-Brutalist interactive preview card (`CopilotTransactionCard`) showing parsed wallet, category, and formatted amount.
-  - Simply tap `[✓ Xác nhận ghi sổ]` to write atomically to SQLite and refresh the app state.
-- **Polished Neo-Brutalist Layout & Zero Redundancy**:
-  - Compact circular FAB (`52x52`, `#38BDF8`, `✨ AI`) pinned at bottom-right with anti-clipping scroll padding.
-  - Removed duplicate top input bars from the dashboard, placing Smart Habit Reminders and Net Worth directly at the forefront.
+  - Hỏi đáp tự nhiên: *"Tháng này uống cafe hết bao nhiêu tiền?"*, *"Ai đang nợ tiền tui?"*, *"Tình hình tài chính tuần này thế nào?"*.
+  - AI truy xuất dữ liệu SQLite tổng hợp (ví, chi tiêu gần đây, sổ nợ) để đưa ra con số chính xác và lời khuyên hữu ích.
+- **Tactile Neo-Brutalist Layout & Streamlined UI**:
+  - Header thanh thoát với chấm trạng thái tính cách thời gian thực (`● Kỷ luật thép • Gemini Flash`).
+  - Nút bấm nổi (FAB) nhỏ gọn (`52x52`, `#38BDF8`, `✨ AI`) góc dưới phải màn hình với chống che khuất.
 
 ---
 
@@ -243,6 +256,7 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
 - **Database**: `expo-sqlite` (WAL mode enabled, foreign keys enforced)
 - **Home Widget**: `react-native-android-widget` (Neo-brutalist interactive widget)
 - **Local Notifications**: `expo-notifications` (Offline habit reminders & absence check)
+- **Voice & Speech**: `expo-audio` (Microphone input) & `expo-speech` (Vietnamese Text-to-Speech)
 - **Navigation**: React Navigation v7
 - **Native File APIs**: `expo-file-system`, `expo-sharing`, `expo-document-picker`
 - **Security & Biometrics**: `expo-local-authentication`, `expo-haptics`

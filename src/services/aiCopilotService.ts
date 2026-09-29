@@ -1,5 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 import dayjs from 'dayjs';
+import * as Speech from 'expo-speech';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Category, Wallet } from '../types';
 import {
   getGeminiApiKey,
@@ -10,7 +12,15 @@ import {
 } from './geminiService';
 import * as queries from '../database/queries';
 
-export type CopilotIntent = 'create_transaction' | 'create_debt' | 'query' | 'unknown';
+export type CopilotIntent =
+  | 'create_transaction'
+  | 'create_transactions'
+  | 'transfer_money'
+  | 'settle_debt'
+  | 'create_debt'
+  | 'create_planned'
+  | 'query'
+  | 'unknown';
 
 export interface CopilotParsedTransaction {
   type: 'expense' | 'income' | 'transfer';
@@ -25,6 +35,37 @@ export interface CopilotParsedTransaction {
   category_color?: string | null;
   note?: string;
   transacted_at: string;
+}
+
+export interface CopilotParsedTransfer {
+  from_wallet_id?: string | null;
+  from_wallet_name?: string | null;
+  to_wallet_id?: string | null;
+  to_wallet_name?: string | null;
+  amount: number;
+  note?: string;
+  transacted_at?: string;
+}
+
+export interface CopilotParsedDebtSettlement {
+  debt_id?: string | null;
+  person_name: string;
+  amount: number;
+  type: 'receive' | 'pay'; // 'receive' = người khác trả mình, 'pay' = mình trả người khác
+  wallet_id?: string | null;
+  wallet_name?: string | null;
+  note?: string;
+}
+
+export interface CopilotParsedPlannedExpense {
+  title: string;
+  amount: number;
+  target_date: string;
+  wallet_id?: string | null;
+  wallet_name?: string | null;
+  category_id?: string | null;
+  category_name?: string | null;
+  note?: string;
 }
 
 export interface CopilotParsedDebt {
@@ -42,7 +83,11 @@ export interface CopilotResponse {
   message: string;
   transcript?: string;
   transaction?: CopilotParsedTransaction;
+  transactions?: CopilotParsedTransaction[];
+  transfer?: CopilotParsedTransfer;
   debt?: CopilotParsedDebt;
+  debt_settlement?: CopilotParsedDebtSettlement;
+  planned_expense?: CopilotParsedPlannedExpense;
 }
 
 export interface ChatMessage {
@@ -50,6 +95,8 @@ export interface ChatMessage {
   sender: 'user' | 'assistant';
   text: string;
   timestamp: string;
+  imageUri?: string;
+  imageUris?: string[];
   audioUri?: string;
   copilotResponse?: CopilotResponse;
   isSaved?: boolean;
@@ -170,6 +217,7 @@ TÍNH CÁCH BẮT BUỘC: GEN Z SIÊU HÀI HƯỚC, LẦY LỘI, BẮT TREND C�
 export const COPILOT_SETTING_KEYS = {
   IN_APP_MIC_ENABLED: 'copilot_in_app_mic_enabled',
   PERSONALITY: 'copilot_personality',
+  TTS_ENABLED: 'copilot_tts_enabled',
 };
 
 export async function getInAppMicEnabled(db: SQLite.SQLiteDatabase): Promise<boolean> {
@@ -182,6 +230,18 @@ export async function setInAppMicEnabled(
   enabled: boolean
 ): Promise<void> {
   await queries.setAppSetting(db, COPILOT_SETTING_KEYS.IN_APP_MIC_ENABLED, enabled ? '1' : '0');
+}
+
+export async function getCopilotTtsEnabled(db: SQLite.SQLiteDatabase): Promise<boolean> {
+  const val = await queries.getAppSetting(db, COPILOT_SETTING_KEYS.TTS_ENABLED);
+  return val === null ? true : val === '1' || val === 'true';
+}
+
+export async function setCopilotTtsEnabled(
+  db: SQLite.SQLiteDatabase,
+  enabled: boolean
+): Promise<void> {
+  await queries.setAppSetting(db, COPILOT_SETTING_KEYS.TTS_ENABLED, enabled ? '1' : '0');
 }
 
 export async function getCopilotPersonality(
@@ -202,6 +262,104 @@ export async function setCopilotPersonality(
 }
 
 /**
+ * Làm sạch chuỗi markdown / emoji để phát âm tiếng Việt tự nhiên nhất
+ */
+export function cleanMarkdownForSpeech(text: string): string {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '$1') // Bỏ in đậm
+    .replace(/\*(.*?)\*/g, '$1')     // Bỏ in nghiêng
+    .replace(/`(.*?)`/g, '$1')       // Bỏ code
+    .replace(/#{1,6}\s+/g, '')       // Bỏ tiêu đề
+    .replace(/[•\-\*]\s+/g, '')      // Bỏ gạch đầu dòng
+    .replace(/💬\s*["“](.*?)["”]/g, '$1')
+    .replace(/₫/g, ' đồng')          // Thay ký hiệu tiền tệ ₫ thành chữ 'đồng' để engine TTS dễ phát âm
+    .replace(/[✨🎉🎩💖⚡🔥🚨📋💎❤️☀️🇻🇳]/g, '') // Bỏ emoji
+    .replace(/[\/\\]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Đọc câu trả lời của AI bằng giọng nói tiếng Việt theo tính cách
+ */
+export async function speakCopilotMessage(
+  text: string,
+  personalityId: CopilotPersonalityId = 'cheerful'
+): Promise<void> {
+  console.log('[Copilot TTS] 🎙️ speakCopilotMessage called. Text length:', text?.length);
+  try {
+    const cleanText = cleanMarkdownForSpeech(text);
+    console.log('[Copilot TTS] 🧹 Cleaned text:', cleanText);
+    if (!cleanText) {
+      console.log('[Copilot TTS] ⚠️ Clean text is empty, nothing to speak.');
+      return;
+    }
+
+    try {
+      const isSpeaking = await Speech.isSpeakingAsync();
+      console.log('[Copilot TTS] Is currently speaking?:', isSpeaking);
+      if (isSpeaking) {
+        console.log('[Copilot TTS] Stopping previous speech before new utterance...');
+        await Speech.stop();
+      }
+    } catch (stopErr) {
+      console.log('[Copilot TTS] Speech.stop error (non-fatal):', stopErr);
+    }
+
+    let pitch = 1.0;
+    let rate = 1.0;
+    if (personalityId === 'cheerful') {
+      pitch = 1.08;
+      rate = 1.02;
+    } else if (personalityId === 'strict') {
+      pitch = 0.95;
+      rate = 1.05;
+    } else if (personalityId === 'affluent') {
+      pitch = 0.9;
+      rate = 0.95;
+    } else if (personalityId === 'confidant') {
+      pitch = 1.0;
+      rate = 0.95;
+    } else if (personalityId === 'minimalist') {
+      pitch = 1.0;
+      rate = 1.1;
+    } else if (personalityId === 'genz') {
+      pitch = 1.12;
+      rate = 1.08;
+    }
+
+    console.log('[Copilot TTS] 🔊 Executing Speech.speak with language: "vi" (ISO 639-1)...');
+
+    Speech.speak(cleanText, {
+      language: 'vi',
+      pitch,
+      rate,
+      onStart: () => {
+        console.log('[Copilot TTS] ▶️ onStart: Sound playback started successfully!');
+      },
+      onDone: () => {
+        console.log('[Copilot TTS] ✅ onDone: Sound playback completed successfully!');
+      },
+      onStopped: () => {
+        console.log('[Copilot TTS] ⏹️ onStopped: Speech playback was stopped.');
+      },
+      onError: (err: any) => {
+        console.warn('[Copilot TTS] ❌ onError: Speech error occurred:', err);
+      },
+    });
+  } catch (err) {
+    console.warn('[Copilot TTS] ❌ Exception in speakCopilotMessage:', err);
+  }
+}
+
+export function stopCopilotSpeech(): void {
+  try {
+    console.log('[Copilot TTS] stopCopilotSpeech requested');
+    Speech.stop();
+  } catch {}
+}
+
+/**
  * Trích xuất JSON an toàn từ phản hồi của LLM
  */
 function cleanAndParseJSON(raw: string): any {
@@ -211,7 +369,24 @@ function cleanAndParseJSON(raw: string): any {
   } else if (cleaned.startsWith('```')) {
     cleaned = cleaned.replace(/^```\s*/, '').replace(/\s*```$/, '');
   }
-  return JSON.parse(cleaned);
+  const parsed = JSON.parse(cleaned);
+
+  // Chuẩn hóa mảng transactions / transaction
+  if (
+    parsed.transactions &&
+    Array.isArray(parsed.transactions) &&
+    parsed.transactions.length === 1 &&
+    !parsed.transaction
+  ) {
+    parsed.transaction = parsed.transactions[0];
+  } else if (
+    parsed.transaction &&
+    (!parsed.transactions || parsed.transactions.length === 0)
+  ) {
+    parsed.transactions = [parsed.transaction];
+  }
+
+  return parsed;
 }
 
 /**
@@ -259,7 +434,7 @@ SỔ NỢ ĐANG CÓ HIỆU LỰC:
 ${activeDebts
   .map(
     d =>
-      `- ${d.type === 'lend' ? 'Cho vay' : 'Đi vay'}: ${d.person_name} | Số tiền còn lại: ${d.remaining_amount.toLocaleString('vi-VN')} ₫${d.note ? ` (Ghi chú: ${d.note})` : ''}`
+      `- [ID: "${d.id}"] ${d.type === 'lend' ? 'Cho vay' : 'Đi vay'}: ${d.person_name} | Số tiền còn lại: ${d.remaining_amount.toLocaleString('vi-VN')} ₫${d.note ? ` (Ghi chú: ${d.note})` : ''}`
   )
   .join('\n')}`;
     } else {
@@ -322,12 +497,16 @@ ${specificSearchResults}
 /**
  * Xử lý văn bản đầu vào: Phân loại Ghi chép giao dịch HOẶC Trả lời câu hỏi tài chính
  */
+/**
+ * Xử lý văn bản hoặc hình ảnh đầu vào: Phân loại Ghi chép giao dịch HOẶC Trả lời câu hỏi tài chính
+ */
 export async function processCopilotTextInput(
   db: SQLite.SQLiteDatabase,
   userInput: string,
   wallets: Wallet[],
   categories: Category[],
-  chatHistory: { role: 'user' | 'model'; text: string }[] = []
+  chatHistory: { role: 'user' | 'model'; text: string }[] = [],
+  imageUri?: string | string[]
 ): Promise<CopilotResponse> {
   const apiKey = await getGeminiApiKey(db);
   if (!apiKey) {
@@ -348,28 +527,38 @@ ${personality.promptInstruction}
 ${context}
 
 QUY TẮC PHÂN LOẠI Ý ĐỊNH (INTENT):
-1. INTENT "create_transaction": Khi người dùng muốn ghi nhận một khoản chi tiêu hoặc thu nhập.
-   Ví dụ: "Ăn bún đậu 55k ví momo", "Đổ xăng 70k tiền mặt", "Nhận lương 20tr techcombank trưa nay", "cf 35k mb".
-   - Bóc tách:
-     + amount: Số tiền dạng số nguyên VND (hiểu tiếng lóng: "55k" -> 55000, "1tr"/"1 củ" -> 1000000, "trăm rưỡi" -> 150000, "hai lốp" -> 200000).
-     + type: "expense" (chi tiêu) hoặc "income" (thu nhập).
-     + wallet_id & wallet_name: Khớp chính xác với ID và Tên trong Danh sách Ví. Nếu không nói rõ ví, chọn ví tiền mặt hoặc ví đầu tiên.
-     + category_id & category_name: Khớp chính xác với ID và Tên trong Danh sách Danh mục.
-     + note: Ghi chú ngắn gọn về nội dung chi tiêu.
-     + transacted_at: Chuỗi ISO timestamp. Nếu có "trưa nay", "hôm qua", "sáng nay", hãy lùi/tiến giờ so với thời gian hiện tại cho chuẩn.
+1. INTENT "create_transaction": Ghi nhận 1 KHOẢN DUY NHẤT chi tiêu hoặc thu nhập.
+   - Ví dụ: "Ăn bún đậu 55k ví momo", "Đổ xăng 70k tiền mặt", "Nhận lương 20tr techcombank trưa nay", "cf 35k mb".
+   - Bóc tách: amount, type ("expense" | "income"), wallet_id, wallet_name, category_id, category_name, note, transacted_at.
 
-2. INTENT "create_debt": Khi người dùng muốn ghi nhận cho vay hoặc vay nợ.
-   Ví dụ: "Cho Nam vay 200k từ ví momo", "Vay anh Hùng 1 triệu ví techcom".
-   - Bóc tách: person_name, amount, type ("lend" là cho vay, "borrow" là vay), wallet_id, note.
+2. INTENT "create_transactions": Khi người dùng ghi NHIỀU KHOẢN chi tiêu/thu nhập cùng lúc trong một câu, hoặc gửi ảnh hóa đơn/biên lai có nhiều món.
+   - Ví dụ: "Sáng ăn phở 45k tiền mặt, đổ xăng 60k MoMo, mua trà sữa 35k", "Hôm nay: cafe 30k, trưa 50k, tối 70k ví MB".
+   - Bóc tách thành mảng "transactions" chứa từng khoản riêng biệt với đầy đủ { type, amount, wallet_id, wallet_name, category_id, category_name, note, transacted_at }.
 
-3. INTENT "query": Khi người dùng hỏi đáp về tình hình tài chính, số dư ví, thống kê chi tiêu hoặc lời khuyên.
-   Ví dụ: "Tháng này uống cafe hết bao nhiêu?", "Ví nào nhiều tiền nhất?", "Ai đang nợ tiền tui?", "So sánh thu chi tháng này".
-   - Dựa vào THÔNG TIN TÀI CHÍNH THỰC TẾ được cung cấp ở trên để trả lời cụ thể, chính xác, ngắn gọn, có số liệu và định dạng tiền tệ rõ ràng (ví dụ: 480.000 ₫).
-   - Tuyệt đối không bịa đặt số liệu không có trong ngữ cảnh.
+3. INTENT "transfer_money": Chuyển tiền liên ví giữa các ví của người dùng.
+   - Ví dụ: "Chuyển 500k từ Techcombank sang MoMo", "Rút 2 triệu từ BIDV về tiền mặt", "Nạp 200k vào MoMo từ Vietcombank".
+   - Bóc tách "transfer": { from_wallet_id, from_wallet_name, to_wallet_id, to_wallet_name, amount, note, transacted_at }.
+
+4. INTENT "settle_debt": Trả nợ hoặc Thu nợ cũ từ danh sách "SỔ NỢ ĐANG CÓ HIỆU LỰC".
+   - Ví dụ: "Tuấn vừa trả tui 200k nợ vào ví MoMo", "Vừa trả anh Hùng 500k tiền mặt nợ tuần trước".
+   - Khớp person_name với các khoản trong SỔ NỢ ĐANG CÓ HIỆU LỰC để lấy debt_id.
+   - Bóc tách "debt_settlement": { debt_id, person_name, amount, type: "receive" (khi người khác trả mình) | "pay" (khi mình trả người khác), wallet_id, wallet_name, note }.
+
+5. INTENT "create_debt": Khi người dùng tạo một khoản vay nợ mới (cho vay hoặc đi vay).
+   - Ví dụ: "Cho Nam vay 200k từ ví momo", "Vay anh Hùng 1 triệu ví techcom".
+   - Bóc tách "debt": { person_name, amount, type: "lend" (cho vay) | "borrow" (đi vay), wallet_id, wallet_name, due_date, note }.
+
+6. INTENT "create_planned": Lên lịch kế hoạch dự chi tương lai.
+   - Ví dụ: "Nhắc tui ngày 5 tháng sau đóng tiền nhà 4.5tr", "Dự kiến 25 này đóng học phí 3 triệu ví Tech".
+   - Bóc tách "planned_expense": { title, amount, target_date (định dạng YYYY-MM-DD), wallet_id, wallet_name, category_id, category_name, note }.
+
+7. INTENT "query": Khi người dùng hỏi đáp về tình hình tài chính, số dư ví, thống kê chi tiêu hoặc lời khuyên.
+   - Ví dụ: "Tháng này uống cafe hết bao nhiêu?", "Ví nào nhiều tiền nhất?", "Ai đang nợ tiền tui?", "So sánh thu chi tháng này".
+   - Dựa vào THÔNG TIN TÀI CHÍNH THỰC TẾ được cung cấp ở trên để trả lời cụ thể, chính xác, ngắn gọn, có số liệu rõ ràng.
 
 ĐỊNH DẠNG TRẢ VỀ (BẮT BUỘC LÀ JSON NGUYÊN BẢN, KHÔNG BỌC VĂN BẢN NGOÀI):
 {
-  "intent": "create_transaction" | "create_debt" | "query" | "unknown",
+  "intent": "create_transaction" | "create_transactions" | "transfer_money" | "settle_debt" | "create_debt" | "create_planned" | "query" | "unknown",
   "message": "Lời nhắn hoặc câu trả lời bằng tiếng Việt (BẮT BUỘC thể hiện đậm nét tính cách [${personality.name}], văn phong sống động, dí dỏm hoặc theo đúng hướng dẫn tính cách ở trên, TUYỆT ĐỐI KHÔNG khô khan máy móc)",
   "transaction": {
     "type": "expense" | "income",
@@ -378,10 +567,38 @@ QUY TẮC PHÂN LOẠI Ý ĐỊNH (INTENT):
     "wallet_name": "...",
     "category_id": "...",
     "category_name": "...",
-    "category_icon": "...",
-    "category_color": "...",
     "note": "...",
     "transacted_at": "..."
+  },
+  "transactions": [
+    {
+      "type": "expense" | "income",
+      "amount": 45000,
+      "wallet_id": "...",
+      "wallet_name": "...",
+      "category_id": "...",
+      "category_name": "...",
+      "note": "...",
+      "transacted_at": "..."
+    }
+  ],
+  "transfer": {
+    "from_wallet_id": "...",
+    "from_wallet_name": "...",
+    "to_wallet_id": "...",
+    "to_wallet_name": "...",
+    "amount": 500000,
+    "note": "...",
+    "transacted_at": "..."
+  },
+  "debt_settlement": {
+    "debt_id": "...",
+    "person_name": "...",
+    "amount": 200000,
+    "type": "receive" | "pay",
+    "wallet_id": "...",
+    "wallet_name": "...",
+    "note": "..."
   },
   "debt": {
     "type": "lend" | "borrow",
@@ -389,6 +606,17 @@ QUY TẮC PHÂN LOẠI Ý ĐỊNH (INTENT):
     "amount": 200000,
     "wallet_id": "...",
     "wallet_name": "...",
+    "due_date": "...",
+    "note": "..."
+  },
+  "planned_expense": {
+    "title": "...",
+    "amount": 4500000,
+    "target_date": "YYYY-MM-DD",
+    "wallet_id": "...",
+    "wallet_name": "...",
+    "category_id": "...",
+    "category_name": "...",
     "note": "..."
   }
 }
@@ -402,9 +630,42 @@ QUY TẮC PHÂN LOẠI Ý ĐỊNH (INTENT):
       parts: [{ text: msg.text }],
     });
   }
+
+  const userParts: any[] = [];
+  const uriList: string[] = [];
+  if (Array.isArray(imageUri)) {
+    uriList.push(...imageUri.filter(Boolean));
+  } else if (imageUri) {
+    uriList.push(imageUri);
+  }
+
+  for (const uri of uriList) {
+    try {
+      const base64Data = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+      const lower = uri.toLowerCase();
+      let mimeType = 'image/jpeg';
+      if (lower.endsWith('.png')) mimeType = 'image/png';
+      else if (lower.endsWith('.webp')) mimeType = 'image/webp';
+      else if (lower.endsWith('.heic')) mimeType = 'image/heic';
+
+      userParts.push({
+        inline_data: {
+          mime_type: mimeType,
+          data: base64Data,
+        },
+      });
+    } catch (imgErr) {
+      console.warn('Failed to read image for Copilot:', imgErr);
+    }
+  }
+
+  userParts.push({
+    text: userInput.trim() || 'Hãy phân tích hóa đơn / biên lai / ảnh này và xuất giao dịch chi tiêu/thu nhập tương ứng.',
+  });
+
   conversationContents.push({
     role: 'user',
-    parts: [{ text: userInput }],
+    parts: userParts,
   });
 
   const payload = {
@@ -440,7 +701,7 @@ QUY TẮC PHÂN LOẠI Ý ĐỊNH (INTENT):
 
       const parsed = cleanAndParseJSON(rawText);
 
-      // Điền thêm icon & màu danh mục nếu thiếu
+      // Điền thêm icon & màu danh mục cho transaction đơn lẻ
       if (parsed.transaction && parsed.transaction.category_id) {
         const cat = categories.find(c => c.id === parsed.transaction.category_id);
         if (cat) {
@@ -449,11 +710,56 @@ QUY TẮC PHÂN LOẠI Ý ĐỊNH (INTENT):
         }
       }
 
+      // Điền thêm icon & màu danh mục cho mảng transactions
+      if (Array.isArray(parsed.transactions)) {
+        parsed.transactions.forEach((tx: CopilotParsedTransaction) => {
+          if (tx.category_id) {
+            const cat = categories.find(c => c.id === tx.category_id);
+            if (cat) {
+              tx.category_icon = cat.icon;
+              tx.category_color = cat.color;
+            }
+          }
+          if (!tx.wallet_name && tx.wallet_id) {
+            const w = wallets.find(w => w.id === tx.wallet_id);
+            if (w) tx.wallet_name = w.name;
+          }
+        });
+      }
+
+      // Điền wallet names cho transfer nếu thiếu
+      if (parsed.transfer) {
+        if (!parsed.transfer.from_wallet_name && parsed.transfer.from_wallet_id) {
+          const w = wallets.find(w => w.id === parsed.transfer.from_wallet_id);
+          if (w) parsed.transfer.from_wallet_name = w.name;
+        }
+        if (!parsed.transfer.to_wallet_name && parsed.transfer.to_wallet_id) {
+          const w = wallets.find(w => w.id === parsed.transfer.to_wallet_id);
+          if (w) parsed.transfer.to_wallet_name = w.name;
+        }
+      }
+
+      // Điền category cho planned_expense
+      if (parsed.planned_expense) {
+        if (parsed.planned_expense.category_id && !parsed.planned_expense.category_name) {
+          const cat = categories.find(c => c.id === parsed.planned_expense.category_id);
+          if (cat) parsed.planned_expense.category_name = cat.name;
+        }
+        if (parsed.planned_expense.wallet_id && !parsed.planned_expense.wallet_name) {
+          const w = wallets.find(w => w.id === parsed.planned_expense.wallet_id);
+          if (w) parsed.planned_expense.wallet_name = w.name;
+        }
+      }
+
       return {
         intent: parsed.intent || 'unknown',
         message: parsed.message || 'Đã phân tích yêu cầu của bạn.',
         transaction: parsed.transaction,
+        transactions: parsed.transactions,
+        transfer: parsed.transfer,
         debt: parsed.debt,
+        debt_settlement: parsed.debt_settlement,
+        planned_expense: parsed.planned_expense,
       };
     } catch (err: any) {
       lastError = err;
@@ -496,37 +802,27 @@ ${personality.promptInstruction}
 Hãy nghe đoạn âm thanh tiếng Việt này:
 1. Phiên âm chính xác nội dung câu nói của người dùng ("transcript").
 2. Phân loại ý định:
-   - Nếu là ghi chép chi tiêu/thu nhập (VD: "Ăn bún đậu 55k ví MoMo"): bóc tách amount, type, wallet_id, category_id, note, transacted_at.
-   - Nếu là cho vay/vay nợ (VD: "Cho Tuấn vay 300k"): bóc tách person_name, amount, type, wallet_id.
-   - Nếu là câu hỏi (VD: "Tháng này cafe hết bao nhiêu?"): trả lời dựa trên thông tin tài chính được cung cấp.
+   - Ghi 1 khoản thu/chi (create_transaction): amount, type ("expense"|"income"), wallet_id, category_id, note, transacted_at.
+   - Ghi NHIỀU khoản thu/chi (create_transactions): mảng "transactions" chứa từng khoản chi tiết.
+   - Chuyển tiền liên ví (transfer_money): "transfer" gồm from_wallet_id, to_wallet_id, amount, note.
+   - Trả nợ/Thu nợ cũ (settle_debt): "debt_settlement" gồm debt_id, person_name, amount, type ("receive"|"pay"), wallet_id, note.
+   - Cho vay/vay mới (create_debt): "debt" gồm person_name, amount, type ("lend"|"borrow"), wallet_id, note.
+   - Lên lịch dự chi (create_planned): "planned_expense" gồm title, amount, target_date (YYYY-MM-DD), wallet_id, category_id, note.
+   - Câu hỏi (query): trả lời dựa trên thông tin tài chính được cung cấp.
 
 ${context}
 
 ĐỊNH DẠNG TRẢ VỀ JSON:
 {
   "transcript": "Câu nói được phiên âm tiếng Việt của người dùng",
-  "intent": "create_transaction" | "create_debt" | "query" | "unknown",
+  "intent": "create_transaction" | "create_transactions" | "transfer_money" | "settle_debt" | "create_debt" | "create_planned" | "query" | "unknown",
   "message": "Lời nhắn hoặc câu trả lời bằng tiếng Việt (BẮT BUỘC thể hiện đậm nét tính cách [${personality.name}], văn phong sống động, dí dỏm hoặc theo đúng hướng dẫn tính cách ở trên, TUYỆT ĐỐI KHÔNG khô khan máy móc)",
-  "transaction": {
-    "type": "expense" | "income",
-    "amount": 55000,
-    "wallet_id": "...",
-    "wallet_name": "...",
-    "category_id": "...",
-    "category_name": "...",
-    "category_icon": "...",
-    "category_color": "...",
-    "note": "...",
-    "transacted_at": "..."
-  },
-  "debt": {
-    "type": "lend" | "borrow",
-    "person_name": "...",
-    "amount": 200000,
-    "wallet_id": "...",
-    "wallet_name": "...",
-    "note": "..."
-  }
+  "transaction": { ... },
+  "transactions": [ ... ],
+  "transfer": { ... },
+  "debt_settlement": { ... },
+  "debt": { ... },
+  "planned_expense": { ... }
 }
 `.trim();
 
@@ -583,12 +879,28 @@ ${context}
         }
       }
 
+      if (Array.isArray(parsed.transactions)) {
+        parsed.transactions.forEach((tx: CopilotParsedTransaction) => {
+          if (tx.category_id) {
+            const cat = categories.find(c => c.id === tx.category_id);
+            if (cat) {
+              tx.category_icon = cat.icon;
+              tx.category_color = cat.color;
+            }
+          }
+        });
+      }
+
       return {
         intent: parsed.intent || 'unknown',
         transcript: parsed.transcript || '',
         message: parsed.message || (parsed.transcript ? `Đã nghe: "${parsed.transcript}"` : 'Đã phân tích âm thanh thành công.'),
         transaction: parsed.transaction,
+        transactions: parsed.transactions,
+        transfer: parsed.transfer,
         debt: parsed.debt,
+        debt_settlement: parsed.debt_settlement,
+        planned_expense: parsed.planned_expense,
       };
     } catch (err: any) {
       lastError = err;

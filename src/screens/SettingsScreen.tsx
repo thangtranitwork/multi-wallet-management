@@ -50,6 +50,8 @@ import {
 import {
   getInAppMicEnabled,
   setInAppMicEnabled,
+  getCopilotTtsEnabled,
+  setCopilotTtsEnabled,
   getCopilotPersonality,
   setCopilotPersonality,
   COPILOT_PERSONALITIES,
@@ -132,6 +134,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
   const [showApiKey, setShowApiKey] = useState<boolean>(false);
   const [isTestingGemini, setIsTestingGemini] = useState<boolean>(false);
   const [inAppMicEnabled, setInAppMicEnabledState] = useState<boolean>(true);
+  const [copilotTtsEnabled, setCopilotTtsEnabledState] = useState<boolean>(true);
   const [geminiStatus, setGeminiStatus] = useState<{ checked: boolean; success: boolean; message: string; model?: string }>({
     checked: false,
     success: false,
@@ -256,6 +259,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
     getInAppMicEnabled(db).then((enabled) => {
       setInAppMicEnabledState(enabled);
     });
+    getCopilotTtsEnabled(db).then((enabled) => {
+      setCopilotTtsEnabledState(enabled);
+    });
     getCopilotPersonality(db).then((p) => {
       setCopilotPersonalityState(p);
     });
@@ -268,6 +274,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
     hapticLight();
     setInAppMicEnabledState(val);
     await setInAppMicEnabled(db, val);
+  };
+
+  const handleToggleCopilotTts = async (val: boolean) => {
+    hapticLight();
+    setCopilotTtsEnabledState(val);
+    await setCopilotTtsEnabled(db, val);
   };
 
   const handleSelectPersonality = async (id: CopilotPersonalityId) => {
@@ -1095,6 +1107,31 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                   onValueChange={handleToggleInAppMic}
                   trackColor={{ false: '#D1D5DB', true: '#86EFAC' }}
                   thumbColor={inAppMicEnabled ? '#15803D' : '#9CA3AF'}
+                />
+              </View>
+
+              {/* Divider */}
+              <View style={{ height: 1.5, backgroundColor: '#E5E7EB', marginVertical: 14 }} />
+
+              {/* Copilot Text-to-Speech (TTS) Setting */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <View style={{ flex: 1, marginRight: 12 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Ionicons name="volume-high" size={17} color="#000000" />
+                    <Text style={{ fontSize: 13, fontWeight: '800', color: '#000000' }}>
+                      Đọc thành tiếng câu trả lời (TTS)
+                    </Text>
+                  </View>
+                  <Text style={{ fontSize: 11, color: '#6B7280', marginTop: 3, lineHeight: 15 }}>
+                    Tự động đọc phản hồi của Trợ lý AI bằng giọng đọc tiếng Việt mượt mà theo tính cách đã chọn.
+                  </Text>
+                </View>
+
+                <Switch
+                  value={copilotTtsEnabled}
+                  onValueChange={handleToggleCopilotTts}
+                  trackColor={{ false: '#D1D5DB', true: '#86EFAC' }}
+                  thumbColor={copilotTtsEnabled ? '#15803D' : '#9CA3AF'}
                 />
               </View>
 
