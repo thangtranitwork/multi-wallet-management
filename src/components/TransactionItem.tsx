@@ -138,6 +138,8 @@ export const TransactionItem: React.FC<TransactionItemProps> = ({
               isTransfer && styles.transferColor,
               transaction.type === 'adjustment' && { color: '#6B7280' },
             ]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
           >
             {isBalanceHidden
               ? '••••••'
@@ -213,6 +215,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#000000',
+    maxWidth: 90,
   },
   walletBadgeText: {
     fontSize: 9.5,
@@ -242,6 +245,8 @@ const styles = StyleSheet.create({
   },
   amountBox: {
     alignItems: 'flex-end',
+    flexShrink: 0,
+    maxWidth: '42%',
   },
   amount: {
     fontSize: 14.5,

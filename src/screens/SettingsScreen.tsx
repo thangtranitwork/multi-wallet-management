@@ -80,6 +80,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
     hasPinCode,
     isHardwareSupported,
     hapticsEnabled,
+    autoLockTimeout,
+    updateAutoLockTimeout,
+    temporarilyBypassLock,
     toggleAppLock,
     toggleFingerprint,
     toggleHaptics,
@@ -355,6 +358,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
   // 1. Xử lý xuất file .json qua Sharing API
   const handleExportFile = async () => {
     try {
+      temporarilyBypassLock(120000);
       setIsProcessing(true);
       const jsonStr = await exportDataToJsonString();
       const dateStr = dayjs().format('YYYYMMDD_HHmm');
@@ -402,6 +406,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
   // 3. Xử lý chọn file .json từ máy
   const handlePickFileToImport = async () => {
     try {
+      temporarilyBypassLock(120000);
       const result = await DocumentPicker.getDocumentAsync({
         type: ['application/json', 'text/json', '*/*'],
         copyToCacheDirectory: true,
@@ -737,6 +742,67 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                   {hasPinCode ? 'Đổi mã PIN 4 số' : 'Thiết lập mã PIN 4 số'}
                 </Text>
               </Pressable>
+
+              {/* Auto Lock Timeout options when App Lock is enabled */}
+              {isAppLockEnabled && (
+                <>
+                  <View style={styles.divider} />
+                  <View style={{ marginTop: 2 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                      <Ionicons name="timer-outline" size={16} color="#4B5563" />
+                      <Text style={{ fontSize: 13, fontWeight: '800', color: '#1F2937' }}>
+                        Thời gian tự động khóa
+                      </Text>
+                    </View>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={{ flexDirection: 'row', gap: 6, paddingVertical: 4 }}
+                    >
+                      {[
+                        { label: 'Ngay lập tức', value: 0 },
+                        { label: '15 giây', value: 15 },
+                        { label: '30 giây (Chuẩn)', value: 30 },
+                        { label: '1 phút', value: 60 },
+                        { label: '5 phút', value: 300 },
+                      ].map((item) => {
+                        const isSelected = autoLockTimeout === item.value;
+                        return (
+                          <Pressable
+                            key={item.value}
+                            style={[
+                              styles.timeoutPill,
+                              isSelected && styles.timeoutPillActive,
+                            ]}
+                            onPress={() => {
+                              hapticLight();
+                              updateAutoLockTimeout(item.value);
+                            }}
+                          >
+                            <Text
+                              style={[
+                                styles.timeoutPillText,
+                                isSelected && styles.timeoutPillTextActive,
+                              ]}
+                            >
+                              {item.label}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </ScrollView>
+                    <Text style={{ fontSize: 11, color: '#6B7280', marginTop: 6 }}>
+                      {autoLockTimeout === 0
+                        ? 'Khóa ngay khi bạn rời khỏi app.'
+                        : `Không yêu cầu xác thực lại nếu quay lại app trong vòng ${
+                            autoLockTimeout < 60
+                              ? `${autoLockTimeout} giây`
+                              : `${Math.round(autoLockTimeout / 60)} phút`
+                          }.`}
+                    </Text>
+                  </View>
+                </>
+              )}
             </View>
           </View>
         </View>
@@ -1291,7 +1357,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                       color="#000000"
                     />
                   </View>
-                  <View>
+                  <View style={{ flex: 1 }}>
                     <Text style={styles.settingRowTitle}>Ẩn số dư nhạy cảm</Text>
                     <Text style={styles.settingRowDesc}>
                       {isBalanceHidden ? 'Đang ẩn số dư với ký tự ••••••' : 'Đang hiển thị số tiền đầy đủ'}
@@ -2027,6 +2093,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     flex: 1,
+    marginRight: 10,
   },
   settingRowIconBox: {
     width: 36,
@@ -2686,5 +2753,26 @@ const styles = StyleSheet.create({
   },
   purgeActionBtnTextDisabled: {
     color: '#9CA3AF',
+  },
+  timeoutPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F9FAFB',
+  },
+  timeoutPillActive: {
+    borderColor: '#000000',
+    backgroundColor: '#FACC15',
+  },
+  timeoutPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#4B5563',
+  },
+  timeoutPillTextActive: {
+    color: '#000000',
+    fontWeight: '900',
   },
 });

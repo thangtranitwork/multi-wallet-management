@@ -163,7 +163,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({
         <View style={styles.modalContent}>
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>
+            <Text style={styles.headerTitle} numberOfLines={1}>
               {isPaymentMode && effectiveDebt
                 ? effectiveDebt.type === 'lend'
                   ? `Thu nợ từ ${effectiveDebt.person_name}`
@@ -440,6 +440,8 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '900',
     color: '#000000',
+    flex: 1,
+    marginRight: 8,
   },
   closeBtn: {
     padding: 6,

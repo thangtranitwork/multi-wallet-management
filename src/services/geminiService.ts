@@ -1,7 +1,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import * as SQLite from 'expo-sqlite';
 import dayjs from 'dayjs';
-import { Category, ReceiptScanResult } from '../types';
+import { Category, ReceiptScanResult, Wallet } from '../types';
 import { getAppSetting, setAppSetting } from '../database/queries';
 
 export const GEMINI_SETTING_KEYS = {
@@ -372,12 +372,13 @@ export async function testGeminiConnection(
 }
 
 /**
- * Đọc và phân tích một hoặc nhiều ảnh hóa đơn bằng Gemini Vision API
+ * Đọc và phân tích một hoặc nhiều ảnh (hóa đơn, đồ ăn, món hàng, màn hình chuyển khoản) bằng Gemini Vision API
  */
 export async function analyzeReceiptImages(
   db: SQLite.SQLiteDatabase,
   imageUris: string[],
-  categories: Category[]
+  categories: Category[],
+  wallets?: Wallet[]
 ): Promise<ReceiptScanResult> {
   const apiKey = await getGeminiApiKey(db);
   if (!apiKey) {
@@ -385,7 +386,7 @@ export async function analyzeReceiptImages(
   }
 
   if (!imageUris || imageUris.length === 0) {
-    throw new Error('Chưa chọn hình ảnh hóa đơn để quét.');
+    throw new Error('Chưa chọn hình ảnh để quét.');
   }
 
   // Chuẩn bị danh sách danh mục để AI phân loại
@@ -393,6 +394,20 @@ export async function analyzeReceiptImages(
     .filter((c) => c.type === 'expense')
     .map((c) => `- ID: "${c.id}", Tên: "${c.name}"`)
     .join('\n');
+
+  // Chuẩn bị danh sách ví của người dùng để AI đối chiếu nhận diện phương thức / ví thanh toán
+  const walletPromptList =
+    wallets && wallets.length > 0
+      ? `DANH SÁCH VÍ / TÀI KHOẢN THANH TOÁN CỦA NGƯỜI DÙNG:
+${wallets
+  .map(
+    (w) =>
+      `- ID: "${w.id}", Tên ví: "${w.name}", Loại: "${w.type}"${
+        w.bank_account ? `, Số TK: "${w.bank_account}"` : ''
+      }`
+  )
+  .join('\n')}`
+      : '';
 
   // Đọc tất cả các ảnh sang Base64
   const imageParts: Array<{ inline_data: { mime_type: string; data: string } }> = [];
@@ -422,27 +437,55 @@ export async function analyzeReceiptImages(
   }
 
   if (imageParts.length === 0) {
-    throw new Error('Không thể đọc dữ liệu ảnh hóa đơn. Vui lòng thử chụp hoặc chọn lại.');
+    throw new Error('Không thể đọc dữ liệu ảnh. Vui lòng thử chụp hoặc chọn lại.');
   }
 
-  const promptText = `Bạn là một chuyên gia kế toán và trợ lý tài chính thông minh.
-Nhiệm vụ của bạn là đọc và phân tích kỹ lưỡng ${imageParts.length} hình ảnh hóa đơn / chứng từ / biên lai thanh toán sau đây để trích xuất dữ liệu chi tiêu dưới dạng JSON chuẩn.
+  const promptText = `Bạn là một trợ lý tài chính và kế toán AI thông minh, sở hữu khả năng thị giác máy tính chuẩn xác.
+Nhiệm vụ của bạn là xem xét kỹ lưỡng ${imageParts.length} hình ảnh do người dùng tải lên và trích xuất thông tin chi tiêu chi tiết dưới dạng JSON chuẩn.
 
-Danh sách các danh mục chi tiêu có sẵn trong ứng dụng:
+HÌNH ẢNH ĐƯỢC TẢI LÊN CÓ THỂ THUỘC CÁC TRƯỜNG HỢP SAU:
+1. ẢNH CHỤP MÓN ĐỒ / ĐỒ ĂN THỨC UỐNG / HÀNG HÓA THỰC TẾ (Ví dụ: 2 hộp cơm trưa, ly trà sữa, tô phở, đôi giày, cây xăng đang bơm, giỏ đồ siêu thị...):
+   - "note": Mô tả ngắn gọn, chính xác món đồ/đồ ăn kèm số lượng nhận diện được. Ví dụ: "2 hộp cơm", "2 ly trà sữa Highlands", "Tô phở bò", "Đổ xăng xe", "Đôi giày thể thao", "Bánh canh cua", "Bánh mì pate".
+   - "amount": Nếu thấy tem giá, menu hoặc nhãn giá rõ ràng thì lấy số tiền. Nếu ảnh chỉ chụp thức ăn/đồ vật không có giá tiền thì trả về 0.
+   - "category_id": Tự động xếp vào danh mục chi tiêu phù hợp nhất trong danh sách bên dưới (ví dụ ảnh cơm/phở/bánh mì/nước uống -> danh mục "Ăn uống").
+   - "items": Bóc tách các món nhận diện được kèm số lượng (ví dụ: [{"name": "Hộp cơm", "quantity": 2, "price": 0}]).
+
+2. HÓA ĐƠN / BIÊN LAI / BILL THANH TOÁN / PHIẾU THU / VÉ:
+   - "amount": Tổng số tiền thanh toán thực tế cuối cùng bằng số nguyên VND (sau khi trừ chiết khấu/giảm giá).
+   - "note": Tên cửa hàng/thương hiệu + tóm tắt món (ví dụ: "Highlands Coffee - 2 Cà phê", "WinMart - Rau củ thịt", "Nhà thuốc Long Châu - Thuốc cảm").
+   - "transacted_at": Ngày giờ in trên hóa đơn theo format "YYYY-MM-DDTHH:mm:ss" hoặc "YYYY-MM-DD", nếu không thấy để null.
+   - "category_id": Chọn ID danh mục phù hợp nhất từ danh sách bên dưới.
+   - "items": Danh sách bóc tách chi tiết từng món hàng (tên món, số lượng, đơn giá).
+
+3. ẢNH MÀN HÌNH CHUYỂN KHOẢN / APP NGÂN HÀNG / VÍ ĐIỆN TỬ (Vietcombank, MB, Techcombank, TPBank, BIDV, ACB, MoMo, ZaloPay, ShopeePay, VNPay...):
+   - "amount": Số tiền giao dịch chuyển khoản / thanh toán.
+   - "note": Nội dung chuyển khoản hoặc tên người/đơn vị nhận tiền (ví dụ: "Chuyển tiền trọ tháng 9", "MoMo - Tiền ăn trưa").
+   - "transacted_at": Ngày giờ giao dịch nếu hiển thị trên màn hình.
+
+4. NHẬN DIỆN PHƯƠNG THỨC & VÍ THANH TOÁN (PAYMENT METHOD & WALLET DETECTION):
+   - Hãy quan sát kỹ toàn bộ ảnh xem có logo app ngân hàng / ví điện tử (MoMo, ZaloPay, Vietcombank, Techcombank, MB Bank, TPBank, VPBank, ACB, BIDV, ShopeePay, Apple Pay...), hoặc dấu hiệu trả tiền mặt, quẹt thẻ tín dụng (Visa, Mastercard, JCB, Napas...) hay không.
+   - "detected_payment_method": Tên phương thức / app / ngân hàng nhận diện được (ví dụ: "MoMo", "Vietcombank", "MB Bank", "Tiền mặt", "Thẻ tín dụng Visa"...), nếu không có để null.
+   - "wallet_id": Đối chiếu với danh sách ví của người dùng bên dưới. Nếu tìm thấy ví phù hợp nhất thì điền ID của ví đó, nếu không trùng hoặc không rõ thì để null.
+
+DANH SÁCH DANH MỤC CHI TIÊU CỦA NGƯỜI DÙNG:
 ${catPromptList}
 
-Hãy phân tích và trả về đúng định dạng JSON sau:
+${walletPromptList}
+
+HÃY TRẢ VỀ ĐÚNG ĐỊNH DẠNG JSON SAU (TUYỆT ĐỐI KHÔNG KÈM TEXT NGOÀI JSON):
 {
-  "amount": number (tổng số tiền thanh toán thực tế cuối cùng bằng số nguyên VND, ví dụ 150000. Nếu có giảm giá hãy lấy số tiền thực khách phải trả. Nếu không tìm thấy trả về 0),
-  "note": string (tên cửa hàng / thương hiệu / dịch vụ + tóm tắt ngắn gọn các mặt hàng chính, ví dụ: "Highlands Coffee - 2 Cà phê phin", "WinMart - Rau củ thịt", "Nhà thuốc Long Châu - Thuốc cảm"),
-  "transacted_at": string hoặc null (ngày giờ in trên hóa đơn theo format "YYYY-MM-DDTHH:mm:ss" hoặc "YYYY-MM-DD". Nếu không thấy thì để null),
-  "category_id": string hoặc null (chọn đúng ID danh mục phù hợp nhất từ danh sách trên, ví dụ "cat_food", "cat_coffee", hoặc null nếu không rõ),
-  "category_name": string hoặc null (tên danh mục tương ứng),
+  "amount": number (số tiền thực tế thanh toán bằng VND, số nguyên. Nếu không thấy giá tiền trả về 0),
+  "note": string (mô tả món đồ/đồ ăn/tên quán/nội dung giao dịch, ví dụ "2 hộp cơm", "Highlands Coffee - 2 Cà phê", "Chuyển khoản tiền phòng"),
+  "transacted_at": string hoặc null (format "YYYY-MM-DDTHH:mm:ss" hoặc "YYYY-MM-DD", nếu không thấy để null),
+  "category_id": string hoặc null (ID danh mục chi tiêu phù hợp nhất từ danh sách trên, hoặc null),
+  "category_name": string hoặc null (tên danh mục tương ứng, hoặc null),
+  "wallet_id": string hoặc null (ID ví phù hợp nhất từ danh sách ví trên nếu nhận diện được, hoặc null),
+  "detected_payment_method": string hoặc null (tên app/ngân hàng/phương thức nhận diện được, ví dụ "MoMo", "Vietcombank", "Tiền mặt"),
   "items": [
     {
-      "name": string (tên món hàng),
+      "name": string (tên món hàng/món ăn),
       "quantity": number (số lượng, mặc định 1),
-      "price": number (đơn giá hoặc thành tiền bằng VND)
+      "price": number (đơn giá hoặc thành tiền bằng VND, nếu không có để 0)
     }
   ],
   "confidence": number (độ tin cậy từ 0.0 đến 1.0)
@@ -510,6 +553,11 @@ LƯU Ý QUAN TRỌNG:
           note: typeof parsed.note === 'string' ? parsed.note.trim() : '',
           category_id: typeof parsed.category_id === 'string' ? parsed.category_id : null,
           category_name: typeof parsed.category_name === 'string' ? parsed.category_name : null,
+          wallet_id: typeof parsed.wallet_id === 'string' ? parsed.wallet_id : null,
+          detected_payment_method:
+            typeof parsed.detected_payment_method === 'string'
+              ? parsed.detected_payment_method.trim()
+              : null,
           transacted_at: typeof parsed.transacted_at === 'string' ? parsed.transacted_at : null,
           items: Array.isArray(parsed.items)
             ? parsed.items.map((it: any) => ({
@@ -535,7 +583,7 @@ LƯU Ý QUAN TRỌNG:
   }
 
   throw new Error(
-    lastError ? formatGeminiErrorMessage(lastError) : 'Không thể phân tích hóa đơn qua các mô hình Gemini hiện có.'
+    lastError ? formatGeminiErrorMessage(lastError) : 'Không thể phân tích ảnh qua các mô hình Gemini hiện có.'
   );
 }
 

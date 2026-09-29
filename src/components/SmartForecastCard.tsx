@@ -38,7 +38,7 @@ export const SmartForecastCard: React.FC<SmartForecastCardProps> = ({
       <View style={styles.topRow}>
         <View style={[styles.badge, { backgroundColor: forecast.badgeColor + '20' }]}>
           <Ionicons name="sparkles" size={12} color={forecast.badgeColor} style={{ marginRight: 4 }} />
-          <Text style={[styles.badgeText, { color: forecast.badgeColor }]}>
+          <Text style={[styles.badgeText, { color: forecast.badgeColor }]} numberOfLines={1}>
             {forecast.badgeText}
           </Text>
         </View>
@@ -127,6 +127,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 8,
+    flexShrink: 1,
+    marginRight: 8,
   },
   badgeText: {
     fontSize: 11,

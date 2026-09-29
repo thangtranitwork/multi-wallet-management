@@ -329,14 +329,14 @@ export const AnalyticsScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
                 <View style={styles.compRowValues}>
                   <View style={styles.compColVal}>
                     <Text style={styles.compSubPeriodLabel}>{period1.label}</Text>
-                    <Text style={[styles.compBigVal, { color: '#E11D48' }]}>
+                    <Text style={[styles.compBigVal, { color: '#E11D48' }]} numberOfLines={1} adjustsFontSizeToFit>
                       {isBalanceHidden ? '••••••' : formatVND(period1.expense)}
                     </Text>
                   </View>
                   <View style={styles.compValDivider} />
                   <View style={styles.compColVal}>
                     <Text style={styles.compSubPeriodLabel}>{period2.label}</Text>
-                    <Text style={[styles.compBigVal, { color: '#6B7280' }]}>
+                    <Text style={[styles.compBigVal, { color: '#6B7280' }]} numberOfLines={1} adjustsFontSizeToFit>
                       {isBalanceHidden ? '••••••' : formatVND(period2.expense)}
                     </Text>
                   </View>
@@ -382,14 +382,14 @@ export const AnalyticsScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
                 <View style={styles.compRowValues}>
                   <View style={styles.compColVal}>
                     <Text style={styles.compSubPeriodLabel}>{period1.label}</Text>
-                    <Text style={[styles.compBigVal, { color: '#15803D' }]}>
+                    <Text style={[styles.compBigVal, { color: '#15803D' }]} numberOfLines={1} adjustsFontSizeToFit>
                       {isBalanceHidden ? '••••••' : formatVND(period1.income)}
                     </Text>
                   </View>
                   <View style={styles.compValDivider} />
                   <View style={styles.compColVal}>
                     <Text style={styles.compSubPeriodLabel}>{period2.label}</Text>
-                    <Text style={[styles.compBigVal, { color: '#6B7280' }]}>
+                    <Text style={[styles.compBigVal, { color: '#6B7280' }]} numberOfLines={1} adjustsFontSizeToFit>
                       {isBalanceHidden ? '••••••' : formatVND(period2.income)}
                     </Text>
                   </View>
@@ -408,14 +408,14 @@ export const AnalyticsScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
                 <View style={styles.compRowValues}>
                   <View style={styles.compColVal}>
                     <Text style={styles.compSubPeriodLabel}>{period1.label}</Text>
-                    <Text style={[styles.compBigVal, { color: period1.net >= 0 ? '#0284C7' : '#D97706' }]}>
+                    <Text style={[styles.compBigVal, { color: period1.net >= 0 ? '#0284C7' : '#D97706' }]} numberOfLines={1} adjustsFontSizeToFit>
                       {isBalanceHidden ? '••••••' : formatVND(period1.net)}
                     </Text>
                   </View>
                   <View style={styles.compValDivider} />
                   <View style={styles.compColVal}>
                     <Text style={styles.compSubPeriodLabel}>{period2.label}</Text>
-                    <Text style={[styles.compBigVal, { color: '#6B7280' }]}>
+                    <Text style={[styles.compBigVal, { color: '#6B7280' }]} numberOfLines={1} adjustsFontSizeToFit>
                       {isBalanceHidden ? '••••••' : formatVND(period2.net)}
                     </Text>
                   </View>
@@ -859,7 +859,7 @@ export const AnalyticsScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
                   <View style={styles.cashFlowRow}>
                     <View style={styles.cashFlowCol}>
                       <Text style={styles.cfLabel}>TỔNG THU</Text>
-                      <Text style={[styles.cfVal, { color: '#15803D' }]}>
+                      <Text style={[styles.cfVal, { color: '#15803D' }]} numberOfLines={1} adjustsFontSizeToFit>
                         {isBalanceHidden ? '••••••' : formatVND(totalIncome)}
                       </Text>
                     </View>
@@ -868,7 +868,7 @@ export const AnalyticsScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
 
                     <View style={styles.cashFlowCol}>
                       <Text style={styles.cfLabel}>TỔNG CHI</Text>
-                      <Text style={[styles.cfVal, { color: '#E11D48' }]}>
+                      <Text style={[styles.cfVal, { color: '#E11D48' }]} numberOfLines={1} adjustsFontSizeToFit>
                         {isBalanceHidden ? '••••••' : formatVND(totalExpense)}
                       </Text>
                     </View>
@@ -882,6 +882,8 @@ export const AnalyticsScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
                           styles.cfVal,
                           { color: netSavings >= 0 ? '#0284C7' : '#D97706' },
                         ]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
                       >
                         {isBalanceHidden ? '••••••' : formatVND(netSavings)}
                       </Text>
@@ -910,7 +912,7 @@ export const AnalyticsScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
 
                     <View style={styles.subMetricBox}>
                       <Text style={styles.subMetricLabel}>CHI TIÊU TB / NGÀY</Text>
-                      <Text style={styles.subMetricValue}>
+                      <Text style={styles.subMetricValue} numberOfLines={1} adjustsFontSizeToFit>
                         {isBalanceHidden ? '••••••' : formatVND(dailyAverage)}
                       </Text>
                     </View>

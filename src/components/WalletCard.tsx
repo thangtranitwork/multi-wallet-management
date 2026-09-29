@@ -106,6 +106,7 @@ export const WalletCard: React.FC<WalletCardProps> = ({
                 isCredit && wallet.balance > 0 && { color: THEME.danger },
               ]}
               numberOfLines={1}
+              adjustsFontSizeToFit
             >
               {displayBalance}
             </Text>
@@ -114,7 +115,7 @@ export const WalletCard: React.FC<WalletCardProps> = ({
           {/* Credit Limit details if applicable */}
           {isCredit && wallet.credit_limit > 0 && (
             <View style={styles.creditInfoRow}>
-              <Text style={styles.creditInfoText}>
+              <Text style={styles.creditInfoText} numberOfLines={1}>
                 Hạn mức: {isBalanceHidden ? '•••' : formatVND(wallet.credit_limit)}
                 {wallet.due_day ? ` • Hạn: Ngày ${wallet.due_day}` : ''}
               </Text>

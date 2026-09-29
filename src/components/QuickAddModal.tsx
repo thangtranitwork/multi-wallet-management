@@ -16,6 +16,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useCustomAlert } from './CustomAlertModal';
 import dayjs from 'dayjs';
 import { useWallet } from '../context/WalletContext';
+import { useSecurity } from '../context/SecurityContext';
 import { NeoDropdown } from './NeoDropdown';
 import { THEME, formatVND } from '../constants';
 import { Wallet, ReceiptScanResult } from '../types';
@@ -87,6 +88,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
   const [isScheduleExpanded, setIsScheduleExpanded] = useState<boolean>(false);
 
   const db = useSQLiteContext();
+  const { temporarilyBypassLock } = useSecurity();
 
   // Receipt Images & Gemini AI OCR states
   const [receiptImages, setReceiptImages] = useState<string[]>([]);
@@ -103,14 +105,14 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
         hapticLight();
         showAlert(
           'Đã đính kèm ảnh',
-          'Ảnh đã được thêm vào giao dịch. Bạn có thể vào Cài đặt để thêm Gemini API Key nếu muốn AI tự động đọc số tiền & thông tin từ hóa đơn.'
+          'Ảnh đã được thêm vào giao dịch. Bạn có thể vào Cài đặt để thêm Gemini API Key nếu muốn AI tự động đọc số tiền & thông tin từ ảnh/hóa đơn.'
         );
         return;
       }
 
       hapticMedium();
       setIsScanningReceipt(true);
-      const res = await analyzeReceiptImages(db, imagesToScan, categories);
+      const res = await analyzeReceiptImages(db, imagesToScan, categories, wallets);
       setScanResult(res);
 
       if (res.amount && res.amount > 0) {
@@ -119,8 +121,33 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
       if (res.note) {
         setNote(res.note);
       }
-      if (res.category_id) {
+      if (res.category_id && categories.some((c) => c.id === res.category_id)) {
         setSelectedCategoryId(res.category_id);
+      }
+      // Tự động nhận diện và gán ví thanh toán
+      if (res.wallet_id && wallets.some((w) => w.id === res.wallet_id)) {
+        setSelectedWalletId(res.wallet_id);
+      } else if (res.detected_payment_method) {
+        const lowerMethod = res.detected_payment_method.toLowerCase();
+        const matchedWallet = wallets.find((w) => {
+          const wName = w.name.toLowerCase();
+          if (lowerMethod.includes('momo') && (wName.includes('momo') || w.type === 'e_wallet')) return true;
+          if (lowerMethod.includes('zalopay') && (wName.includes('zalo') || w.type === 'e_wallet')) return true;
+          if (lowerMethod.includes('shopee') && (wName.includes('shopee') || w.type === 'e_wallet')) return true;
+          if (lowerMethod.includes('tiền mặt') || lowerMethod.includes('cash')) return w.type === 'cash' || wName.includes('tiền mặt');
+          if (lowerMethod.includes('vcb') || lowerMethod.includes('vietcombank')) return wName.includes('vietcombank') || wName.includes('vcb');
+          if (lowerMethod.includes('tcb') || lowerMethod.includes('techcombank')) return wName.includes('techcombank') || wName.includes('tcb');
+          if (lowerMethod.includes('mbbank') || lowerMethod.includes('mb bank') || lowerMethod.includes('quân đội')) return wName.includes('mb');
+          if (lowerMethod.includes('tpbank') || lowerMethod.includes('tpb')) return wName.includes('tpbank') || wName.includes('tpb');
+          if (lowerMethod.includes('acb')) return wName.includes('acb');
+          if (lowerMethod.includes('bidv')) return wName.includes('bidv');
+          if (lowerMethod.includes('vpbank') || lowerMethod.includes('vpb')) return wName.includes('vpbank') || wName.includes('vpb');
+          if (lowerMethod.includes('credit') || lowerMethod.includes('visa') || lowerMethod.includes('master')) return w.type === 'credit';
+          return wName.includes(lowerMethod);
+        });
+        if (matchedWallet) {
+          setSelectedWalletId(matchedWallet.id);
+        }
       }
       if (res.transacted_at) {
         const parsed = dayjs(res.transacted_at);
@@ -137,7 +164,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
           hapticMedium();
           showConfirm(
             'Đổi mô hình mặc định?',
-            `Mô hình "${res.original_model}" đang gặp sự cố. AI đã hoàn tất đọc hóa đơn bằng mô hình dự phòng "${res.used_model}".\n\nBạn có muốn đổi mô hình mặc định sang "${res.used_model}" không?`,
+            `Mô hình "${res.original_model}" đang gặp sự cố. AI đã hoàn tất đọc ảnh bằng mô hình dự phòng "${res.used_model}".\n\nBạn có muốn đổi mô hình mặc định sang "${res.used_model}" không?`,
             async () => {
               await savePreferredGeminiModel(db, res.used_model!);
               hapticSuccess();
@@ -153,7 +180,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
       }
     } catch (err: any) {
       hapticError();
-      showAlert('Lỗi đọc hóa đơn', formatGeminiErrorMessage(err));
+      showAlert('Lỗi nhận diện ảnh', formatGeminiErrorMessage(err));
     } finally {
       setIsScanningReceipt(false);
     }
@@ -161,10 +188,11 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
 
   const handlePickImagesFromLibrary = async () => {
     try {
+      temporarilyBypassLock(120000);
       hapticLight();
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
-        showAlert('Cần cấp quyền', 'Vui lòng cấp quyền truy cập thư viện ảnh để đính kèm hóa đơn.');
+        showAlert('Cần cấp quyền', 'Vui lòng cấp quyền truy cập thư viện ảnh để đính kèm hình ảnh.');
         return;
       }
 
@@ -188,10 +216,11 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
 
   const handleTakePhoto = async () => {
     try {
+      temporarilyBypassLock(120000);
       hapticLight();
       const perm = await ImagePicker.requestCameraPermissionsAsync();
       if (!perm.granted) {
-        showAlert('Cần cấp quyền', 'Vui lòng cấp quyền sử dụng máy ảnh để chụp ảnh hóa đơn.');
+        showAlert('Cần cấp quyền', 'Vui lòng cấp quyền sử dụng máy ảnh để chụp ảnh.');
         return;
       }
 
@@ -2002,8 +2031,8 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
             <View style={styles.receiptSectionContainer}>
               <View style={styles.receiptSectionHeader}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Ionicons name="receipt-outline" size={16} color="#000000" />
-                  <Text style={styles.receiptSectionTitle}>HÓA ĐƠN & CHỨNG TỪ</Text>
+                  <Ionicons name="images-outline" size={16} color="#000000" />
+                  <Text style={styles.receiptSectionTitle}>ẢNH</Text>
                   <View style={styles.aiTag}>
                     <Ionicons name="sparkles" size={10} color="#6366F1" />
                     <Text style={styles.aiTagText}>AI SCAN</Text>
@@ -2095,7 +2124,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                 <View style={styles.receiptScanningBanner}>
                   <ActivityIndicator size="small" color="#4F46E5" />
                   <Text style={styles.receiptScanningText}>
-                    Gemini AI đang phân tích hình ảnh & bóc tách hóa đơn...
+                    Gemini AI đang phân tích hình ảnh & bóc tách dữ liệu...
                   </Text>
                 </View>
               )}
@@ -2106,7 +2135,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                   <View style={styles.receiptResultHeader}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                       <Ionicons name="checkmark-circle" size={15} color="#15803D" />
-                      <Text style={styles.receiptResultTitle}>Dữ liệu đọc bởi Gemini AI</Text>
+                      <Text style={styles.receiptResultTitle}>Dữ liệu nhận diện bởi Gemini AI</Text>
                     </View>
                     {scanResult.confidence !== undefined && (
                       <Text style={styles.receiptConfidenceText}>
@@ -2125,7 +2154,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
 
                     {scanResult.note ? (
                       <View style={styles.receiptResultRow}>
-                        <Text style={styles.receiptResultLabel}>Hóa đơn/Quán:</Text>
+                        <Text style={styles.receiptResultLabel}>Nội dung / Món:</Text>
                         <Text style={styles.receiptResultValue} numberOfLines={1}>{scanResult.note}</Text>
                       </View>
                     ) : null}
@@ -2134,6 +2163,15 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                       <View style={styles.receiptResultRow}>
                         <Text style={styles.receiptResultLabel}>Danh mục gợi ý:</Text>
                         <Text style={styles.receiptResultValue}>{scanResult.category_name}</Text>
+                      </View>
+                    ) : null}
+
+                    {scanResult.detected_payment_method ? (
+                      <View style={styles.receiptResultRow}>
+                        <Text style={styles.receiptResultLabel}>Thanh toán qua:</Text>
+                        <Text style={styles.receiptResultValueBold} numberOfLines={1}>
+                          {scanResult.detected_payment_method}
+                        </Text>
                       </View>
                     ) : null}
                   </View>
@@ -3783,6 +3821,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '900',
     color: '#15803D',
+    maxWidth: '65%',
   },
   receiptItemsSection: {
     marginTop: 8,

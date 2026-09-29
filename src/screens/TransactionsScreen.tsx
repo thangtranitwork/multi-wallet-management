@@ -242,7 +242,7 @@ export const TransactionsScreen: React.FC = () => {
               <View key={dateKey} style={styles.dateGroup}>
                 <View style={styles.dateGroupHeader}>
                   <View style={styles.dateBadge}>
-                    <Text style={styles.dateBadgeText}>{dateLabel}</Text>
+                    <Text style={styles.dateBadgeText} numberOfLines={1}>{dateLabel}</Text>
                   </View>
                   <Text
                     style={[
@@ -253,6 +253,8 @@ export const TransactionsScreen: React.FC = () => {
                         ? { color: '#E11D48' }
                         : { color: '#6B7280' },
                     ]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
                   >
                     {dayTotal !== 0
                       ? isBalanceHidden
@@ -488,6 +490,8 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     borderWidth: 1.5,
     borderColor: '#000000',
+    flexShrink: 1,
+    marginRight: 8,
   },
   dateBadgeText: {
     fontSize: 11,
@@ -498,6 +502,8 @@ const styles = StyleSheet.create({
   dayTotalText: {
     fontSize: 12,
     fontWeight: '800',
+    flexShrink: 0,
+    maxWidth: '50%',
   },
   emptyCardShadow: {
     backgroundColor: '#000000',

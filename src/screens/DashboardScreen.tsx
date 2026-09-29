@@ -228,7 +228,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
                 </Pressable>
               </View>
 
-              <Text style={styles.netWorthBigValue} numberOfLines={1}>
+              <Text style={styles.netWorthBigValue} numberOfLines={1} adjustsFontSizeToFit>
                 {isBalanceHidden ? '•••••••• ₫' : formatVND(summary?.netWorth || 0)}
               </Text>
 
@@ -275,7 +275,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
               <View style={styles.netWorthFooterRow}>
                 <View style={styles.netWorthFooterCol}>
                   <Text style={styles.footerColLabel}>Tài sản khả dụng</Text>
-                  <Text style={[styles.footerColVal, { color: '#15803D' }]}>
+                  <Text style={[styles.footerColVal, { color: '#15803D' }]} numberOfLines={1} adjustsFontSizeToFit>
                     {isBalanceHidden
                       ? '••••••'
                       : formatVND(summary?.totalAssets || 0)}
@@ -286,7 +286,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
 
                 <View style={styles.netWorthFooterCol}>
                   <Text style={styles.footerColLabel}>Tổng nợ phải trả</Text>
-                  <Text style={[styles.footerColVal, { color: '#DC2626' }]}>
+                  <Text style={[styles.footerColVal, { color: '#DC2626' }]} numberOfLines={1} adjustsFontSizeToFit>
                     {isBalanceHidden
                       ? '••••••'
                       : formatVND(summary?.totalLiabilities || 0)}
@@ -345,7 +345,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
             <View style={styles.plannedContentRow}>
               <View style={styles.plannedLeftCol}>
                 <Text style={styles.plannedBalanceLabel}>Tiền có thể tiêu an toàn</Text>
-                <Text style={styles.plannedBalanceVal} numberOfLines={1}>
+                <Text style={styles.plannedBalanceVal} numberOfLines={1} adjustsFontSizeToFit>
                   {isBalanceHidden ? '•••••••• ₫' : formatVND(safeToSpendBalance)}
                 </Text>
                 <Text style={styles.plannedDetailText}>
@@ -556,7 +556,11 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
                     />
                   </View>
                   <Text style={styles.debtCardLabel}>Người khác nợ</Text>
-                  <Text style={[styles.debtCardVal, { color: '#15803D' }]}>
+                  <Text
+                    style={[styles.debtCardVal, { color: '#15803D' }]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                  >
                     {isBalanceHidden
                       ? '••••••'
                       : formatVND(summary?.totalLent || 0)}
@@ -594,7 +598,11 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
                     />
                   </View>
                   <Text style={styles.debtCardLabel}>Cần trả người khác</Text>
-                  <Text style={[styles.debtCardVal, { color: '#E11D48' }]}>
+                  <Text
+                    style={[styles.debtCardVal, { color: '#E11D48' }]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                  >
                     {isBalanceHidden
                       ? '••••••'
                       : formatVND(summary?.totalBorrowed || 0)}

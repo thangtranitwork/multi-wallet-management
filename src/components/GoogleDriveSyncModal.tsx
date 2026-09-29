@@ -248,7 +248,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
             <View style={styles.folderTab}>
               <View style={styles.folderTabLeft}>
                 <Ionicons name="cloud-done-outline" size={16} color="#000000" />
-                <Text style={styles.folderTabText}>GOOGLE DRIVE SYNC</Text>
+                <Text style={styles.folderTabText} numberOfLines={1}>GOOGLE DRIVE SYNC</Text>
               </View>
               <Pressable style={styles.closeBtn} onPress={onClose}>
                 <Ionicons name="close" size={18} color="#000000" />
@@ -553,6 +553,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flex: 1,
+    marginRight: 8,
   },
   folderTabText: {
     fontSize: 13,

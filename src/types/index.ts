@@ -73,6 +73,8 @@ export interface ReceiptScanResult {
   category_id?: string | null;
   category_name?: string | null;
   transacted_at?: string | null;
+  wallet_id?: string | null;
+  detected_payment_method?: string | null;
   items?: ReceiptItem[];
   confidence?: number;
   used_model?: string;

@@ -20,6 +20,7 @@ import { THEME, formatVND } from '../constants';
 import { hapticLight, hapticSuccess, hapticError } from '../utils/haptics';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { useCustomAlert } from './CustomAlertModal';
+import { useSecurity } from '../context/SecurityContext';
 import {
   parseImageUris,
   saveReceiptImages,
@@ -73,6 +74,8 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   const [newDueDate, setNewDueDate] = useState<string>('');
   const [isAmortized, setIsAmortized] = useState(false);
 
+  const { temporarilyBypassLock } = useSecurity();
+
   // Receipt image states
   const [viewingImageUri, setViewingImageUri] = useState<string | null>(null);
   const [isAttachingImages, setIsAttachingImages] = useState<boolean>(false);
@@ -80,6 +83,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   const handleAddImagesFromLibrary = async () => {
     if (!transaction) return;
     try {
+      temporarilyBypassLock(120000);
       hapticLight();
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
@@ -111,6 +115,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   const handleAddImageFromCamera = async () => {
     if (!transaction) return;
     try {
+      temporarilyBypassLock(120000);
       hapticLight();
       const perm = await ImagePicker.requestCameraPermissionsAsync();
       if (!perm.granted) {
@@ -557,6 +562,8 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                   isExpense && styles.expenseColor,
                   isTransfer && styles.transferColor,
                 ]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
               >
                 {isBalanceHidden
                   ? '••••••'
@@ -1046,7 +1053,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                       <Text style={styles.infoDetailLabel}>Đối tác / Người liên quan:</Text>
                     </View>
                     <View style={[styles.infoValueBadge, { backgroundColor: '#FEF3C7' }]}>
-                      <Text style={[styles.infoValueText, { color: '#92400E', fontWeight: '800' }]}>
+                      <Text style={[styles.infoValueText, { color: '#92400E', fontWeight: '800' }]} numberOfLines={1}>
                         {transaction.person_name}
                       </Text>
                     </View>
@@ -1070,13 +1077,13 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
               <View style={styles.sectionCard}>
                 <View style={styles.sectionHeaderRow}>
                   <View style={styles.sectionTitleGroup}>
-                    <Ionicons name="receipt-outline" size={18} color="#000000" />
-                    <Text style={styles.sectionTitle}>
-                      Hóa đơn & Chứng từ {parseImageUris(transaction.image_uris).length > 0 ? `(${parseImageUris(transaction.image_uris).length})` : ''}
+                    <Ionicons name="images-outline" size={18} color="#000000" />
+                    <Text style={styles.sectionTitle} numberOfLines={1}>
+                      Ảnh {parseImageUris(transaction.image_uris).length > 0 ? `(${parseImageUris(transaction.image_uris).length})` : ''}
                     </Text>
                   </View>
 
-                  <View style={{ flexDirection: 'row', gap: 6 }}>
+                  <View style={{ flexDirection: 'row', gap: 6, flexShrink: 0 }}>
                     <Pressable
                       style={styles.actionToggleBtn}
                       onPress={handleAddImageFromCamera}
@@ -1661,16 +1668,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
+    gap: 8,
   },
   sectionTitleGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+    flex: 1,
+    flexShrink: 1,
   },
   sectionTitle: {
     fontSize: 15,
     fontWeight: '900',
     color: '#000000',
+    flexShrink: 1,
   },
   actionToggleBtn: {
     flexDirection: 'row',
@@ -2116,6 +2127,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1.5,
     borderColor: '#000000',
+    maxWidth: '55%',
   },
   infoValueText: {
     fontSize: 13,
@@ -2341,6 +2353,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flex: 1,
+    marginRight: 8,
   },
   creditTermBadge: {
     paddingHorizontal: 8,

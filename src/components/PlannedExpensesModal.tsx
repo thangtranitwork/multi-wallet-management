@@ -346,19 +346,19 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
               <View style={styles.breakdownBar}>
                 <View style={styles.breakdownItem}>
                   <Text style={styles.breakdownLabel}>Tài sản khả dụng</Text>
-                  <Text style={styles.breakdownVal}>{isBalanceHidden ? '••••••' : formatVND(liquidAvailableBalance)}</Text>
+                  <Text style={styles.breakdownVal} numberOfLines={1} adjustsFontSizeToFit>{isBalanceHidden ? '••••••' : formatVND(liquidAvailableBalance)}</Text>
                 </View>
                 <Text style={styles.breakdownSign}>-</Text>
                 <View style={styles.breakdownItem}>
                   <Text style={styles.breakdownLabel}>Dự chi kỳ tới</Text>
-                  <Text style={[styles.breakdownVal, { color: '#DC2626' }]}>
+                  <Text style={[styles.breakdownVal, { color: '#DC2626' }]} numberOfLines={1} adjustsFontSizeToFit>
                     {isBalanceHidden ? '••••••' : formatVND(totalPendingPlanned)}
                   </Text>
                 </View>
                 <Text style={styles.breakdownSign}>=</Text>
                 <View style={styles.breakdownItem}>
                   <Text style={styles.breakdownLabel}>An toàn</Text>
-                  <Text style={[styles.breakdownVal, { color: '#15803D' }]}>
+                  <Text style={[styles.breakdownVal, { color: '#15803D' }]} numberOfLines={1} adjustsFontSizeToFit>
                     {isBalanceHidden ? '••••••' : formatVND(safeToSpendBalance)}
                   </Text>
                 </View>
@@ -489,7 +489,7 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
                           />
                         </View>
                         <View style={styles.itemTextCol}>
-                          <Text style={styles.itemTitle}>{item.title}</Text>
+                          <Text style={styles.itemTitle} numberOfLines={1}>{item.title}</Text>
                           <View style={styles.itemSubRow}>
                             <Text style={styles.itemCatName}>
                               {cat?.name || 'Khác'}
@@ -522,7 +522,7 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
                       </View>
 
                       <View style={styles.itemAmountCol}>
-                        <Text style={styles.itemAmountText}>
+                        <Text style={styles.itemAmountText} numberOfLines={1} adjustsFontSizeToFit>
                           {isBalanceHidden ? '••••••' : formatVND(item.amount)}
                         </Text>
                         {item.actual_amount && item.actual_amount !== item.amount ? (
@@ -1035,6 +1035,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   breakdownItem: {
+    flex: 1,
     alignItems: 'center',
   },
   breakdownLabel: {
@@ -1178,6 +1179,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     flex: 1,
+    marginRight: 8,
   },
   itemCatIconBox: {
     width: 38,

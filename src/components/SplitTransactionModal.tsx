@@ -209,8 +209,8 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
         <View style={styles.sheet}>
           {/* Header */}
           <View style={styles.header}>
-            <View>
-              <Text style={styles.headerTitle}>Tách Tiền Giao Dịch</Text>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <Text style={styles.headerTitle} numberOfLines={1}>Tách Tiền Giao Dịch</Text>
               <Text style={styles.headerSub}>Chuyển một phần chi tiêu thành khoản người khác nợ</Text>
             </View>
             <Pressable style={styles.closeBtn} onPress={onClose}>
@@ -231,7 +231,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
                 </View>
                 <View style={styles.origInfo}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={styles.origTitle}>
+                    <Text style={styles.origTitle} numberOfLines={1}>
                       {transaction.category_name || 'Chi tiêu'}
                     </Text>
                     <Pressable
@@ -573,6 +573,7 @@ const styles = StyleSheet.create({
   },
   origInfo: {
     flex: 1,
+    marginRight: 8,
   },
   origTitle: {
     fontSize: 15,

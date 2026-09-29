@@ -338,7 +338,7 @@ export const DebtsScreen: React.FC = () => {
                       </View>
 
                       <View style={styles.personInfoCol}>
-                        <Text style={styles.personName}>{debt.person_name}</Text>
+                        <Text style={styles.personName} numberOfLines={1}>{debt.person_name}</Text>
                         <Text style={styles.personSubDate}>
                           {debt.person_phone
                             ? debt.person_phone
@@ -371,7 +371,7 @@ export const DebtsScreen: React.FC = () => {
 
                     {/* Remaining & Initial Amounts */}
                     <View style={styles.amountDividerRow}>
-                      <View>
+                      <View style={{ flex: 1, marginRight: 8 }}>
                         <Text style={styles.amountCaption}>
                           Còn lại cần {activeTab === 'lend' ? 'thu' : 'trả'}
                         </Text>
@@ -380,14 +380,16 @@ export const DebtsScreen: React.FC = () => {
                             styles.amountBigVal,
                             { color: activeTab === 'lend' ? '#15803D' : '#E11D48' },
                           ]}
+                          numberOfLines={1}
+                          adjustsFontSizeToFit
                         >
                           {isBalanceHidden ? '••••••' : formatVND(debt.remaining_amount)}
                         </Text>
                       </View>
 
-                      <View style={{ alignItems: 'flex-end' }}>
+                      <View style={{ alignItems: 'flex-end', flexShrink: 1 }}>
                         <Text style={styles.amountCaption}>Tổng ban đầu</Text>
-                        <Text style={styles.amountInitialVal}>
+                        <Text style={styles.amountInitialVal} numberOfLines={1} adjustsFontSizeToFit>
                           {isBalanceHidden ? '••••••' : formatVND(debt.initial_amount)}
                         </Text>
                       </View>
@@ -788,6 +790,7 @@ const styles = StyleSheet.create({
   },
   personInfoCol: {
     flex: 1,
+    marginRight: 8,
   },
   personName: {
     fontSize: 15.5,

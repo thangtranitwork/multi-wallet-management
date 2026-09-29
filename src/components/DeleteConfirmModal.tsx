@@ -104,6 +104,8 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
                   isIncome && styles.incomeColor,
                   isExpense && styles.expenseColor,
                 ]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
               >
                 {isBalanceHidden
                   ? '••••••'
@@ -257,6 +259,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '900',
     color: '#000000',
+    maxWidth: '65%',
   },
   incomeColor: {
     color: '#15803D',

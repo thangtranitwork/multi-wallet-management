@@ -150,7 +150,7 @@ export const WalletsScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
                       </View>
 
                       <View style={styles.walletInfoCol}>
-                        <Text style={styles.walletNameText}>{w.name}</Text>
+                        <Text style={styles.walletNameText} numberOfLines={1}>{w.name}</Text>
                         <Text style={styles.walletCurrencyText}>Đơn vị: {w.currency || 'VND'}</Text>
                       </View>
 
@@ -182,7 +182,7 @@ export const WalletsScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
 
                     {/* Balance Info */}
                     <View style={styles.balanceRow}>
-                      <View>
+                      <View style={{ flex: 1, marginRight: 8 }}>
                         <Text style={styles.balanceLabel}>
                           {isCredit ? 'DƯ NỢ HIỆN TẠI' : 'SỐ DƯ'}
                         </Text>
@@ -191,15 +191,17 @@ export const WalletsScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
                             styles.balanceBigText,
                             isCredit && w.balance > 0 && { color: THEME.danger },
                           ]}
+                          numberOfLines={1}
+                          adjustsFontSizeToFit
                         >
                           {isBalanceHidden ? '•••••• ₫' : formatVND(w.balance)}
                         </Text>
                       </View>
 
                       {isCredit && w.credit_limit > 0 && (
-                        <View style={{ alignItems: 'flex-end' }}>
+                        <View style={{ alignItems: 'flex-end', flexShrink: 1 }}>
                           <Text style={styles.balanceLabel}>HẠN MỨC CÒN LẠI</Text>
-                          <Text style={styles.creditLimitVal}>
+                          <Text style={styles.creditLimitVal} numberOfLines={1} adjustsFontSizeToFit>
                             {isBalanceHidden ? '••••••' : formatVND(creditAvailable)}
                           </Text>
                           {(w.due_day || w.statement_day) && (

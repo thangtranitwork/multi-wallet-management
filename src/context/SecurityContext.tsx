@@ -20,6 +20,7 @@ interface SecurityContextType {
   hasPinCode: boolean;
   isHardwareSupported: boolean;
   hapticsEnabled: boolean;
+  autoLockTimeout: number;
   unlockApp: () => void;
   lockApp: () => void;
   authenticateWithFingerprint: () => Promise<boolean>;
@@ -28,6 +29,8 @@ interface SecurityContextType {
   toggleAppLock: (enabled: boolean) => Promise<void>;
   toggleFingerprint: (enabled: boolean) => Promise<void>;
   toggleHaptics: (enabled: boolean) => Promise<void>;
+  updateAutoLockTimeout: (seconds: number) => Promise<void>;
+  temporarilyBypassLock: (durationMs?: number) => void;
 }
 
 const SecurityContext = createContext<SecurityContextType | undefined>(undefined);
@@ -41,9 +44,14 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [hasPinCode, setHasPinCode] = useState<boolean>(false);
   const [isHardwareSupported, setIsHardwareSupported] = useState<boolean>(false);
   const [hapticsEnabled, setHapticsEnabled] = useState<boolean>(true);
+  const [autoLockTimeout, setAutoLockTimeout] = useState<number>(30);
 
   const storedPinRef = useRef<string>('');
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const isAppLockEnabledRef = useRef<boolean>(false);
+  const autoLockTimeoutRef = useRef<number>(30);
+  const bypassLockUntilRef = useRef<number>(0);
+  const lastBackgroundTimeRef = useRef<number>(0);
 
   // Khởi tạo và đọc cấu hình từ SQLite
   useEffect(() => {
@@ -56,6 +64,7 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           fpVal,
           pinVal,
           hapticsVal,
+          timeoutVal,
           hasHw,
           isEnrolled,
         ] = await Promise.all([
@@ -63,6 +72,7 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           queries.getAppSetting(db, 'use_fingerprint', 'false'),
           queries.getAppSetting(db, 'pin_code', ''),
           queries.getAppSetting(db, 'haptics_enabled', 'true'),
+          queries.getAppSetting(db, 'auto_lock_timeout', '30'),
           LocalAuthentication.hasHardwareAsync(),
           LocalAuthentication.isEnrolledAsync(),
         ]);
@@ -72,16 +82,21 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const lockEnabled = lockVal === 'true';
         const fpEnabled = fpVal === 'true';
         const haptics = hapticsVal !== 'false';
+        const parsedTimeout = parseInt(timeoutVal, 10);
+        const timeout = isNaN(parsedTimeout) ? 30 : parsedTimeout;
 
         setIsAppLockEnabled(lockEnabled);
+        isAppLockEnabledRef.current = lockEnabled;
         setUseFingerprint(fpEnabled);
         storedPinRef.current = pinVal;
         setHasPinCode(pinVal.length > 0);
         setIsHardwareSupported(hasHw && isEnrolled);
         setHapticsEnabled(haptics);
         setGlobalHaptics(haptics);
+        setAutoLockTimeout(timeout);
+        autoLockTimeoutRef.current = timeout;
 
-        // Nếu người dùng đã bật khóa, khóa ngay khi mở app
+        // Nếu người dùng đã bật khóa, khóa ngay khi khởi động app lần đầu
         if (lockEnabled) {
           setIsLocked(true);
         }
@@ -94,16 +109,31 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     // Lắng nghe trạng thái ứng dụng (Background -> Active)
     const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (
+      const isGoingBackground = nextAppState.match(/inactive|background/);
+      const isComingActive =
         appStateRef.current.match(/inactive|background/) &&
-        nextAppState === 'active'
-      ) {
-        // App quay trở lại màn hình chính -> Khóa lại màn hình nếu có bật mã PIN/vân tay
-        queries.getAppSetting(db, 'is_app_lock_enabled', 'false').then((val) => {
-          if (val === 'true') {
+        nextAppState === 'active';
+
+      if (isGoingBackground) {
+        lastBackgroundTimeRef.current = Date.now();
+      }
+
+      if (isComingActive) {
+        const now = Date.now();
+        const isBypassed = now < bypassLockUntilRef.current;
+        const elapsedSec =
+          lastBackgroundTimeRef.current > 0
+            ? (now - lastBackgroundTimeRef.current) / 1000
+            : 999;
+
+        // Xóa cờ bypass tạm thời sau khi đã active trở lại
+        bypassLockUntilRef.current = 0;
+
+        if (!isBypassed && isAppLockEnabledRef.current) {
+          if (elapsedSec >= autoLockTimeoutRef.current) {
             setIsLocked(true);
           }
-        });
+        }
       }
       appStateRef.current = nextAppState;
     });
@@ -120,6 +150,10 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const lockApp = useCallback(() => {
     setIsLocked(true);
+  }, []);
+
+  const temporarilyBypassLock = useCallback((durationMs: number = 90000) => {
+    bypassLockUntilRef.current = Date.now() + durationMs;
   }, []);
 
   const authenticateWithFingerprint = useCallback(async (): Promise<boolean> => {
@@ -169,6 +203,7 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     async (enabled: boolean): Promise<void> => {
       await queries.setAppSetting(db, 'is_app_lock_enabled', enabled ? 'true' : 'false');
       setIsAppLockEnabled(enabled);
+      isAppLockEnabledRef.current = enabled;
       if (!enabled) {
         setIsLocked(false);
       }
@@ -194,6 +229,15 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     [db]
   );
 
+  const updateAutoLockTimeout = useCallback(
+    async (seconds: number): Promise<void> => {
+      await queries.setAppSetting(db, 'auto_lock_timeout', String(seconds));
+      setAutoLockTimeout(seconds);
+      autoLockTimeoutRef.current = seconds;
+    },
+    [db]
+  );
+
   return (
     <SecurityContext.Provider
       value={{
@@ -203,6 +247,7 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         hasPinCode,
         isHardwareSupported,
         hapticsEnabled,
+        autoLockTimeout,
         unlockApp,
         lockApp,
         authenticateWithFingerprint,
@@ -211,6 +256,8 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         toggleAppLock,
         toggleFingerprint,
         toggleHaptics,
+        updateAutoLockTimeout,
+        temporarilyBypassLock,
       }}
     >
       {children}

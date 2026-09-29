@@ -1,4 +1,4 @@
-# MultiWallet (v1.1.9) - Personal Finance & Multi-Source Wallet Management
+# MultiWallet (v1.2.0) - Personal Finance & Multi-Source Wallet Management
 
 A modern, high-performance mobile application built with **React Native (Expo SDK 57)**, **TypeScript**, and **Expo SQLite**, crafted with a distinctive, tactile Neo-Brutalist design language. 
 
@@ -132,25 +132,32 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
   - Centered PIN setup modal with an on-screen tactile keypad (no soft keyboard clutter).
   - 2-step setup flow: Step 1 (Create PIN) $\to$ Step 2 (Confirm PIN).
   - Tactile indicator dots (`● ○ ○ ○`) with error shake animation (`Animated.sequence`) on mismatch.
+- **Seamless Media Picker Bypass**: Intelligently suppresses redundant fingerprint re-prompts when temporarily backgrounding the app to snap photos with the camera or pick gallery receipts.
 - Auto-locks whenever the app is sent to the background or reopened.
 - Configurable toggle and PIN change options in Settings.
 
-### 12. AI Receipt Scanner & OCR (Google Gemini Vision)
-- **Multi-Photo Receipt Scanning**: Capture photos directly from camera or pick multiple receipts from photo gallery.
-- **Intelligent Financial Extraction**:
-  - Automatically parses total payment amount, merchant name / note, date & time, itemized receipt list with unit prices, and auto-matches the best expense category.
-  - Full itemized receipt breakdown review before saving.
-- **Resilient AI Model Fallback Architecture**:
-  - Seamless support for `gemini-2.5-flash`, `gemini-3.5-flash`, `gemini-3.8-flash`, `gemini-2.0-flash`, `gemini-1.5-flash`, and `gemini-flash-latest`.
-  - Automatic fallback cascade across models when facing rate limits (429), high server load (503), or unavailable models.
-- **Local Receipt Gallery**: Store receipts safely on device, preview full-screen images in Transaction Details, and manage receipt attachments anytime.
+### 12. AI Receipt, Invoice & Item Scanner (Google Gemini Vision)
+- **Universal Multi-Photo Recognition**: Capture receipts, bills, invoices, or everyday physical purchases (e.g. meals, groceries, gadgets) directly from the camera or gallery.
+- **Intelligent Financial & Context Extraction**:
+  - Automatically identifies whether an image is a formal invoice or physical items (e.g., lunch boxes, drinks) and generates appropriate notes and category mappings.
+  - Automatically detects **Payment Method / App / Bank** (e.g., Techcombank, Vietcombank, MoMo, ZaloPay, Cash) from payment screens and receipt stamps.
+  - Extracts total payment amount, transaction date & time, itemized breakdown with unit prices, and auto-matches the best expense category.
+- **Resilient AI Model Selection & Cascade Fallback**:
+  - Customizable preferred model in Settings (`gemini-2.5-flash`, `gemini-3.5-flash`, `gemini-3.8-flash`, `gemini-2.0-flash`, `gemini-1.5-flash`, and `gemini-flash-latest`).
+  - Automatic fallback cascade across models when facing rate limits (429), high server load (503), or network issues.
+- **Local Receipt Gallery**: Store attachments safely on device, preview full-screen photos in Transaction Details, and manage receipt attachments anytime.
 
-### 13. Receipt Storage Management & Smart Purge (Dọn Dẹp Bộ Nhớ)
+### 13. Comprehensive UI & Layout Robustness (Thiết kế chống tràn giao diện)
+- Complete design audit across all screens and modals (`Dashboard`, `Transactions`, `Wallets`, `Debts`, `Analytics`, `Settings`, `PlannedExpensesModal`, `NeoDropdown`, etc.).
+- Robust text truncation (`numberOfLines={1}`) and auto font scaling (`adjustsFontSizeToFit`) on large 9-10 digit VND amounts.
+- Fluid flex constraints preventing button collisions or screen overflows on small and large mobile displays.
+
+### 14. Receipt Storage Management & Smart Purge (Dọn Dẹp Bộ Nhớ)
 - **Storage Analyzer**: Real-time scanner calculating transactions, attached receipt photos, and total disk storage occupied.
 - **Customizable Retention Filters**: Scan files older than 30, 60, 90, 180, 365 days or custom day threshold.
 - **1-Tap Safe Disk Purge**: Safely delete expired local image files from disk while preserving transaction history and financial balances intact.
 
-### 14. Settings & Complete Data Backup (Import / Export)
+### 15. Settings & Complete Data Backup (Import / Export)
 - **Google Drive Cloud Sync**: Seamless OAuth 2.0 cloud backup to private Google Drive storage.
 - **Export Backup**:
   - Export all SQLite tables into a standardized JSON file.

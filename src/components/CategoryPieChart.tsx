@@ -108,7 +108,7 @@ export const CategoryPieChart: React.FC<CategoryPieChartProps> = ({
         {/* Center Text in Donut Hole */}
         <View style={[styles.centerCutout, { width: r * 2 - 4, height: r * 2 - 4, borderRadius: (r * 2 - 4) / 2 }]}>
           <Text style={styles.centerLabel}>TỔNG CHI</Text>
-          <Text style={styles.centerAmount} numberOfLines={1}>
+          <Text style={styles.centerAmount} numberOfLines={1} adjustsFontSizeToFit>
             {isBalanceHidden ? '••••••' : formatVND(totalAmount)}
           </Text>
           <Text style={styles.centerCount}>{validData.length} danh mục</Text>
@@ -138,7 +138,7 @@ export const CategoryPieChart: React.FC<CategoryPieChartProps> = ({
             </View>
 
             <View style={styles.legendRight}>
-              <Text style={styles.legendAmount}>
+              <Text style={styles.legendAmount} numberOfLines={1}>
                 {isBalanceHidden ? '••••••' : formatVND(item.total_amount)}
               </Text>
               <View style={styles.percentBadge}>
@@ -210,6 +210,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     flex: 1,
+    marginRight: 8,
   },
   legendIconBox: {
     width: 28,
@@ -230,6 +231,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flexShrink: 1,
   },
   legendAmount: {
     fontSize: 13,

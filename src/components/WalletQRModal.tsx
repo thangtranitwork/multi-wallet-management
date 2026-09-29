@@ -15,6 +15,7 @@ import * as Sharing from 'expo-sharing';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import { useWallet } from '../context/WalletContext';
+import { useSecurity } from '../context/SecurityContext';
 import { Wallet } from '../types';
 import { THEME, formatVND } from '../constants';
 import { hapticLight, hapticSuccess, hapticError } from '../utils/haptics';
@@ -41,6 +42,7 @@ export const WalletQRModal: React.FC<WalletQRModalProps> = ({
   title,
 }) => {
   const { wallets, editWallet } = useWallet();
+  const { temporarilyBypassLock } = useSecurity();
   const { showAlert, showConfirm, AlertModalComponent } = useCustomAlert(false);
 
   if (!wallet) return null;
@@ -48,6 +50,7 @@ export const WalletQRModal: React.FC<WalletQRModalProps> = ({
 
   const handlePickQRImage = async () => {
     try {
+      temporarilyBypassLock(120000);
       hapticLight();
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permissionResult.granted) {
@@ -114,6 +117,7 @@ export const WalletQRModal: React.FC<WalletQRModalProps> = ({
   const handleShareImage = async () => {
     if (!currentWallet.qr_image_uri) return;
     try {
+      temporarilyBypassLock(120000);
       hapticLight();
       const isAvailable = await Sharing.isAvailableAsync();
       if (!isAvailable) {
@@ -141,7 +145,7 @@ export const WalletQRModal: React.FC<WalletQRModalProps> = ({
         <View style={styles.sheet}>
           {/* Header */}
           <View style={styles.header}>
-            <View style={{ flex: 1 }}>
+            <View style={{ flex: 1, marginRight: 8 }}>
               <Text style={styles.headerTitle} numberOfLines={1}>
                 {title || `MÃ QR: ${currentWallet.name.toUpperCase()}`}
               </Text>
@@ -333,6 +337,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
     marginTop: 4,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
   },
   imageMiniBtn: {
     flexDirection: 'row',
@@ -421,11 +427,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 8,
   },
   infoLabel: {
     fontSize: 12,
     fontWeight: '700',
     color: '#64748B',
+    flexShrink: 1,
   },
   infoValWithCopy: {
     flexDirection: 'row',

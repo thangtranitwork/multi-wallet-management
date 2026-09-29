@@ -149,8 +149,8 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
       <SafeAreaView style={styles.safeArea}>
         {/* Header */}
         <View style={styles.header}>
-          <View>
-            <Text style={styles.title}>Quản Lý Danh Mục</Text>
+          <View style={{ flex: 1, marginRight: 8 }}>
+            <Text style={styles.title} numberOfLines={1}>Quản Lý Danh Mục</Text>
           </View>
 
           <Pressable
@@ -247,7 +247,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                 </View>
 
                 <View style={styles.catInfo}>
-                  <Text style={styles.catName}>{cat.name}</Text>
+                  <Text style={styles.catName} numberOfLines={1}>{cat.name}</Text>
                   <Text style={styles.catType}>
                     {cat.type === 'expense' ? 'Khoản chi' : 'Khoản thu'}
                   </Text>
@@ -279,7 +279,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
             <View style={styles.editorCardShadow}>
               <View style={styles.editorCardInner}>
                 <View style={styles.editorHeader}>
-                  <Text style={styles.editorTitle}>
+                  <Text style={styles.editorTitle} numberOfLines={1}>
                     {editingCategory ? 'Sửa Danh Mục' : 'Thêm Danh Mục Mới'}
                   </Text>
                   <Pressable
@@ -530,6 +530,7 @@ const styles = StyleSheet.create({
   catInfo: {
     flex: 1,
     marginLeft: 12,
+    marginRight: 8,
   },
   catName: {
     fontSize: 15,
@@ -584,6 +585,8 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '900',
     color: '#000000',
+    flex: 1,
+    marginRight: 8,
   },
   inputLabel: {
     fontSize: 11,

@@ -97,7 +97,7 @@ export const NeoDropdown: React.FC<NeoDropdownProps> = ({
             <View style={styles.modalContentInner}>
               {/* Header */}
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>{title}</Text>
+                <Text style={styles.modalTitle} numberOfLines={1}>{title}</Text>
                 <Pressable
                   style={styles.closeBtn}
                   onPress={() => setModalVisible(false)}
@@ -211,7 +211,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     color: '#000000',
-    maxWidth: 130,
+    flexShrink: 1,
   },
   triggerTextActive: {
     fontWeight: '900',
@@ -253,6 +253,8 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '900',
     color: '#000000',
+    flex: 1,
+    marginRight: 8,
   },
   closeBtn: {
     width: 32,

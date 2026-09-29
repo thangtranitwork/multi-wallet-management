@@ -15,6 +15,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { Ionicons } from '@expo/vector-icons';
 import { useCustomAlert } from './CustomAlertModal';
 import { useWallet } from '../context/WalletContext';
+import { useSecurity } from '../context/SecurityContext';
 import { Wallet, WalletType } from '../types';
 import { THEME, WALLET_TYPES, WALLET_COLORS, WALLET_ICONS, formatVND } from '../constants';
 import { hapticLight, hapticSuccess, hapticError } from '../utils/haptics';
@@ -37,6 +38,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   mode,
 }) => {
   const { addWallet, editWallet, adjustBalance, removeWallet } = useWallet();
+  const { temporarilyBypassLock } = useSecurity();
   const { showAlert, showConfirm, AlertModalComponent } = useCustomAlert(false);
 
   const currentWallet = wallet || targetWallet || null;
@@ -97,6 +99,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 
   const handlePickQR = async () => {
     try {
+      temporarilyBypassLock(120000);
       hapticLight();
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permissionResult.granted) {
@@ -221,7 +224,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
         <View style={styles.modalContent}>
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>
+            <Text style={styles.headerTitle} numberOfLines={1}>
               {isAdjust
                 ? `Cân đối: ${currentWallet?.name}`
                 : currentWallet
@@ -613,6 +616,8 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '900',
     color: '#000000',
+    flex: 1,
+    marginRight: 8,
   },
   closeBtn: {
     padding: 6,
@@ -869,6 +874,7 @@ const styles = StyleSheet.create({
   qrPreviewActions: {
     flexDirection: 'row',
     gap: 8,
+    flexWrap: 'wrap',
   },
   qrActionBtn: {
     flexDirection: 'row',
