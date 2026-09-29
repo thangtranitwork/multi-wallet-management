@@ -19,7 +19,18 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "intentFilters": [
+        {
+          "action": "SEND",
+          "data": {
+            "mimeType": "image/*"
+          },
+          "category": [
+            "DEFAULT"
+          ]
+        }
+      ]
     },
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -30,6 +41,7 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "./plugins/withShareIntent.js",
       "expo-sqlite",
       "expo-sharing",
       "expo-local-authentication",

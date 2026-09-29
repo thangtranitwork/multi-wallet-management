@@ -14,6 +14,7 @@ import { useWallet } from '../context/WalletContext';
 import { Debt } from '../types';
 import { THEME, formatVND } from '../constants';
 import { hapticLight, hapticSuccess, hapticError } from '../utils/haptics';
+import { ContactPickerSheet } from './ContactPickerSheet';
 
 interface DebtModalProps {
   visible: boolean;
@@ -39,6 +40,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({
   const [type, setType] = useState<'lend' | 'borrow'>(defaultType);
   const [personName, setPersonName] = useState<string>('');
   const [personPhone, setPersonPhone] = useState<string>('');
+  const [showContactPicker, setShowContactPicker] = useState<boolean>(false);
   const [amountStr, setAmountStr] = useState<string>('0');
   const [selectedWalletId, setSelectedWalletId] = useState<string>('');
   const [dueDays, setDueDays] = useState<string>('7');
@@ -221,9 +223,18 @@ export const DebtModal: React.FC<DebtModalProps> = ({
             {!isPaymentMode && (
               <>
                 <View style={styles.sectionContainer}>
-                  <Text style={styles.sectionLabel}>
-                    Tên {type === 'lend' ? 'người mượn tiền' : 'chủ nợ'} (*)
-                  </Text>
+                  <View style={styles.labelWithActionRow}>
+                    <Text style={styles.sectionLabel}>
+                      Tên {type === 'lend' ? 'người mượn tiền' : 'chủ nợ'} (*)
+                    </Text>
+                    <Pressable
+                      style={styles.pickContactBtn}
+                      onPress={() => setShowContactPicker(true)}
+                    >
+                      <Ionicons name="people" size={13} color="#000000" />
+                      <Text style={styles.pickContactBtnText}>Danh bạ</Text>
+                    </Pressable>
+                  </View>
                   <TextInput
                     style={styles.input}
                     placeholder="Ví dụ: Anh Nam, Bạn Tuấn, Chị Mai..."
@@ -406,6 +417,15 @@ export const DebtModal: React.FC<DebtModalProps> = ({
           </ScrollView>
         </View>
         {AlertModalComponent}
+        <ContactPickerSheet
+          visible={showContactPicker}
+          onClose={() => setShowContactPicker(false)}
+          onSelectContact={c => {
+            setPersonName(c.name);
+            if (c.phone) setPersonPhone(c.phone);
+          }}
+          title={type === 'lend' ? 'Chọn người mượn' : 'Chọn chủ nợ'}
+        />
       </View>
     </Modal>
   );
@@ -671,6 +691,28 @@ const styles = StyleSheet.create({
   saveBtnText: {
     fontSize: 16,
     fontWeight: '900',
+    color: '#000000',
+  },
+  labelWithActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  pickContactBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: THEME.popYellow,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    gap: 4,
+  },
+  pickContactBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
     color: '#000000',
   },
 });

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -73,6 +73,19 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   const [isEditingDueDate, setIsEditingDueDate] = useState(false);
   const [newDueDate, setNewDueDate] = useState<string>('');
   const [isAmortized, setIsAmortized] = useState(false);
+
+  const parsedBill = useMemo(() => {
+    if (!transaction?.items) return null;
+    try {
+      const data = JSON.parse(transaction.items);
+      if (Array.isArray(data)) {
+        return { items: data, members: [], adjustments: [] };
+      }
+      return data;
+    } catch {
+      return null;
+    }
+  }, [transaction?.items]);
 
   const { temporarilyBypassLock } = useSecurity();
 
@@ -1466,6 +1479,54 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
               </View>
             )}
 
+            {/* Bill Items Breakdown if present */}
+            {parsedBill && parsedBill.items && parsedBill.items.length > 0 && (
+              <View style={styles.billItemsCardShadow}>
+                <View style={styles.billItemsCardInner}>
+                  <View style={styles.billItemsHeader}>
+                    <Ionicons name="receipt-outline" size={18} color="#000000" />
+                    <Text style={styles.billItemsTitle}>
+                      Món trong đơn ({parsedBill.items.length} món)
+                    </Text>
+                  </View>
+                  {parsedBill.items.map((it: any, idx: number) => (
+                    <View key={it.id || idx} style={styles.billItemRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.billItemName}>
+                          {it.name} {it.quantity > 1 ? `× ${it.quantity}` : ''}
+                        </Text>
+                      </View>
+                      <Text style={styles.billItemPrice}>
+                        {formatVND((it.price || 0) * (it.quantity || 1))}
+                      </Text>
+                    </View>
+                  ))}
+                  {Array.isArray(parsedBill.adjustments) &&
+                    parsedBill.adjustments.map((adj: any) => (
+                      <View key={adj.id} style={styles.billItemRow}>
+                        <Text
+                          style={[
+                            styles.billItemName,
+                            { fontStyle: 'italic', color: THEME.textSecondary },
+                          ]}
+                        >
+                          {adj.type === 'fee' ? 'Phí' : 'Voucher'}: {adj.name}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.billItemPrice,
+                            adj.type === 'discount' && { color: '#059669' },
+                          ]}
+                        >
+                          {adj.type === 'discount' ? '-' : '+'}
+                          {formatVND(adj.amount)}
+                        </Text>
+                      </View>
+                    ))}
+                </View>
+              </View>
+            )}
+
             {/* Actions: Split Bill & Delete */}
             <View style={styles.actionsSection}>
               {transaction.type === 'expense' && onSplit && (
@@ -2572,5 +2633,48 @@ const styles = StyleSheet.create({
   fullscreenImage: {
     width: '94%',
     height: '80%',
+  },
+  billItemsCardShadow: {
+    backgroundColor: '#000000',
+    borderRadius: 16,
+    marginBottom: 16,
+  },
+  billItemsCardInner: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 2.5,
+    borderColor: '#000000',
+    padding: 14,
+    transform: [{ translateX: -3 }, { translateY: -3 }],
+  },
+  billItemsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+    paddingBottom: 6,
+    borderBottomWidth: 1.5,
+    borderBottomColor: '#E5E7EB',
+  },
+  billItemsTitle: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  billItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  billItemName: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  billItemPrice: {
+    fontSize: 12.5,
+    fontWeight: '900',
+    color: '#000000',
   },
 });

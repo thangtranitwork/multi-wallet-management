@@ -61,9 +61,18 @@ export async function initDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
       created_at TEXT NOT NULL,
       is_amortized INTEGER DEFAULT 0,
       image_uris TEXT DEFAULT NULL,
+      items TEXT DEFAULT NULL,
       FOREIGN KEY (wallet_id) REFERENCES wallets(id) ON DELETE CASCADE,
       FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL,
       FOREIGN KEY (debt_id) REFERENCES debts(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS contacts (
+      id TEXT PRIMARY KEY NOT NULL,
+      name TEXT NOT NULL,
+      phone TEXT,
+      note TEXT,
+      created_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS debt_payments (
@@ -109,6 +118,7 @@ export async function initDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_debts_status ON debts(status);
     CREATE INDEX IF NOT EXISTS idx_planned_target_date ON planned_expenses(target_date ASC);
     CREATE INDEX IF NOT EXISTS idx_planned_status ON planned_expenses(status);
+    CREATE INDEX IF NOT EXISTS idx_contacts_name ON contacts(name);
   `);
 
   // Safe ALTER TABLE migrations for existing installations
@@ -125,6 +135,8 @@ export async function initDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
   try { await db.execAsync('ALTER TABLE planned_expenses ADD COLUMN parent_tx_id TEXT DEFAULT NULL;'); } catch {}
   try { await db.execAsync('ALTER TABLE transactions ADD COLUMN is_amortized INTEGER DEFAULT 0;'); } catch {}
   try { await db.execAsync('ALTER TABLE transactions ADD COLUMN image_uris TEXT DEFAULT NULL;'); } catch {}
+  try { await db.execAsync('ALTER TABLE transactions ADD COLUMN items TEXT DEFAULT NULL;'); } catch {}
+
 
   // ONLY seed default standard categories (no wallets, no transactions, no debts)
   const catCount = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM categories');

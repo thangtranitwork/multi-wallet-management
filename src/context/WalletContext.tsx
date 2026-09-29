@@ -9,6 +9,7 @@ import {
   FinancialSummary,
   CategorySpending,
   PlannedExpense,
+  ContactPerson,
 } from '../types';
 import * as queries from '../database/queries';
 import * as backup from '../database/backup';
@@ -39,6 +40,11 @@ interface WalletContextType {
   setActiveWalletFilter: (id: string | null) => void;
   refreshData: () => Promise<void>;
   updateCreditTransactionDueDate: (params: { txId: string; newFirstDueDate: string }) => Promise<void>;
+  contacts: ContactPerson[];
+  recentDebtPersons: Array<{ name: string; phone?: string | null }>;
+  addContact: (contact: { name: string; phone?: string | null; note?: string | null }) => Promise<ContactPerson>;
+  editContact: (contact: Partial<ContactPerson> & { id: string }) => Promise<void>;
+  removeContact: (id: string) => Promise<void>;
   addTransaction: (tx: {
     type: 'expense' | 'income' | 'transfer';
     amount: number;
@@ -48,6 +54,7 @@ interface WalletContextType {
     note?: string;
     transacted_at?: string;
     image_uris?: string[] | null;
+    items?: string | null;
   }) => Promise<void>;
   removeTransaction: (id: string) => Promise<void>;
   updateTransactionCategory: (transactionId: string, categoryId: string | null) => Promise<void>;
@@ -56,7 +63,7 @@ interface WalletContextType {
   updateTransactionAmortized: (transactionId: string, isAmortized: boolean) => Promise<void>;
   updateTransactionImages: (transactionId: string, imageUris: string[]) => Promise<void>;
   purgeReceiptImages: (olderThanDays: number) => Promise<{ cleanedTransactions: number; cleanedImages: number; freedFormatted: string; cutoffDateStr: string }>;
-  splitTransaction: (transactionId: string, splits: queries.SplitItem[]) => Promise<void>;
+  splitTransaction: (transactionId: string, splits: queries.SplitItem[], updatedOriginalItems?: string | null) => Promise<void>;
   addWallet: (wallet: Omit<Wallet, 'id' | 'created_at'>) => Promise<void>;
   editWallet: (wallet: Partial<Wallet> & { id: string }) => Promise<void>;
   adjustBalance: (walletId: string, newBalance: number, note?: string, includeInReports?: boolean) => Promise<void>;
@@ -129,6 +136,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [debts, setDebts] = useState<Debt[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [plannedExpenses, setPlannedExpenses] = useState<PlannedExpense[]>([]);
+  const [contacts, setContacts] = useState<ContactPerson[]>([]);
+  const [recentDebtPersons, setRecentDebtPersons] = useState<Array<{ name: string; phone?: string | null }>>([]);
   const [summary, setSummary] = useState<FinancialSummary | null>(null);
   const [categorySpendings, setCategorySpendings] = useState<CategorySpending[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -207,6 +216,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         fetchedPlanned,
         fetchedSummary,
         fetchedSpendings,
+        fetchedContacts,
+        fetchedRecentDebtPersons,
       ] = await Promise.all([
         queries.getWallets(db),
         queries.getTransactions(db, { limit: 100 }),
@@ -215,6 +226,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         queries.getPlannedExpenses(db),
         queries.getFinancialSummary(db),
         queries.getCategorySpending(db),
+        queries.getContacts(db),
+        queries.getRecentDebtPersons(db),
       ]);
 
       setWallets(fetchedWallets);
@@ -224,6 +237,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setPlannedExpenses(fetchedPlanned);
       setSummary(fetchedSummary);
       setCategorySpendings(fetchedSpendings);
+      setContacts(fetchedContacts);
+      setRecentDebtPersons(fetchedRecentDebtPersons);
 
       // Tự động đồng bộ số dư ra Android Home Screen Widget
       if (fetchedSummary) {
@@ -321,6 +336,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     note?: string;
     transacted_at?: string;
     image_uris?: string[] | null;
+    items?: string | null;
   }) => {
     const id = 'tx_' + Date.now();
     await queries.createTransaction(db, {
@@ -383,8 +399,43 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     triggerAutoBackup();
   };
 
-  const splitTransaction = async (transactionId: string, splits: queries.SplitItem[]) => {
-    await queries.splitTransactionIntoDebts(db, transactionId, splits);
+  const splitTransaction = async (
+    transactionId: string,
+    splits: queries.SplitItem[],
+    updatedOriginalItems?: string | null
+  ) => {
+    await queries.splitTransactionIntoDebts(db, transactionId, splits, updatedOriginalItems);
+    await refreshData();
+    triggerAutoBackup();
+  };
+
+  const addContact = async (contact: {
+    name: string;
+    phone?: string | null;
+    note?: string | null;
+  }) => {
+    const id = 'c_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+    const newContact: ContactPerson = {
+      id,
+      name: contact.name.trim(),
+      phone: contact.phone?.trim() || null,
+      note: contact.note?.trim() || null,
+      created_at: new Date().toISOString(),
+    };
+    await queries.createContact(db, newContact);
+    await refreshData();
+    triggerAutoBackup();
+    return newContact;
+  };
+
+  const editContact = async (contact: Partial<ContactPerson> & { id: string }) => {
+    await queries.updateContact(db, contact);
+    await refreshData();
+    triggerAutoBackup();
+  };
+
+  const removeContact = async (id: string) => {
+    await queries.deleteContact(db, id);
     await refreshData();
     triggerAutoBackup();
   };
@@ -577,6 +628,11 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         debts,
         categories,
         plannedExpenses,
+        contacts,
+        recentDebtPersons,
+        addContact,
+        editContact,
+        removeContact,
         summary,
         categorySpendings,
         totalPendingPlanned,

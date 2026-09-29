@@ -12,6 +12,7 @@ import {
   PlannedExpenseStatus,
   CategoryComparisonItem,
   PeriodComparisonResult,
+  ContactPerson,
 } from '../types';
 
 // ==================== WALLET QUERIES ====================
@@ -210,6 +211,7 @@ export async function createTransaction(
     note?: string;
     transacted_at: string;
     image_uris?: string[] | string | null;
+    items?: string | null;
   }
 ): Promise<void> {
   await db.withTransactionAsync(async () => {
@@ -245,8 +247,8 @@ export async function createTransaction(
     }
 
     await db.runAsync(
-      `INSERT INTO transactions (id, type, amount, wallet_id, to_wallet_id, category_id, note, transacted_at, created_at, image_uris)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO transactions (id, type, amount, wallet_id, to_wallet_id, category_id, note, transacted_at, created_at, image_uris, items)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         tx.id,
         tx.type,
@@ -258,6 +260,7 @@ export async function createTransaction(
         tx.transacted_at,
         now,
         serializedUris,
+        tx.items || null,
       ]
     );
   });
@@ -462,12 +465,14 @@ export interface SplitItem {
   personPhone?: string | null;
   amount: number;
   note?: string;
+  itemsSummary?: string;
 }
 
 export async function splitTransactionIntoDebts(
   db: SQLite.SQLiteDatabase,
   transactionId: string,
-  splits: SplitItem[]
+  splits: SplitItem[],
+  updatedOriginalItems?: string | null
 ): Promise<void> {
   await db.withTransactionAsync(async () => {
     const tx = await db.getFirstAsync<Transaction>(
@@ -494,6 +499,8 @@ export async function splitTransactionIntoDebts(
       const debtId = `debt_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 6)}`;
       const debtNote = item.note?.trim()
         ? item.note.trim()
+        : item.itemsSummary?.trim()
+        ? `${item.itemsSummary.trim()} (Tách từ: ${tx.note || 'Chi tiêu'})`
         : `Tách từ GD: ${tx.note || 'Chi tiêu'}`;
 
       // Thêm vào bảng debts
@@ -539,9 +546,10 @@ export async function splitTransactionIntoDebts(
         ? tx.note
         : tx.note ? `${tx.note} ${splitTag}` : splitTag;
 
+      const finalItems = updatedOriginalItems !== undefined ? updatedOriginalItems : tx.items;
       await db.runAsync(
-        'UPDATE transactions SET amount = ?, note = ? WHERE id = ?',
-        [remainingAmount, updatedNote, transactionId]
+        'UPDATE transactions SET amount = ?, note = ?, items = ? WHERE id = ?',
+        [remainingAmount, updatedNote, finalItems || null, transactionId]
       );
     } else {
       // Nếu tách hết 100%, xóa giao dịch chi tiêu gốc (vì toàn bộ đã chuyển thành debt_lend)
@@ -1937,6 +1945,85 @@ export async function updateCreditTransactionDueDate(
       );
     }
   });
+}
+
+// ==================== CONTACT QUERIES ====================
+
+export async function getContacts(db: SQLite.SQLiteDatabase): Promise<ContactPerson[]> {
+  return await db.getAllAsync<ContactPerson>(
+    'SELECT * FROM contacts ORDER BY name ASC'
+  );
+}
+
+export async function createContact(
+  db: SQLite.SQLiteDatabase,
+  contact: Omit<ContactPerson, 'created_at'>
+): Promise<void> {
+  const now = new Date().toISOString();
+  await db.runAsync(
+    `INSERT INTO contacts (id, name, phone, note, created_at)
+     VALUES (?, ?, ?, ?, ?)`,
+    [
+      contact.id,
+      contact.name.trim(),
+      contact.phone?.trim() || null,
+      contact.note?.trim() || null,
+      now,
+    ]
+  );
+}
+
+export async function updateContact(
+  db: SQLite.SQLiteDatabase,
+  contact: Partial<ContactPerson> & { id: string }
+): Promise<void> {
+  const fields: string[] = [];
+  const params: any[] = [];
+
+  if (contact.name !== undefined) {
+    fields.push('name = ?');
+    params.push(contact.name.trim());
+  }
+  if (contact.phone !== undefined) {
+    fields.push('phone = ?');
+    params.push(contact.phone?.trim() || null);
+  }
+  if (contact.note !== undefined) {
+    fields.push('note = ?');
+    params.push(contact.note?.trim() || null);
+  }
+
+  if (fields.length === 0) return;
+
+  params.push(contact.id);
+  await db.runAsync(
+    `UPDATE contacts SET ${fields.join(', ')} WHERE id = ?`,
+    params
+  );
+}
+
+export async function deleteContact(
+  db: SQLite.SQLiteDatabase,
+  id: string
+): Promise<void> {
+  await db.runAsync('DELETE FROM contacts WHERE id = ?', [id]);
+}
+
+export async function getRecentDebtPersons(
+  db: SQLite.SQLiteDatabase
+): Promise<Array<{ name: string; phone?: string | null }>> {
+  const rows = await db.getAllAsync<{ person_name: string; person_phone: string | null }>(
+    `SELECT person_name, person_phone, MAX(created_at) as last_seen
+     FROM debts
+     WHERE person_name IS NOT NULL AND TRIM(person_name) != ''
+     GROUP BY TRIM(person_name)
+     ORDER BY last_seen DESC
+     LIMIT 20`
+  );
+  return rows.map(r => ({
+    name: r.person_name.trim(),
+    phone: r.person_phone?.trim() || null,
+  }));
 }
 
 

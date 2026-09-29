@@ -13,6 +13,11 @@ import { QuickAddModal } from '../components/QuickAddModal';
 import { THEME } from '../constants';
 import { hapticMedium } from '../utils/haptics';
 import { saveWidgetData, syncWidgetData } from '../services/widgetSyncService';
+import {
+  getInitialSharedImage,
+  subscribeToSharedImages,
+  clearSharedImage,
+} from '../services/shareIntentService';
 
 const Tab = createBottomTabNavigator();
 const NullComponent = () => null;
@@ -25,6 +30,7 @@ export const RootNavigator: React.FC = () => {
     amount?: number;
     note?: string;
   }>({});
+  const [sharedReceiptUri, setSharedReceiptUri] = useState<string | null>(null);
   const [centerPressed, setCenterPressed] = useState(false);
 
   useEffect(() => {
@@ -93,9 +99,28 @@ export const RootNavigator: React.FC = () => {
       handleNotificationData(data);
     });
 
+    // Xử lý khi nhận được ảnh biên lai chia sẻ từ app ngân hàng / ví điện tử
+    const handleReceivedSharedImage = (uri: string) => {
+      if (!uri) return;
+      setSharedReceiptUri(uri);
+      setQuickAddPrefill({});
+      setQuickAddType('expense');
+      setQuickAddVisible(true);
+      clearSharedImage();
+    };
+
+    getInitialSharedImage().then((uri) => {
+      if (uri) {
+        handleReceivedSharedImage(uri);
+      }
+    });
+
+    const shareSub = subscribeToSharedImages(handleReceivedSharedImage);
+
     return () => {
       subscription.remove();
       notificationSub.remove();
+      shareSub();
     };
   }, []);
 
@@ -247,11 +272,13 @@ export const RootNavigator: React.FC = () => {
         onClose={() => {
           setQuickAddVisible(false);
           setQuickAddPrefill({});
+          setSharedReceiptUri(null);
         }}
         defaultType={quickAddType}
         prefillCategoryId={quickAddPrefill.categoryId}
         prefillAmount={quickAddPrefill.amount}
         prefillNote={quickAddPrefill.note}
+        initialReceiptImageUri={sharedReceiptUri}
       />
     </>
   );

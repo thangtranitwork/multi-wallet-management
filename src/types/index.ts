@@ -52,6 +52,7 @@ export interface Transaction {
   created_at: string;
   is_amortized?: number; // 0 = false, 1 = true (trải đều cho các ngày trong tháng khi thống kê)
   image_uris?: string | null; // Danh sách đường dẫn ảnh hóa đơn (JSON array string)
+  items?: string | null; // Danh sách món / cấu trúc hóa đơn chi tiết (JSON array string)
   // Joined fields for display
   wallet_name?: string;
   to_wallet_name?: string;
@@ -202,6 +203,46 @@ export interface PlannedExpense {
   category_name?: string;
   category_icon?: string;
   category_color?: string;
+}
+
+export interface ContactPerson {
+  id: string;
+  name: string;
+  phone?: string | null;
+  note?: string | null;
+  created_at: string;
+}
+
+export interface BillMember {
+  id: string; // 'me' hoặc id duy nhất
+  name: string;
+  phone?: string | null;
+  isPayer?: boolean;
+}
+
+export interface BillItem {
+  id: string;
+  name: string;
+  quantity: number;
+  price: number;
+  assignedMemberIds: string[]; // Danh sách memberId cùng chia món này
+}
+
+export interface BillAdjustment {
+  id: string;
+  type: 'fee' | 'discount'; // 'fee' là phụ phí / ship, 'discount' là giảm giá / voucher
+  name: string;
+  amount: number;
+}
+
+export interface BillMemberShare {
+  memberId: string;
+  memberName: string;
+  memberPhone?: string | null;
+  isPayer: boolean;
+  itemsSubtotal: number;
+  adjustmentShare: number;
+  finalAmount: number;
 }
 
 

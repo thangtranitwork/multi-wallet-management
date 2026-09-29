@@ -40,6 +40,7 @@ interface QuickAddModalProps {
   prefillWalletId?: string;
   prefillToWalletId?: string;
   prefillDate?: Date;
+  initialReceiptImageUri?: string | null;
 }
 
 export const QuickAddModal: React.FC<QuickAddModalProps> = ({
@@ -52,6 +53,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
   prefillWalletId,
   prefillToWalletId,
   prefillDate,
+  initialReceiptImageUri,
 }) => {
   const {
     wallets,
@@ -287,11 +289,19 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
       setIsPickerExpanded(false);
 
       // Reset receipt images & AI scan states
-      setReceiptImages([]);
-      setScanResult(null);
-      setIsScanningReceipt(false);
-      setShowItemsBreakdown(false);
-      setViewingImageUri(null);
+      if (initialReceiptImageUri) {
+        setReceiptImages([initialReceiptImageUri]);
+        setScanResult(null);
+        setShowItemsBreakdown(false);
+        setViewingImageUri(null);
+        triggerGeminiScan([initialReceiptImageUri]);
+      } else {
+        setReceiptImages([]);
+        setScanResult(null);
+        setIsScanningReceipt(false);
+        setShowItemsBreakdown(false);
+        setViewingImageUri(null);
+      }
 
       let currentWId = selectedWalletId;
       if (prefillWalletId) {
