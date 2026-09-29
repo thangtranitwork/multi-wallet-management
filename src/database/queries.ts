@@ -1308,6 +1308,101 @@ export async function getDailyBreakdown(
   });
 }
 
+export interface DailyAssetPoint {
+  date: string;           // 'YYYY-MM-DD'
+  totalAssets: number;    // Tổng tài sản tại cuối ngày
+  income: number;         // Thu nhập thực tế trong ngày (raw, không trải đều)
+  expense: number;        // Chi tiêu thực tế trong ngày (raw, không trải đều)
+  delta: number;          // income - expense trong ngày
+  previousAssets: number; // Tổng tài sản ngày hôm trước
+}
+
+export async function getDailyAssetTrajectory(
+  db: SQLite.SQLiteDatabase,
+  currentTotalAssets: number,
+  startDateIso?: string | null,
+  endDateIso?: string | null
+): Promise<DailyAssetPoint[]> {
+  // Lấy các giao dịch thực tế theo đúng transacted_at (bỏ qua is_amortized, không trải đều)
+  const rows = await db.getAllAsync<{
+    date: string;
+    income: number;
+    expense: number;
+  }>(
+    `SELECT
+       substr(transacted_at, 1, 10) as date,
+       SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) as income,
+       SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as expense
+     FROM transactions
+     WHERE type IN ('income', 'expense')
+     GROUP BY substr(transacted_at, 1, 10)
+     ORDER BY date ASC`
+  );
+
+  const rowMap = new Map<string, { income: number; expense: number }>();
+  for (const r of rows) {
+    rowMap.set(r.date, { income: r.income || 0, expense: r.expense || 0 });
+  }
+
+  const now = dayjs();
+  const startDay = startDateIso
+    ? dayjs(startDateIso).startOf('day')
+    : rows.length > 0
+    ? dayjs(rows[0].date).startOf('day')
+    : now.subtract(30, 'day').startOf('day');
+
+  const targetEnd = endDateIso ? dayjs(endDateIso).endOf('day') : now.endOf('day');
+  const endDay = targetEnd.isAfter(now) ? now.endOf('day') : targetEnd;
+
+  // Tính tổng biến động ròng phát sinh sau endDay đến hiện tại (nếu đang xem kỳ quá khứ)
+  let deltaAfterEnd = 0;
+  for (const [dateStr, val] of rowMap.entries()) {
+    if (dayjs(dateStr).isAfter(endDay, 'day') && !dayjs(dateStr).isAfter(now, 'day')) {
+      deltaAfterEnd += (val.income - val.expense);
+    }
+  }
+
+  // Số dư tổng tài sản tại mốc kết thúc kỳ chọn
+  const runningAssetsAtEnd = currentTotalAssets - deltaAfterEnd;
+
+  // Xây dựng danh sách các ngày liên tục
+  const daysList: { date: string; income: number; expense: number; delta: number }[] = [];
+  let cur = startDay;
+  while (cur.isBefore(endDay) || cur.isSame(endDay, 'day')) {
+    const dStr = cur.format('YYYY-MM-DD');
+    const dayData = rowMap.get(dStr) || { income: 0, expense: 0 };
+    daysList.push({
+      date: dStr,
+      income: dayData.income,
+      expense: dayData.expense,
+      delta: dayData.income - dayData.expense,
+    });
+    cur = cur.add(1, 'day');
+  }
+
+  if (daysList.length === 0) return [];
+
+  // Đi ngược từ ngày cuối về ngày đầu để truy ngược số dư cuối từng ngày
+  const resultReversed: DailyAssetPoint[] = [];
+  let currentBalance = runningAssetsAtEnd;
+
+  for (let i = daysList.length - 1; i >= 0; i--) {
+    const d = daysList[i];
+    const prevBalance = currentBalance - d.delta;
+    resultReversed.push({
+      date: d.date,
+      totalAssets: currentBalance,
+      income: d.income,
+      expense: d.expense,
+      delta: d.delta,
+      previousAssets: prevBalance,
+    });
+    currentBalance = prevBalance;
+  }
+
+  return resultReversed.reverse();
+}
+
 export async function getAdvancedAnalyticsMetrics(
   db: SQLite.SQLiteDatabase,
   startDateIso?: string | null,

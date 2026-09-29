@@ -298,6 +298,7 @@ adb install android/app/build/outputs/apk/release/app-release.apk
 │   └── withShareIntent.js          # Expo Config Plugin injecting Android SEND action for receipts
 ├── src/
 │   ├── components/                 # Reusable Neo-Brutalist UI components
+│   │   ├── analytics/              # Modular analytics sub-tabs & burn-down velocity charts
 │   │   ├── CategoryManagementModal.tsx # Custom category creation & color/icon picker
 │   │   ├── CloudinaryModal.tsx     # Cloudinary cloud sync & local image migration sheet
 │   │   ├── DebtModal.tsx           # Loan creation & payment modal
