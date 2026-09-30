@@ -1,6 +1,6 @@
 {
   "name": "multi-wallet-management",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "main": "index.ts",
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
@@ -15,6 +15,7 @@
     "expo-document-picker": "~57.0.1",
     "expo-file-system": "~57.0.6",
     "expo-haptics": "~57.0.2",
+    "expo-image-manipulator": "~57.0.20",
     "expo-image-picker": "~57.0.18",
     "expo-local-authentication": "~57.0.2",
     "expo-notifications": "~57.0.17",
@@ -31,8 +32,11 @@
     "react-native-svg": "15.15.4"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "@types/react": "~19.2.2",
+    "jest": "^30.5.2",
     "patch-package": "^8.0.1",
+    "ts-jest": "^29.4.14",
     "typescript": "~6.0.3"
   },
   "scripts": {

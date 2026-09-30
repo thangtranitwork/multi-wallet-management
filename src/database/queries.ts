@@ -449,6 +449,71 @@ export async function updateTransactionTime(
   );
 }
 
+export async function updateTransactionDetails(
+  db: SQLite.SQLiteDatabase,
+  id: string,
+  updates: {
+    amount?: number;
+    note?: string;
+    wallet_id?: string;
+    to_wallet_id?: string | null;
+    category_id?: string | null;
+    transacted_at?: string;
+  }
+): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    const tx = await db.getFirstAsync<Transaction>(
+      'SELECT * FROM transactions WHERE id = ?',
+      [id]
+    );
+    if (!tx) throw new Error('Không tìm thấy giao dịch để cập nhật');
+
+    const targetWalletId = updates.wallet_id !== undefined ? updates.wallet_id : tx.wallet_id;
+    const targetToWalletId = updates.to_wallet_id !== undefined ? updates.to_wallet_id : tx.to_wallet_id;
+    const targetAmount = updates.amount !== undefined ? updates.amount : tx.amount;
+
+    // 1. Hoàn tác ảnh hưởng số dư cũ của giao dịch trên ví cũ
+    if (tx.type === 'expense' || tx.type === 'debt_lend' || tx.type === 'debt_repay') {
+      await db.runAsync('UPDATE wallets SET balance = balance + ? WHERE id = ?', [tx.amount, tx.wallet_id]);
+    } else if (tx.type === 'income' || tx.type === 'debt_borrow' || tx.type === 'debt_collect') {
+      await db.runAsync('UPDATE wallets SET balance = balance - ? WHERE id = ?', [tx.amount, tx.wallet_id]);
+    } else if (tx.type === 'transfer' && tx.to_wallet_id) {
+      await db.runAsync('UPDATE wallets SET balance = balance + ? WHERE id = ?', [tx.amount, tx.wallet_id]);
+      await db.runAsync('UPDATE wallets SET balance = balance - ? WHERE id = ?', [tx.amount, tx.to_wallet_id]);
+    }
+
+    // 2. Áp dụng ảnh hưởng số dư mới với targetWalletId và targetAmount
+    if (tx.type === 'expense' || tx.type === 'debt_lend' || tx.type === 'debt_repay') {
+      await db.runAsync('UPDATE wallets SET balance = balance - ? WHERE id = ?', [targetAmount, targetWalletId]);
+    } else if (tx.type === 'income' || tx.type === 'debt_borrow' || tx.type === 'debt_collect') {
+      await db.runAsync('UPDATE wallets SET balance = balance + ? WHERE id = ?', [targetAmount, targetWalletId]);
+    } else if (tx.type === 'transfer' && targetToWalletId) {
+      await db.runAsync('UPDATE wallets SET balance = balance - ? WHERE id = ?', [targetAmount, targetWalletId]);
+      await db.runAsync('UPDATE wallets SET balance = balance + ? WHERE id = ?', [targetAmount, targetToWalletId]);
+    }
+
+    // 3. Cập nhật bản ghi transactions
+    const newNote = updates.note !== undefined ? updates.note : (tx.note || null);
+    const newCatId = updates.category_id !== undefined ? updates.category_id : (tx.category_id || null);
+    const newTime = updates.transacted_at !== undefined ? updates.transacted_at : tx.transacted_at;
+
+    await db.runAsync(
+      `UPDATE transactions 
+       SET amount = ?, note = ?, wallet_id = ?, to_wallet_id = ?, category_id = ?, transacted_at = ?
+       WHERE id = ?`,
+      [
+        targetAmount,
+        newNote || null,
+        targetWalletId,
+        targetToWalletId || null,
+        newCatId || null,
+        newTime,
+        id,
+      ]
+    );
+  });
+}
+
 export async function updateTransactionAmortized(
   db: SQLite.SQLiteDatabase,
   transactionId: string,
@@ -1864,6 +1929,7 @@ export async function createCreditExpenseWithPlan(
     feePerInstallment?: number;
     firstDueDate: string; // YYYY-MM-DD (Hạn trả của kỳ tiếp theo chưa thanh toán)
     image_uris?: string[] | string | null;
+    items?: string | null;
   }
 ): Promise<void> {
   await db.withTransactionAsync(async () => {
@@ -1912,8 +1978,8 @@ export async function createCreditExpenseWithPlan(
     }
 
     await db.runAsync(
-      `INSERT INTO transactions (id, type, amount, wallet_id, to_wallet_id, category_id, note, transacted_at, created_at, image_uris)
-       VALUES (?, 'expense', ?, ?, NULL, ?, ?, ?, ?, ?)`,
+      `INSERT INTO transactions (id, type, amount, wallet_id, to_wallet_id, category_id, note, transacted_at, created_at, image_uris, items)
+       VALUES (?, 'expense', ?, ?, NULL, ?, ?, ?, ?, ?, ?)`,
       [
         txId,
         remainingCreditAmount,
@@ -1923,6 +1989,7 @@ export async function createCreditExpenseWithPlan(
         params.transactedAt,
         now,
         serializedUris,
+        params.items || null,
       ]
     );
 

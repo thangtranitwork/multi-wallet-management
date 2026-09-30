@@ -1,4 +1,4 @@
-# MultiWallet (v1.2.3) - Personal Finance & Multi-Source Wallet Management
+# MultiWallet (v1.2.4) - Personal Finance & Multi-Source Wallet Management
 
 A modern, high-performance mobile application built with **React Native (Expo SDK 57)**, **TypeScript**, and **Expo SQLite**, crafted with a distinctive, tactile Neo-Brutalist design language. 
 
@@ -207,16 +207,29 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
   - Immediately triggers Gemini AI Vision scanner to extract total amount, transfer notes, and auto-match categories without manual typing.
 - **Custom Native Config Plugin**: Integrated via `plugins/withShareIntent.js` and Android native intent filters for full EAS Build and local prebuild compatibility.
 
-### 19. Gemini AI Financial Copilot (Trợ lý Tài chính AI Đa Năng, Voice TTS & Batch Parsing)
+### 19. Gemini AI Financial Copilot (Trợ lý Tài chính AI Đa Năng, Voice TTS, Action Tools & Quản lý Hội thoại)
+- **Cân đối / Điều chỉnh số dư ví tức thì (`adjust_balance`)**:
+  - Tự động hiểu câu lệnh cân bằng số dư: *"Ví tiền mặt thực tế đang còn 200k, cân chỉnh lại giúp tui"*, *"Số dư Vietcombank giờ là 8tr"*.
+  - AI tự đối chiếu số dư hiện tại từ SQLite, tính toán chênh lệch (`diff`) tăng/giảm và hiển thị thẻ so sánh số dư cũ $\rightarrow$ số dư mới với nút xác nhận cập nhật chỉ với 1 chạm.
+- **Sửa & Xóa giao dịch qua hội thoại (`update_transaction` & `delete_transaction`)**:
+  - **Hủy / Xóa giao dịch linh hoạt**: Nhận diện câu nói tự nhiên: *"Ê nhầm rồi, hủy cái đó đi"*, *"Xóa giao dịch cafe vừa tạo"*, *"Hủy giao dịch đổ xăng trưa nay"*. AI tự tra cứu ID giao dịch gần nhất, hiển thị thẻ xác nhận xóa kèm cảnh báo hoàn trả tiền vào số dư ví tự động.
+  - **Cập nhật giao dịch gần đây**: Nhận diện các lệnh sửa đổi: *"Sửa giao dịch vừa rồi thành 35k"*, *"Đổi ví bún bò sang ví MoMo"*, *"Sửa ghi chú thành Cà phê muối"*. Hệ thống tự động rollback chênh lệch số dư ở ví cũ và áp dụng số dư mới vào ví đích một cách nguyên tử (atomic transaction).
+- **Multimodal Object Recognition & Item Breakdown (Nhận diện Đồ vật & Bóc tách Từng món)**:
+  - Chụp ảnh đồ ăn, thức uống (tô phở, lon nước ngọt, mâm cơm, giỏ hàng siêu thị): AI nhận diện chính xác danh sách từng món đồ kèm số lượng, tự phân bổ đơn giá và lưu danh sách chi tiết vào trường `items` của bảng `transactions` trong SQLite.
+  - **Multi-turn Memory (Ghi nhớ ngữ cảnh đa lượt)**: Gửi ảnh đồ vật ở lượt 1, sau đó ở lượt 2 chỉ cần nhắn hoặc nói *"20k tiền mặt"* $\rightarrow$ AI tự động xâu chuỗi thông tin món đồ từ ảnh lượt trước để tạo ngay giao dịch hoàn chỉnh, không bao giờ bị quên ngữ cảnh.
 - **Batch Multi-Transaction Parsing (Bóc tách chuỗi giao dịch & Hóa đơn nhiều món)**:
   - Tự động nhận diện nhiều khoản chi tiêu / thu nhập cùng lúc trong một câu nói hoặc văn bản (ví dụ: *"Sáng ăn phở 45k, cafe 25k, đổ xăng 50k ví Tiền mặt"*).
   - Tự động gán danh mục và ví tiền phù hợp cho từng món riêng lẻ.
-  - Hiển thị thẻ xác nhận Neo-Brutalist trực quan với tổng số tiền, số lượng giao dịch, danh sách chi tiết và nút `[✓ Lưu tất cả (N giao dịch)]` ghi đồng thời vào SQLite chỉ với 1 chạm.
+  - Hiển thị thẻ xác nhận Neo-Brutalist trực quan với tổng số tiền, số lượng giao dịch, danh sách chi tiết và nút `[✓ Lưu N giao dịch • Số tiền]` ghi đồng thời vào SQLite chỉ với 1 chạm.
 - **Full Action Tools Suite (Bộ công cụ hành động mở rộng)**:
   - **Chuyển tiền giữa các ví (`transfer_money`)**: Hiểu câu lệnh *"Chuyển 500k từ VCB sang MoMo"* $\rightarrow$ sinh thẻ xác nhận chuyển ví nguồn - ví đích tức thì.
   - **Tất toán nợ thông minh (`settle_debt`)**: Hiểu câu lệnh *"Tuấn vừa trả 200k vào MoMo"* hoặc *"Trả nợ anh Nam 500k tiền mặt"* $\rightarrow$ tự động tra cứu danh sách nợ trong SQLite để khớp người vay/chủ nợ và sinh thẻ thu/trả nợ.
   - **Lên kế hoạch chi tiêu (`create_planned`)**: Hiểu câu lệnh *"Lên lịch ngày 15 đóng tiền nhà 3 triệu"* $\rightarrow$ sinh thẻ tạo Planned Expense vào đúng ngày hẹn.
   - **Ghi nhận nợ mới (`create_debt`)**: Nhận diện khoản cho vay hoặc đi vay với ngày hẹn trả linh hoạt.
+- **Responsive Layout Co-adaptation & Safe Date Parsing (Chống vỡ layout & Lỗi ngày tháng)**:
+  - Thẻ xác nhận và nút bấm co giãn thông minh: nhãn nút tự động xuống dòng 2 tầng căn giữa cân đối, cỡ chữ tự co (`adjustsFontSizeToFit`) khi số tiền lên đến hàng trăm tỷ VND.
+  - Bộ định dạng thời gian `formatCopilotDate` xử lý linh hoạt mọi chuẩn thời gian (ISO, tiếng Việt `HH:mm DD/MM/YYYY`), triệt tiêu hoàn toàn lỗi `Invalid Date`.
+  - Mở rộng toàn bộ chiều rộng (`flex: 1`) cho bong bóng phản hồi chứa thẻ hành động.
 - **Natural Vietnamese Text-to-Speech (TTS Voice Phản Hồi Giọng Nói)**:
   - Giọng đọc tiếng Việt mượt mà (`expo-speech`), tự động điều chỉnh cao độ (pitch) và tốc độ (rate) theo đúng 6 tính cách Copilot (Kỷ luật nghiêm khắc đọc dứt khoát, Vui vẻ đọc nhanh hào hứng, v.v.).
   - Bộ làm sạch Markdown & đơn vị tiền tệ thông minh (`50k` $\rightarrow$ `50 nghìn`, `100.000₫` $\rightarrow$ `100 nghìn đồng`), loại bỏ ký tự lạ giúp giọng đọc trôi chảy.

@@ -60,6 +60,17 @@ interface WalletContextType {
   updateTransactionCategory: (transactionId: string, categoryId: string | null) => Promise<void>;
   updateTransactionWallet: (transactionId: string, walletId: string, toWalletId?: string | null) => Promise<void>;
   updateTransactionTime: (transactionId: string, transactedAt: string) => Promise<void>;
+  updateTransactionDetails: (
+    id: string,
+    updates: {
+      amount?: number;
+      note?: string;
+      wallet_id?: string;
+      to_wallet_id?: string | null;
+      category_id?: string | null;
+      transacted_at?: string;
+    }
+  ) => Promise<void>;
   updateTransactionAmortized: (transactionId: string, isAmortized: boolean) => Promise<void>;
   updateTransactionImages: (transactionId: string, imageUris: string[]) => Promise<void>;
   purgeReceiptImages: (olderThanDays: number) => Promise<{ cleanedTransactions: number; cleanedImages: number; freedFormatted: string; cutoffDateStr: string }>;
@@ -80,6 +91,7 @@ interface WalletContextType {
     feePerInstallment?: number;
     firstDueDate: string;
     image_uris?: string[] | null;
+    items?: string | null;
   }) => Promise<void>;
   addDebt: (debt: {
     type: 'lend' | 'borrow';
@@ -393,6 +405,22 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     triggerAutoBackup();
   };
 
+  const updateTransactionDetails = async (
+    id: string,
+    updates: {
+      amount?: number;
+      note?: string;
+      wallet_id?: string;
+      to_wallet_id?: string | null;
+      category_id?: string | null;
+      transacted_at?: string;
+    }
+  ) => {
+    await queries.updateTransactionDetails(db, id, updates);
+    await refreshData();
+    triggerAutoBackup();
+  };
+
   const updateTransactionAmortized = async (transactionId: string, isAmortized: boolean) => {
     await queries.updateTransactionAmortized(db, transactionId, isAmortized);
     await refreshData();
@@ -485,6 +513,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     feePerInstallment?: number;
     firstDueDate: string;
     image_uris?: string[] | null;
+    items?: string | null;
   }) => {
     await queries.createCreditExpenseWithPlan(db, params);
     await refreshData();
@@ -651,6 +680,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         updateTransactionCategory,
         updateTransactionWallet,
         updateTransactionTime,
+        updateTransactionDetails,
         updateTransactionAmortized,
         updateTransactionImages,
         purgeReceiptImages,

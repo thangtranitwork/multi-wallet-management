@@ -757,6 +757,12 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
       }
     }
 
+    // Chuẩn bị items nếu quét hóa đơn thành công
+    const itemsJson =
+      scanResult?.items && scanResult.items.length > 0
+        ? JSON.stringify({ items: scanResult.items })
+        : null;
+
     // Xử lý riêng cho chi tiêu thẻ tín dụng có hẹn ngày thanh toán hoặc trả góp
     if (isCreditWallet && enableCreditPlan) {
       try {
@@ -773,6 +779,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
           feePerInstallment: creditMode === 'installment' ? feeNumber : 0,
           firstDueDate: creditDueDate,
           image_uris: persistentUris,
+          items: itemsJson,
         });
         hapticSuccess();
         onClose();
@@ -794,6 +801,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
         note: note.trim(),
         transacted_at: selectedDate.toISOString(),
         image_uris: persistentUris,
+        items: itemsJson,
       });
       hapticSuccess();
       onClose();

@@ -80,6 +80,9 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
     wallets,
     categories,
     addTransaction,
+    removeTransaction,
+    updateTransactionDetails,
+    adjustBalance,
     addDebt,
     payOrCollectDebt,
     addPlannedExpense,
@@ -264,9 +267,11 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
       sender: 'user',
       text:
         text ||
-        (imagesToSend.length > 1
-          ? `Phân tích ${imagesToSend.length} hóa đơn này`
-          : 'Phân tích hóa đơn này'),
+        (imagesToSend.length > 0
+          ? (imagesToSend.length > 1
+            ? `📷 [${imagesToSend.length} ảnh đính kèm]`
+            : '📷 [Ảnh đính kèm]')
+          : ''),
       imageUri: imagesToSend[0] || undefined,
       imageUris: imagesToSend.length > 0 ? imagesToSend : undefined,
       timestamp: new Date().toISOString(),
@@ -278,7 +283,8 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
     scrollToBottom();
 
     try {
-      const historyPayload = newMessages.map(m => ({
+      // Chỉ truyền các lượt hội thoại trước đó (loại trừ userMsg hiện tại để tránh trùng lặp turn)
+      const historyPayload = messages.map(m => ({
         role: (m.sender === 'user' ? 'user' : 'model') as 'user' | 'model',
         text: m.text,
       }));
@@ -345,6 +351,9 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
         return;
       }
 
+      // Đợi một nhịp ngắn (60ms) để native audio focus của TTS giải phóng hoàn toàn
+      await new Promise(r => setTimeout(r, 60));
+
       await setAudioModeAsync({
         allowsRecording: true,
         playsInSilentMode: true,
@@ -352,6 +361,10 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
 
       if (!isPressingRef.current) {
         isPreparingRef.current = false;
+        await setAudioModeAsync({
+          allowsRecording: false,
+          playsInSilentMode: true,
+        }).catch(() => {});
         return;
       }
 
@@ -360,22 +373,19 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
         if (currentStatus.isRecording) {
           await recorder.stop();
         }
-        if (!recorder.getStatus().canRecord) {
-          await recorder.prepareToRecordAsync();
-        }
-      } catch (prepErr) {
-        console.warn('prepareToRecord fallback:', prepErr);
-        try {
-          await recorder.stop();
-          await recorder.prepareToRecordAsync();
-        } catch (_) {}
-      }
+      } catch (_) {}
+
+      await recorder.prepareToRecordAsync();
 
       if (!isPressingRef.current) {
         isPreparingRef.current = false;
         try {
           await recorder.stop();
         } catch (_) {}
+        await setAudioModeAsync({
+          allowsRecording: false,
+          playsInSilentMode: true,
+        }).catch(() => {});
         return;
       }
 
@@ -448,11 +458,17 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
         return;
       }
 
+      // HỖ TRỢ VỪA GỬI ẢNH VỪA GHI ÂM: Lấy danh sách ảnh đang chọn và dọn sạch preview
+      const imagesToSend = [...selectedImageUris];
+      setSelectedImageUris([]);
+
       setIsGenerating(true);
       const userMsg: ChatMessage = {
         id: `user_voice_${Date.now()}`,
         sender: 'user',
-        text: '🎤 [Đoạn ghi âm giọng nói]',
+        text: '🎤 [Đang nhận diện giọng nói...]',
+        imageUri: imagesToSend[0] || undefined,
+        imageUris: imagesToSend.length > 0 ? imagesToSend : undefined,
         timestamp: new Date().toISOString(),
       };
       setMessages(prev => [...prev, userMsg]);
@@ -462,19 +478,32 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
         encoding: 'base64',
       });
 
+      // Lấy lịch sử hội thoại trước đó (loại trừ userMsg hiện tại) để Gemini kế thừa ngữ cảnh
+      const historyPayload = messages.map(m => ({
+        role: (m.sender === 'user' ? 'user' : 'model') as 'user' | 'model',
+        text: m.text,
+      }));
+
       const res = await processCopilotAudioInput(
         db,
         base64Audio,
         'audio/m4a',
         wallets,
-        categories
+        categories,
+        historyPayload,
+        imagesToSend.length > 0 ? imagesToSend : undefined
       );
 
       // Cập nhật lại text của user bằng transcript chính xác mà Gemini nghe được
       setMessages(prev =>
         prev.map(m =>
-          m.id === userMsg.id && res.transcript
-            ? { ...m, text: `🎤 "${res.transcript}"` }
+          m.id === userMsg.id
+            ? {
+                ...m,
+                text: res.transcript
+                  ? `🎤 "${res.transcript}"`
+                  : '🎤 [Đoạn ghi âm giọng nói]',
+              }
             : m
         )
       );
@@ -485,6 +514,8 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
         text: res.message,
         timestamp: new Date().toISOString(),
         copilotResponse: res,
+        imageUri: imagesToSend[0] || undefined,
+        imageUris: imagesToSend.length > 0 ? imagesToSend : undefined,
       };
 
       setMessages(prev => [...prev, assistantMsg]);
@@ -563,6 +594,7 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
             note: tx.note || 'Ghi chép từ Trợ lý Copilot',
             transacted_at: tx.transacted_at || new Date().toISOString(),
             image_uris: persistentUris,
+            items: tx.items && tx.items.length > 0 ? JSON.stringify({ items: tx.items }) : null,
           });
         }
         setMessages(prev =>
@@ -655,6 +687,7 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
           note: tx.note || 'Ghi chép từ Trợ lý Copilot',
           transacted_at: tx.transacted_at || new Date().toISOString(),
           image_uris: persistentUris,
+          items: tx.items && tx.items.length > 0 ? JSON.stringify({ items: tx.items }) : null,
         });
 
         setMessages(prev =>
@@ -679,6 +712,41 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
           prev.map(m => (m.id === msgId ? { ...m, isSaved: true } : m))
         );
       }
+      // 7. Cân đối / Điều chỉnh số dư ví (Adjust Balance)
+      else if (data.adjustBalance) {
+        const ab = data.adjustBalance;
+        await adjustBalance(
+          ab.wallet_id,
+          ab.new_balance,
+          ab.note || 'Cân đối qua Copilot',
+          true
+        );
+        setMessages(prev =>
+          prev.map(m => (m.id === msgId ? { ...m, isSaved: true } : m))
+        );
+      }
+      // 8. Xóa giao dịch (Delete Transaction)
+      else if (data.deleteTransaction) {
+        const dt = data.deleteTransaction;
+        await removeTransaction(dt.transaction_id);
+        setMessages(prev =>
+          prev.map(m => (m.id === msgId ? { ...m, isSaved: true } : m))
+        );
+      }
+      // 9. Cập nhật giao dịch (Update Transaction)
+      else if (data.updateTransaction) {
+        const ut = data.updateTransaction;
+        await updateTransactionDetails(ut.transaction_id, {
+          amount: ut.new_amount,
+          note: ut.new_note,
+          wallet_id: ut.new_wallet_id,
+          category_id: ut.new_category_id,
+          transacted_at: ut.new_transacted_at,
+        });
+        setMessages(prev =>
+          prev.map(m => (m.id === msgId ? { ...m, isSaved: true } : m))
+        );
+      }
     } catch (err: any) {
       showAlert('Lỗi ghi sổ', err?.message || 'Không thể lưu vào cơ sở dữ liệu.');
       throw err;
@@ -687,6 +755,18 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
 
   const renderMessageItem = ({ item }: { item: ChatMessage }) => {
     const isUser = item.sender === 'user';
+    const cr = item.copilotResponse;
+    const hasCard = !isUser && Boolean(cr && (
+      cr.transaction ||
+      (cr.transactions && cr.transactions.length > 0) ||
+      cr.transfer ||
+      cr.debt ||
+      cr.debt_settlement ||
+      cr.planned_expense ||
+      cr.adjust_balance ||
+      cr.delete_transaction ||
+      cr.update_transaction
+    ));
 
     return (
       <View
@@ -705,12 +785,14 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
           style={[
             styles.bubbleShadow,
             isUser ? styles.bubbleShadowUser : styles.bubbleShadowAssistant,
+            hasCard && styles.bubbleShadowWithCard,
           ]}
         >
           <View
             style={[
               styles.bubbleInner,
               isUser ? styles.bubbleInnerUser : styles.bubbleInnerAssistant,
+              hasCard && styles.bubbleInnerWithCard,
             ]}
           >
             {/* Ảnh hóa đơn đính kèm nếu có (chỉ hiển thị ở bubble người dùng) */}
@@ -745,9 +827,14 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
               let attachedImgs = item.imageUris || (item.imageUri ? [item.imageUri] : []);
               if (attachedImgs.length === 0 && !isUser) {
                 const itemIndex = messages.findIndex(m => m.id === item.id);
-                if (itemIndex > 0 && messages[itemIndex - 1].sender === 'user') {
-                  const prevMsg = messages[itemIndex - 1];
-                  attachedImgs = prevMsg.imageUris || (prevMsg.imageUri ? [prevMsg.imageUri] : []);
+                // Quét ngược tìm ảnh gần nhất trong các tin nhắn gần đó (lên tới 8 tin nhắn)
+                for (let i = itemIndex - 1; i >= 0 && i >= itemIndex - 8; i--) {
+                  const prevMsg = messages[i];
+                  const prevImgs = prevMsg.imageUris || (prevMsg.imageUri ? [prevMsg.imageUri] : []);
+                  if (prevImgs.length > 0) {
+                    attachedImgs = prevImgs;
+                    break;
+                  }
                 }
               }
 
@@ -759,6 +846,9 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
                   debt={item.copilotResponse.debt}
                   debtSettlement={item.copilotResponse.debt_settlement}
                   plannedExpense={item.copilotResponse.planned_expense}
+                  adjustBalance={item.copilotResponse.adjust_balance}
+                  deleteTransaction={item.copilotResponse.delete_transaction}
+                  updateTransaction={item.copilotResponse.update_transaction}
                   imageUri={attachedImgs[0] || null}
                   imageUris={attachedImgs}
                   isSaved={item.isSaved}
@@ -918,7 +1008,7 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <Ionicons name="images" size={13} color="#000000" />
                   <Text style={styles.previewTitle}>
-                    {selectedImageUris.length} ảnh hóa đơn đính kèm
+                    {selectedImageUris.length} ảnh đính kèm
                   </Text>
                 </View>
                 <Pressable
@@ -998,9 +1088,9 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
               style={styles.textInput}
               placeholder={
                 selectedImageUris.length > 0
-                  ? selectedImageUris.length === 1
-                    ? 'Thêm ghi chú hoặc bấm gửi ngay...'
-                    : `Thêm ghi chú cho ${selectedImageUris.length} ảnh hóa đơn...`
+                  ? inAppMicEnabled
+                    ? 'Thêm ghi chú hoặc giữ mic để nói...'
+                    : 'Thêm ghi chú hoặc bấm gửi ngay...'
                   : inAppMicEnabled
                   ? 'Gõ hoặc giữ mic để nói...'
                   : 'Nhập câu lệnh hoặc chạm mic...'
@@ -1140,6 +1230,7 @@ const styles = StyleSheet.create({
   messageRow: {
     flexDirection: 'row',
     marginBottom: 4,
+    width: '100%',
   },
   messageRowUser: {
     justifyContent: 'flex-end',
@@ -1171,6 +1262,10 @@ const styles = StyleSheet.create({
   bubbleShadowAssistant: {
     borderBottomLeftRadius: 2,
   },
+  bubbleShadowWithCard: {
+    flex: 1,
+    maxWidth: '100%',
+  },
   bubbleInner: {
     borderRadius: 12,
     borderWidth: 2,
@@ -1186,6 +1281,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderBottomLeftRadius: 2,
   },
+  bubbleInnerWithCard: {},
   bubbleImageWrapper: {
     marginBottom: 8,
     borderRadius: 8,
