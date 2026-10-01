@@ -1,4 +1,4 @@
-# MultiWallet (v1.2.5) - Personal Finance & Multi-Source Wallet Management
+# MultiWallet (v1.2.6) - Personal Finance & Multi-Source Wallet Management
 
 A modern, high-performance mobile application built with **React Native (Expo SDK 57)**, **TypeScript**, and **Expo SQLite**, crafted with a distinctive, tactile Neo-Brutalist design language. 
 
@@ -268,6 +268,37 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
   - Header thanh thoát với chấm trạng thái tính cách thời gian thực (`● Kỷ luật thép • Gemini Flash`).
   - Nút bấm nổi (FAB) nhỏ gọn (`52x52`, `#38BDF8`, `✨ AI`) góc dưới phải màn hình với chống che khuất.
 
+### 11. In-App System Log Viewer & Logger Service
+- **Rotating File Logger (`loggerService.ts`)**:
+  - Automatically captures structured logs across key app subsystems: SQLite database queries, Google Drive OAuth/backup sync, Gemini AI Copilot calls, Cloudinary media transfers, and system runtime errors.
+  - Keeps up to 500 in-memory events and writes rotating local `.log` files in cache directory.
+- **Dedicated Log Viewer Modal (`LogViewerModal.tsx`)**:
+  - Accessible directly from Settings $\rightarrow$ Tùy chọn & Hệ thống $\rightarrow$ Nhật ký hoạt động.
+  - Multi-level filtering: **Tất cả**, **INFO**, **WARN**, **ERROR**.
+  - Real-time keyword search across log messages and tags.
+  - 1-tap **Copy Entire Log** or individual **[📋 Chép]** per log line with animated checkmark and haptic feedback.
+  - Share or export the full raw `.log` file to external apps (Telegram, Zalo, Gmail, Drive).
+
+### 12. Advanced Planned Expenses (Dự Chi) & Batch Actions
+- **Custom Date Range Filter**:
+  - Filter upcoming planned expenses by **Tất cả**, **7 ngày tới**, **30 ngày tới**, **Tháng này**, or **Tùy chọn** (custom start & end dates).
+- **Dynamic Summary Card**:
+  - Displays filtered expense count and aggregate payable amount in real-time.
+- **Multi-Select & Bulk Deletion via Long Press**:
+  - Long press any planned expense item to enter selection mode with checkable boxes.
+  - Floating action bar shows selected count with 1-tap batch deletion with safety confirmation modal.
+
+### 13. Neo-Brutalist Accordion Settings & Google Drive Cloud Sync
+- **Collapsible Settings Architecture**:
+  - 11 major settings sections organized into clean, independent accordion cards.
+  - Each item features a distinctive pastel pop color, prominent icon, descriptive subtitle, and live status badge.
+  - Smooth animation powered by React Native `LayoutAnimation` with zero New Architecture / Fabric warning noise.
+- **Google Drive OAuth & Automated Backup**:
+  - Seamless backup to Google Drive AppData folder.
+  - Integrated OAuth Client ID configuration with 1-tap paste and save.
+  - Quick-copy redirect URIs for both Expo Go development and standalone APK builds.
+  - CI/CD workflow automatically extracts and prints keystore SHA-1 fingerprint for Google Cloud Console setup.
+
 ---
 
 ## Technology Stack
@@ -368,9 +399,10 @@ adb install android/app/build/outputs/apk/release/app-release.apk
 │   │   ├── CloudinaryModal.tsx     # Cloudinary cloud sync & local image migration sheet
 │   │   ├── DebtModal.tsx           # Loan creation & payment modal
 │   │   ├── LockScreenOverlay.tsx   # Biometric & PIN lock overlay
+│   │   ├── LogViewerModal.tsx      # System activity logs, filtering & export modal
 │   │   ├── NeoCard.tsx             # Tactile card component
 │   │   ├── NeoDropdown.tsx         # Custom dropdown selector
-│   │   ├── PlannedExpensesModal.tsx# Planned expenses & safe-to-spend manager
+│   │   ├── PlannedExpensesModal.tsx# Planned expenses, date filters & batch delete
 │   │   ├── QuickAddModal.tsx       # Transaction logger with receipt OCR & date/time picker
 │   │   ├── SplitTransactionModal.tsx # Itemized & equal bill splitting with fee allocation
 │   │   ├── TransactionDetailModal.tsx # Transaction details with cloud/local receipt viewer
@@ -395,6 +427,7 @@ adb install android/app/build/outputs/apk/release/app-release.apk
 │   │   ├── geminiService.ts        # Gemini Vision API client for receipt OCR & parsing
 │   │   ├── googleDriveService.ts   # Google Drive OAuth & file backup API
 │   │   ├── habitNotificationService.ts # Habit learning, absence check & local notifications
+│   │   ├── loggerService.ts        # System runtime logging, rotation & log exporting
 │   │   ├── predictionService.ts    # Category heuristic prediction
 │   │   └── widgetSyncService.ts    # Android Home Widget persistent state sync
 │   ├── utils/

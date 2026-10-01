@@ -11,6 +11,8 @@ import {
   ActivityIndicator,
   Switch,
   Animated,
+  LayoutAnimation,
+  Platform,
 } from 'react-native';
 import { useCustomAlert } from '../components/CustomAlertModal';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -129,6 +131,30 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
   const [categoryModalVisible, setCategoryModalVisible] = useState<boolean>(false);
   const [logModalVisible, setLogModalVisible] = useState<boolean>(false);
   const [habitConfig, setHabitConfig] = useState<HabitReminderConfig>(DEFAULT_HABIT_CONFIG);
+
+  // Accordion Table of Contents state
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    data_summary: false,
+    security: false,
+    categories: false,
+    gdrive: false,
+    gemini: false,
+    receipt_storage: false,
+    cloudinary: false,
+    export: false,
+    import: false,
+    system: false,
+    reminders: false,
+  });
+
+  const toggleSection = useCallback((key: string) => {
+    hapticLight();
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedSections((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  }, []);
 
   // Gemini AI Settings
   const [geminiApiKey, setGeminiApiKey] = useState<string>('');
@@ -722,47 +748,113 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+
         {/* Current Database Summary Card */}
         <View style={styles.cardShadow}>
           <View style={styles.cardInner}>
-            <View style={[styles.folderTab, { backgroundColor: THEME.popYellow }]}>
-              <Text style={styles.folderTabText}>DỮ LIỆU HIỆN TẠI</Text>
-            </View>
-
-            <View style={styles.cardBody}>
-              <View style={styles.statsGrid}>
-                <View style={styles.statBox}>
-                  <Text style={styles.statVal}>{wallets.length}</Text>
-                  <Text style={styles.statLabel}>Ví tiền</Text>
+            <Pressable
+              style={[
+                styles.accordionHeader,
+                { backgroundColor: THEME.popYellow },
+                expandedSections.data_summary && styles.accordionHeaderExpanded,
+              ]}
+              onPress={() => toggleSection('data_summary')}
+            >
+              <View style={styles.accordionHeaderLeft}>
+                <View style={styles.accordionIconBox}>
+                  <Ionicons name="pie-chart" size={17} color="#000000" />
                 </View>
-
-                <View style={styles.statBox}>
-                  <Text style={styles.statVal}>{transactions.length}</Text>
-                  <Text style={styles.statLabel}>Giao dịch</Text>
-                </View>
-
-                <View style={styles.statBox}>
-                  <Text style={styles.statVal}>{debts.length}</Text>
-                  <Text style={styles.statLabel}>Khoản nợ</Text>
-                </View>
-
-                <View style={styles.statBox}>
-                  <Text style={styles.statVal}>{categories.length}</Text>
-                  <Text style={styles.statLabel}>Danh mục</Text>
+                <View style={styles.accordionTitleCol}>
+                  <Text style={styles.accordionTitleText}>DỮ LIỆU HIỆN TẠI</Text>
+                  <Text style={styles.accordionSubtitleText} numberOfLines={1}>
+                    Ví, giao dịch, nợ & danh mục
+                  </Text>
                 </View>
               </View>
-            </View>
+              <View style={styles.accordionHeaderRight}>
+                <View style={styles.accordionBadge}>
+                  <Text style={styles.accordionBadgeText}>
+                    {wallets.length} ví • {transactions.length} GD
+                  </Text>
+                </View>
+                <View style={styles.accordionChevronCircle}>
+                  <Ionicons
+                    name={expandedSections.data_summary ? 'chevron-up' : 'chevron-down'}
+                    size={16}
+                    color="#000000"
+                  />
+                </View>
+              </View>
+            </Pressable>
+
+            {expandedSections.data_summary && (
+              <View style={styles.cardBody}>
+                <View style={styles.statsGrid}>
+                  <View style={styles.statBox}>
+                    <Text style={styles.statVal}>{wallets.length}</Text>
+                    <Text style={styles.statLabel}>Ví tiền</Text>
+                  </View>
+
+                  <View style={styles.statBox}>
+                    <Text style={styles.statVal}>{transactions.length}</Text>
+                    <Text style={styles.statLabel}>Giao dịch</Text>
+                  </View>
+
+                  <View style={styles.statBox}>
+                    <Text style={styles.statVal}>{debts.length}</Text>
+                    <Text style={styles.statLabel}>Khoản nợ</Text>
+                  </View>
+
+                  <View style={styles.statBox}>
+                    <Text style={styles.statVal}>{categories.length}</Text>
+                    <Text style={styles.statLabel}>Danh mục</Text>
+                  </View>
+                </View>
+              </View>
+            )}
           </View>
         </View>
 
         {/* Security & App Lock Section */}
         <View style={styles.cardShadow}>
           <View style={styles.cardInner}>
-            <View style={[styles.folderTab, { backgroundColor: '#EF4444' }]}>
-              <Text style={[styles.folderTabText, { color: '#FFFFFF' }]}>BẢO MẬT & KHÓA ỨNG DỤNG</Text>
-            </View>
+            <Pressable
+              style={[
+                styles.accordionHeader,
+                { backgroundColor: '#FCA5A5' },
+                expandedSections.security && styles.accordionHeaderExpanded,
+              ]}
+              onPress={() => toggleSection('security')}
+            >
+              <View style={styles.accordionHeaderLeft}>
+                <View style={styles.accordionIconBox}>
+                  <Ionicons name="shield-checkmark" size={17} color="#000000" />
+                </View>
+                <View style={styles.accordionTitleCol}>
+                  <Text style={styles.accordionTitleText}>BẢO MẬT & KHÓA ỨNG DỤNG</Text>
+                  <Text style={styles.accordionSubtitleText} numberOfLines={1}>
+                    Mã PIN, sinh trắc học & khóa
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.accordionHeaderRight}>
+                <View style={styles.accordionBadge}>
+                  <Text style={styles.accordionBadgeText}>
+                    {isAppLockEnabled ? 'Đang bật' : 'Chưa bật'}
+                  </Text>
+                </View>
+                <View style={styles.accordionChevronCircle}>
+                  <Ionicons
+                    name={expandedSections.security ? 'chevron-up' : 'chevron-down'}
+                    size={16}
+                    color="#000000"
+                  />
+                </View>
+              </View>
+            </Pressable>
 
-            <View style={styles.cardBody}>
+            {expandedSections.security && (
+              <View style={styles.cardBody}>
               {/* App Lock Switch */}
               <View style={styles.settingRow}>
                 <View style={styles.settingRowLeft}>
@@ -891,92 +983,185 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                 </>
               )}
             </View>
+            )}
           </View>
         </View>
 
         {/* Categories Section */}
         <View style={styles.cardShadow}>
           <View style={styles.cardInner}>
-            <View style={[styles.folderTab, { backgroundColor: THEME.popYellow }]}>
-              <Text style={styles.folderTabText}>QUẢN LÝ DANH MỤC</Text>
-            </View>
-
-            <View style={styles.cardBody}>
-              <View style={styles.actionButtonsCol}>
-                <Pressable
-                  style={styles.actionBtnPrimary}
-                  onPress={() => {
-                    hapticMedium();
-                    setCategoryModalVisible(true);
-                  }}
-                >
-                  <Ionicons name="pricetags-outline" size={18} color="#000000" />
-                  <Text style={styles.actionBtnText}>Quản lý danh mục thu & chi tiêu</Text>
-                  <Ionicons name="chevron-forward" size={16} color="#000000" style={{ marginLeft: 'auto' }} />
-                </Pressable>
+            <Pressable
+              style={[
+                styles.accordionHeader,
+                { backgroundColor: '#FED7AA' },
+                expandedSections.categories && styles.accordionHeaderExpanded,
+              ]}
+              onPress={() => toggleSection('categories')}
+            >
+              <View style={styles.accordionHeaderLeft}>
+                <View style={styles.accordionIconBox}>
+                  <Ionicons name="pricetags" size={17} color="#000000" />
+                </View>
+                <View style={styles.accordionTitleCol}>
+                  <Text style={styles.accordionTitleText}>QUẢN LÝ DANH MỤC</Text>
+                  <Text style={styles.accordionSubtitleText} numberOfLines={1}>
+                    Tùy chỉnh thu & chi tiêu
+                  </Text>
+                </View>
               </View>
-            </View>
+              <View style={styles.accordionHeaderRight}>
+                <View style={styles.accordionBadge}>
+                  <Text style={styles.accordionBadgeText}>
+                    {categories.length} danh mục
+                  </Text>
+                </View>
+                <View style={styles.accordionChevronCircle}>
+                  <Ionicons
+                    name={expandedSections.categories ? 'chevron-up' : 'chevron-down'}
+                    size={16}
+                    color="#000000"
+                  />
+                </View>
+              </View>
+            </Pressable>
+
+            {expandedSections.categories && (
+              <View style={styles.cardBody}>
+                <View style={styles.actionButtonsCol}>
+                  <Pressable
+                    style={styles.actionBtnPrimary}
+                    onPress={() => {
+                      hapticMedium();
+                      setCategoryModalVisible(true);
+                    }}
+                  >
+                    <Ionicons name="pricetags-outline" size={18} color="#000000" />
+                    <Text style={styles.actionBtnText}>Quản lý danh mục thu & chi tiêu</Text>
+                    <Ionicons name="chevron-forward" size={16} color="#000000" style={{ marginLeft: 'auto' }} />
+                  </Pressable>
+                </View>
+              </View>
+            )}
           </View>
         </View>
 
         {/* Google Drive Cloud Sync Section */}
         <View style={styles.cardShadow}>
           <View style={styles.cardInner}>
-            <View style={[styles.folderTab, { backgroundColor: THEME.popYellow }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Ionicons name="logo-google" size={15} color="#000000" />
-                <Text style={styles.folderTabText}>GOOGLE DRIVE CLOUD SYNC</Text>
-              </View>
-            </View>
-
-            <View style={styles.cardBody}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <Text style={styles.cardSectionTitle}>Đồng bộ Google Drive</Text>
-                <View style={[
-                  styles.gdriveBadge,
-                  { backgroundColor: isDriveLinked ? '#DCFCE7' : '#F3F4F6' }
-                ]}>
-                  <View style={[
-                    styles.gdriveDot,
-                    { backgroundColor: isDriveLinked ? '#15803D' : '#9CA3AF' }
-                  ]} />
-                  <Text style={[
-                    styles.gdriveBadgeText,
-                    { color: isDriveLinked ? '#15803D' : '#6B7280' }
-                  ]}>
-                    {isDriveLinked ? 'Đã liên kết' : 'Chưa liên kết'}
+            <Pressable
+              style={[
+                styles.accordionHeader,
+                { backgroundColor: '#BBF7D0' },
+                expandedSections.gdrive && styles.accordionHeaderExpanded,
+              ]}
+              onPress={() => toggleSection('gdrive')}
+            >
+              <View style={styles.accordionHeaderLeft}>
+                <View style={styles.accordionIconBox}>
+                  <Ionicons name="logo-google" size={17} color="#000000" />
+                </View>
+                <View style={styles.accordionTitleCol}>
+                  <Text style={styles.accordionTitleText}>GOOGLE DRIVE CLOUD SYNC</Text>
+                  <Text style={styles.accordionSubtitleText} numberOfLines={1}>
+                    Đồng bộ & sao lưu đám mây
                   </Text>
                 </View>
               </View>
+              <View style={styles.accordionHeaderRight}>
+                <View style={styles.accordionBadge}>
+                  <Text style={styles.accordionBadgeText}>
+                    {isDriveLinked ? 'Đã liên kết' : 'Chưa liên kết'}
+                  </Text>
+                </View>
+                <View style={styles.accordionChevronCircle}>
+                  <Ionicons
+                    name={expandedSections.gdrive ? 'chevron-up' : 'chevron-down'}
+                    size={16}
+                    color="#000000"
+                  />
+                </View>
+              </View>
+            </Pressable>
 
-              <Pressable
-                style={styles.actionBtnGoogle}
-                onPress={() => {
-                  hapticMedium();
-                  setGoogleDriveModalVisible(true);
-                }}
-              >
-                <Ionicons name="cloud-outline" size={18} color="#000000" />
-                <Text style={styles.actionBtnText}>
-                  {isDriveLinked ? 'Quản lý sao lưu Google Drive' : 'Liên kết tài khoản Google Drive'}
-                </Text>
-                <Ionicons name="chevron-forward" size={16} color="#000000" style={{ marginLeft: 'auto' }} />
-              </Pressable>
-            </View>
+            {expandedSections.gdrive && (
+              <View style={styles.cardBody}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <Text style={styles.cardSectionTitle}>Đồng bộ Google Drive</Text>
+                  <View style={[
+                    styles.gdriveBadge,
+                    { backgroundColor: isDriveLinked ? '#DCFCE7' : '#F3F4F6' }
+                  ]}>
+                    <View style={[
+                      styles.gdriveDot,
+                      { backgroundColor: isDriveLinked ? '#15803D' : '#9CA3AF' }
+                    ]} />
+                    <Text style={[
+                      styles.gdriveBadgeText,
+                      { color: isDriveLinked ? '#15803D' : '#6B7280' }
+                    ]}>
+                      {isDriveLinked ? 'Đã liên kết' : 'Chưa liên kết'}
+                    </Text>
+                  </View>
+                </View>
+
+                <Pressable
+                  style={styles.actionBtnGoogle}
+                  onPress={() => {
+                    hapticMedium();
+                    setGoogleDriveModalVisible(true);
+                  }}
+                >
+                  <Ionicons name="cloud-outline" size={18} color="#000000" />
+                  <Text style={styles.actionBtnText}>
+                    {isDriveLinked ? 'Quản lý sao lưu Google Drive' : 'Liên kết tài khoản Google Drive'}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={16} color="#000000" style={{ marginLeft: 'auto' }} />
+                </Pressable>
+              </View>
+            )}
           </View>
         </View>
 
         {/* Gemini AI & Invoice Scanning Section */}
         <View style={styles.cardShadow}>
           <View style={styles.cardInner}>
-            <View style={[styles.folderTab, { backgroundColor: '#C7D2FE' }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Ionicons name="sparkles-outline" size={15} color="#000000" />
-                <Text style={styles.folderTabText}>TRÍ TUỆ NHÂN TẠO (GEMINI AI)</Text>
+            <Pressable
+              style={[
+                styles.accordionHeader,
+                { backgroundColor: '#C7D2FE' },
+                expandedSections.gemini && styles.accordionHeaderExpanded,
+              ]}
+              onPress={() => toggleSection('gemini')}
+            >
+              <View style={styles.accordionHeaderLeft}>
+                <View style={styles.accordionIconBox}>
+                  <Ionicons name="sparkles" size={17} color="#000000" />
+                </View>
+                <View style={styles.accordionTitleCol}>
+                  <Text style={styles.accordionTitleText}>TRÍ TUỆ NHÂN TẠO (GEMINI AI)</Text>
+                  <Text style={styles.accordionSubtitleText} numberOfLines={1}>
+                    Quét hóa đơn & trợ lý Copilot
+                  </Text>
+                </View>
               </View>
-            </View>
+              <View style={styles.accordionHeaderRight}>
+                <View style={styles.accordionBadge}>
+                  <Text style={styles.accordionBadgeText}>
+                    {geminiApiKey ? 'Sẵn sàng' : 'Chưa có Key'}
+                  </Text>
+                </View>
+                <View style={styles.accordionChevronCircle}>
+                  <Ionicons
+                    name={expandedSections.gemini ? 'chevron-up' : 'chevron-down'}
+                    size={16}
+                    color="#000000"
+                  />
+                </View>
+              </View>
+            </Pressable>
 
-            <View style={styles.cardBody}>
+            {expandedSections.gemini && (
+              <View style={styles.cardBody}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, marginRight: 8 }}>
                   <Text style={[styles.cardSectionTitle, { marginBottom: 0 }]} numberOfLines={1}>
@@ -1198,20 +1383,50 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                 </View>
               </View>
             </View>
+            )}
           </View>
         </View>
 
         {/* Receipt Storage & Photo Cleanup Section */}
         <View style={styles.cardShadow}>
           <View style={styles.cardInner}>
-            <View style={[styles.folderTab, { backgroundColor: '#FDE047' }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Ionicons name="images-outline" size={15} color="#000000" />
-                <Text style={styles.folderTabText}>QUẢN LÝ BỘ NHỚ ẢNH HÓA ĐƠN</Text>
+            <Pressable
+              style={[
+                styles.accordionHeader,
+                { backgroundColor: '#FDE047' },
+                expandedSections.receipt_storage && styles.accordionHeaderExpanded,
+              ]}
+              onPress={() => toggleSection('receipt_storage')}
+            >
+              <View style={styles.accordionHeaderLeft}>
+                <View style={styles.accordionIconBox}>
+                  <Ionicons name="images" size={17} color="#000000" />
+                </View>
+                <View style={styles.accordionTitleCol}>
+                  <Text style={styles.accordionTitleText}>BỘ NHỚ ẢNH HÓA ĐƠN</Text>
+                  <Text style={styles.accordionSubtitleText} numberOfLines={1}>
+                    Dọn dẹp ảnh cũ & tối ưu hóa
+                  </Text>
+                </View>
               </View>
-            </View>
+              <View style={styles.accordionHeaderRight}>
+                <View style={styles.accordionBadge}>
+                  <Text style={styles.accordionBadgeText}>
+                    {storageStats ? `${storageStats.imageCount} ảnh` : 'Dọn dẹp'}
+                  </Text>
+                </View>
+                <View style={styles.accordionChevronCircle}>
+                  <Ionicons
+                    name={expandedSections.receipt_storage ? 'chevron-up' : 'chevron-down'}
+                    size={16}
+                    color="#000000"
+                  />
+                </View>
+              </View>
+            </Pressable>
 
-            <View style={styles.cardBody}>
+            {expandedSections.receipt_storage && (
+              <View style={styles.cardBody}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
                   <Text style={[styles.cardSectionTitle, { marginBottom: 0 }]}>Dọn dẹp ảnh cũ</Text>
@@ -1386,108 +1601,200 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                 )}
               </Pressable>
             </View>
+            )}
           </View>
         </View>
 
         {/* Cloudinary Cloud Storage Section */}
         <View style={styles.cardShadow}>
           <View style={styles.cardInner}>
-            <View style={[styles.folderTab, { backgroundColor: '#38BDF8' }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Ionicons name="cloud-upload-outline" size={15} color="#000000" />
-                <Text style={styles.folderTabText}>LƯU TRỮ ĐÁM MÂY (CLOUDINARY)</Text>
-              </View>
-            </View>
-
-            <View style={styles.cardBody}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <Text style={styles.cardSectionTitle}>Đồng bộ hình ảnh</Text>
-                <View style={[
-                  styles.gdriveBadge,
-                  { backgroundColor: cloudinaryEnabled ? '#DCFCE7' : '#F3F4F6' }
-                ]}>
-                  <View style={[
-                    styles.gdriveDot,
-                    { backgroundColor: cloudinaryEnabled ? '#15803D' : '#9CA3AF' }
-                  ]} />
-                  <Text style={[
-                    styles.gdriveBadgeText,
-                    { color: cloudinaryEnabled ? '#15803D' : '#6B7280' }
-                  ]}>
-                    {cloudinaryEnabled ? 'Đang bật' : 'Đang tắt'}
+            <Pressable
+              style={[
+                styles.accordionHeader,
+                { backgroundColor: '#38BDF8' },
+                expandedSections.cloudinary && styles.accordionHeaderExpanded,
+              ]}
+              onPress={() => toggleSection('cloudinary')}
+            >
+              <View style={styles.accordionHeaderLeft}>
+                <View style={styles.accordionIconBox}>
+                  <Ionicons name="cloud-upload" size={17} color="#000000" />
+                </View>
+                <View style={styles.accordionTitleCol}>
+                  <Text style={styles.accordionTitleText}>LƯU TRỮ ĐÁM MÂY (CLOUDINARY)</Text>
+                  <Text style={styles.accordionSubtitleText} numberOfLines={1}>
+                    Đồng bộ & sao lưu ảnh hóa đơn
                   </Text>
                 </View>
               </View>
+              <View style={styles.accordionHeaderRight}>
+                <View style={styles.accordionBadge}>
+                  <Text style={styles.accordionBadgeText}>
+                    {cloudinaryEnabled ? 'Đang bật' : 'Chưa bật'}
+                  </Text>
+                </View>
+                <View style={styles.accordionChevronCircle}>
+                  <Ionicons
+                    name={expandedSections.cloudinary ? 'chevron-up' : 'chevron-down'}
+                    size={16}
+                    color="#000000"
+                  />
+                </View>
+              </View>
+            </Pressable>
 
-              <Text style={{ fontSize: 12, fontWeight: '600', color: '#6B7280', marginBottom: 12 }}>
-                {cloudinaryCloudName
-                  ? `Cloud: ${cloudinaryCloudName} • Tự động lưu trữ ảnh chứng từ & mã QR lên mây.`
-                  : 'Lưu trữ ảnh hóa đơn & mã QR lên đám mây để giải phóng 100% dung lượng máy.'}
-              </Text>
-
-              <Pressable
-                style={styles.actionBtnGoogle}
-                onPress={() => {
-                  hapticMedium();
-                  setCloudinaryModalVisible(true);
-                }}
-              >
-                <Ionicons name="cloud-outline" size={18} color="#000000" />
-                <Text style={[styles.actionBtnText, { flex: 1 }]} numberOfLines={1}>
-                  {cloudinaryCloudName ? 'Quản lý lưu trữ Cloudinary' : 'Thiết lập lưu trữ Cloudinary'}
-                </Text>
-                {localImagesCount > 0 && (
-                  <View style={styles.cloudinaryBadgeNotice}>
-                    <Text style={styles.cloudinaryBadgeNoticeText}>
-                      {localImagesCount}
+            {expandedSections.cloudinary && (
+              <View style={styles.cardBody}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <Text style={styles.cardSectionTitle}>Đồng bộ hình ảnh</Text>
+                  <View style={[
+                    styles.gdriveBadge,
+                    { backgroundColor: cloudinaryEnabled ? '#DCFCE7' : '#F3F4F6' }
+                  ]}>
+                    <View style={[
+                      styles.gdriveDot,
+                      { backgroundColor: cloudinaryEnabled ? '#15803D' : '#9CA3AF' }
+                    ]} />
+                    <Text style={[
+                      styles.gdriveBadgeText,
+                      { color: cloudinaryEnabled ? '#15803D' : '#6B7280' }
+                    ]}>
+                      {cloudinaryEnabled ? 'Đang bật' : 'Đang tắt'}
                     </Text>
                   </View>
-                )}
-                <Ionicons name="chevron-forward" size={16} color="#000000" />
-              </Pressable>
-            </View>
+                </View>
+
+                <Text style={{ fontSize: 12, fontWeight: '600', color: '#6B7280', marginBottom: 12 }}>
+                  {cloudinaryCloudName
+                    ? `Cloud: ${cloudinaryCloudName} • Tự động lưu trữ ảnh chứng từ & mã QR lên mây.`
+                    : 'Lưu trữ ảnh hóa đơn & mã QR lên đám mây để giải phóng 100% dung lượng máy.'}
+                </Text>
+
+                <Pressable
+                  style={styles.actionBtnGoogle}
+                  onPress={() => {
+                    hapticMedium();
+                    setCloudinaryModalVisible(true);
+                  }}
+                >
+                  <Ionicons name="cloud-outline" size={18} color="#000000" />
+                  <Text style={[styles.actionBtnText, { flex: 1 }]} numberOfLines={1}>
+                    {cloudinaryCloudName ? 'Quản lý lưu trữ Cloudinary' : 'Thiết lập lưu trữ Cloudinary'}
+                  </Text>
+                  {localImagesCount > 0 && (
+                    <View style={styles.cloudinaryBadgeNotice}>
+                      <Text style={styles.cloudinaryBadgeNoticeText}>
+                        {localImagesCount}
+                      </Text>
+                    </View>
+                  )}
+                  <Ionicons name="chevron-forward" size={16} color="#000000" />
+                </Pressable>
+              </View>
+            )}
           </View>
         </View>
 
         {/* Export Data Section */}
         <View style={styles.cardShadow}>
           <View style={styles.cardInner}>
-            <View style={[styles.folderTab, { backgroundColor: THEME.primary }]}>
-              <Text style={styles.folderTabText}>XUẤT DỮ LIỆU (EXPORT)</Text>
-            </View>
-
-            <View style={styles.cardBody}>
-              <View style={styles.actionButtonsCol}>
-                <Pressable
-                  style={styles.actionBtnPrimary}
-                  onPress={handleExportFile}
-                  disabled={isProcessing}
-                >
-                  <Ionicons name="share-social-outline" size={18} color="#000000" />
-                  <Text style={styles.actionBtnText}>Xuất file sao lưu (.json) & Chia sẻ</Text>
-                </Pressable>
-
-                <Pressable
-                  style={styles.actionBtnSecondary}
-                  onPress={handleViewJson}
-                  disabled={isProcessing}
-                >
-                  <Ionicons name="code-slash-outline" size={18} color="#000000" />
-                  <Text style={styles.actionBtnTextSecondary}>Xem & Sao chép mã JSON</Text>
-                </Pressable>
+            <Pressable
+              style={[
+                styles.accordionHeader,
+                { backgroundColor: THEME.primary },
+                expandedSections.export && styles.accordionHeaderExpanded,
+              ]}
+              onPress={() => toggleSection('export')}
+            >
+              <View style={styles.accordionHeaderLeft}>
+                <View style={styles.accordionIconBox}>
+                  <Ionicons name="share-social" size={17} color="#000000" />
+                </View>
+                <View style={styles.accordionTitleCol}>
+                  <Text style={styles.accordionTitleText}>XUẤT DỮ LIỆU (EXPORT)</Text>
+                  <Text style={styles.accordionSubtitleText} numberOfLines={1}>
+                    Xuất file sao lưu .json & chia sẻ
+                  </Text>
+                </View>
               </View>
-            </View>
+              <View style={styles.accordionHeaderRight}>
+                <View style={styles.accordionBadge}>
+                  <Text style={styles.accordionBadgeText}>Xuất file</Text>
+                </View>
+                <View style={styles.accordionChevronCircle}>
+                  <Ionicons
+                    name={expandedSections.export ? 'chevron-up' : 'chevron-down'}
+                    size={16}
+                    color="#000000"
+                  />
+                </View>
+              </View>
+            </Pressable>
+
+            {expandedSections.export && (
+              <View style={styles.cardBody}>
+                <View style={styles.actionButtonsCol}>
+                  <Pressable
+                    style={styles.actionBtnPrimary}
+                    onPress={handleExportFile}
+                    disabled={isProcessing}
+                  >
+                    <Ionicons name="share-social-outline" size={18} color="#000000" />
+                    <Text style={styles.actionBtnText}>Xuất file sao lưu (.json) & Chia sẻ</Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={styles.actionBtnSecondary}
+                    onPress={handleViewJson}
+                    disabled={isProcessing}
+                  >
+                    <Ionicons name="code-slash-outline" size={18} color="#000000" />
+                    <Text style={styles.actionBtnTextSecondary}>Xem & Sao chép mã JSON</Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
           </View>
         </View>
 
         {/* Import Data Section */}
         <View style={styles.cardShadow}>
           <View style={styles.cardInner}>
-            <View style={[styles.folderTab, { backgroundColor: THEME.popBlue }]}>
-              <Text style={styles.folderTabText}>NHẬP DỮ LIỆU (IMPORT)</Text>
-            </View>
+            <Pressable
+              style={[
+                styles.accordionHeader,
+                { backgroundColor: THEME.popBlue },
+                expandedSections.import && styles.accordionHeaderExpanded,
+              ]}
+              onPress={() => toggleSection('import')}
+            >
+              <View style={styles.accordionHeaderLeft}>
+                <View style={styles.accordionIconBox}>
+                  <Ionicons name="cloud-download" size={17} color="#000000" />
+                </View>
+                <View style={styles.accordionTitleCol}>
+                  <Text style={styles.accordionTitleText}>NHẬP DỮ LIỆU (IMPORT)</Text>
+                  <Text style={styles.accordionSubtitleText} numberOfLines={1}>
+                    Khôi phục từ file hoặc mã JSON
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.accordionHeaderRight}>
+                <View style={styles.accordionBadge}>
+                  <Text style={styles.accordionBadgeText}>Khôi phục</Text>
+                </View>
+                <View style={styles.accordionChevronCircle}>
+                  <Ionicons
+                    name={expandedSections.import ? 'chevron-up' : 'chevron-down'}
+                    size={16}
+                    color="#000000"
+                  />
+                </View>
+              </View>
+            </Pressable>
 
-            <View style={styles.cardBody}>
+            {expandedSections.import && (
+              <View style={styles.cardBody}>
               {/* Mode Switcher */}
               <View style={styles.importModeContainer}>
                 <Text style={styles.importModeTitle}>Chế độ khôi phục:</Text>
@@ -1563,17 +1870,48 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                 </Pressable>
               </View>
             </View>
+            )}
           </View>
         </View>
 
         {/* Preferences & Danger Zone */}
         <View style={styles.cardShadow}>
           <View style={styles.cardInner}>
-            <View style={[styles.folderTab, { backgroundColor: THEME.popPink }]}>
-              <Text style={styles.folderTabText}>TÙY CHỌN & HỆ THỐNG</Text>
-            </View>
+            <Pressable
+              style={[
+                styles.accordionHeader,
+                { backgroundColor: THEME.popPink },
+                expandedSections.system && styles.accordionHeaderExpanded,
+              ]}
+              onPress={() => toggleSection('system')}
+            >
+              <View style={styles.accordionHeaderLeft}>
+                <View style={styles.accordionIconBox}>
+                  <Ionicons name="settings" size={17} color="#000000" />
+                </View>
+                <View style={styles.accordionTitleCol}>
+                  <Text style={styles.accordionTitleText}>TÙY CHỌN & HỆ THỐNG</Text>
+                  <Text style={styles.accordionSubtitleText} numberOfLines={1}>
+                    Rung, tiện ích & nhật ký log
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.accordionHeaderRight}>
+                <View style={styles.accordionBadge}>
+                  <Text style={styles.accordionBadgeText}>Hệ thống</Text>
+                </View>
+                <View style={styles.accordionChevronCircle}>
+                  <Ionicons
+                    name={expandedSections.system ? 'chevron-up' : 'chevron-down'}
+                    size={16}
+                    color="#000000"
+                  />
+                </View>
+              </View>
+            </Pressable>
 
-            <View style={styles.cardBody}>
+            {expandedSections.system && (
+              <View style={styles.cardBody}>
               {/* Toggle Haptic Feedback */}
               <View style={styles.settingRow}>
                 <View style={styles.settingRowLeft}>
@@ -1715,20 +2053,50 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                 <Text style={styles.dangerResetText}>Đặt lại ứng dụng ban đầu (Xóa tất cả)</Text>
               </Pressable>
             </View>
+            )}
           </View>
         </View>
 
         {/* Smart Contextual Reminders Section */}
         <View style={styles.cardShadow}>
           <View style={styles.cardInner}>
-            <View style={[styles.folderTab, { backgroundColor: THEME.popPurple }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Ionicons name="notifications-outline" size={15} color="#000000" />
-                <Text style={styles.folderTabText}>NHẮC NHỞ CHI TIÊU THÔNG MINH</Text>
+            <Pressable
+              style={[
+                styles.accordionHeader,
+                { backgroundColor: THEME.popPurple },
+                expandedSections.reminders && styles.accordionHeaderExpanded,
+              ]}
+              onPress={() => toggleSection('reminders')}
+            >
+              <View style={styles.accordionHeaderLeft}>
+                <View style={styles.accordionIconBox}>
+                  <Ionicons name="notifications" size={17} color="#000000" />
+                </View>
+                <View style={styles.accordionTitleCol}>
+                  <Text style={styles.accordionTitleText}>NHẮC NHỞ CHI TIÊU THÔNG MINH</Text>
+                  <Text style={styles.accordionSubtitleText} numberOfLines={1}>
+                    Học thói quen & tự động nhắc
+                  </Text>
+                </View>
               </View>
-            </View>
+              <View style={styles.accordionHeaderRight}>
+                <View style={styles.accordionBadge}>
+                  <Text style={styles.accordionBadgeText}>
+                    {habitConfig.enabled ? 'Đang bật' : 'Tắt'}
+                  </Text>
+                </View>
+                <View style={styles.accordionChevronCircle}>
+                  <Ionicons
+                    name={expandedSections.reminders ? 'chevron-up' : 'chevron-down'}
+                    size={16}
+                    color="#000000"
+                  />
+                </View>
+              </View>
+            </Pressable>
 
-            <View style={styles.cardBody}>
+            {expandedSections.reminders && (
+              <View style={styles.cardBody}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                 <Text style={styles.cardSectionTitle}>Nhắc theo thói quen sinh hoạt</Text>
                 <Switch
@@ -1841,6 +2209,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                 </>
               )}
             </View>
+            )}
           </View>
         </View>
 
@@ -1848,7 +2217,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
         <View style={styles.footerContainer}>
           <Text style={styles.footerAppName}>Ví Của Tôi • Multi-Wallet Manager</Text>
           <Text style={styles.footerNote}>
-            Phiên bản 1.1.9 • SQLite Offline Local Storage
+            Phiên bản 1.2.6 • SQLite Offline Local Storage
           </Text>
           <Text style={styles.footerPrivacy}>
             100% dữ liệu được lưu trữ trên thiết bị của bạn, hoàn toàn riêng tư và không tải lên máy chủ ngoài.
@@ -2192,6 +2561,81 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
     gap: 16,
   },
+
+  // Accordion Header styles
+  accordionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+  },
+  accordionHeaderExpanded: {
+    borderBottomWidth: 2,
+    borderBottomColor: '#000000',
+  },
+  accordionHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 8,
+  },
+  accordionIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 9,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  accordionTitleCol: {
+    marginLeft: 9,
+    flex: 1,
+  },
+  accordionTitleText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#000000',
+    letterSpacing: 0.3,
+  },
+  accordionSubtitleText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#374151',
+    marginTop: 1,
+  },
+  accordionHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  accordionBadge: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    maxWidth: 110,
+  },
+  accordionBadgeText: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  accordionChevronCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
   // Neo-Brutalist Folder Card
   cardShadow: {
     backgroundColor: '#000000',
