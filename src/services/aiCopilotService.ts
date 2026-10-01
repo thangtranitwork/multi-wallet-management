@@ -463,6 +463,118 @@ function cleanAndParseJSON(raw: string): any {
     });
   }
 
+  // Chuẩn hóa alias cho các intent phụ trợ
+  if ((parsed as any).planned_transaction && !parsed.planned_expense) {
+    parsed.planned_expense = (parsed as any).planned_transaction;
+  }
+  if (parsed.planned_expense) {
+    if (!parsed.planned_expense.title && (parsed.planned_expense as any).name) {
+      parsed.planned_expense.title = (parsed.planned_expense as any).name;
+    }
+    if (!parsed.planned_expense.target_date && (parsed.planned_expense as any).due_date) {
+      parsed.planned_expense.target_date = (parsed.planned_expense as any).due_date;
+    }
+  }
+  if ((parsed as any).balance_adjustment && !parsed.adjust_balance) {
+    parsed.adjust_balance = (parsed as any).balance_adjustment;
+  }
+
+  // Lọc và loại bỏ các giao dịch không hợp lệ (amount <= 0 hoặc không có số tiền)
+  if (parsed.transaction) {
+    const amt = Number(parsed.transaction.amount);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      delete parsed.transaction;
+      if (parsed.intent === 'create_transaction') {
+        parsed.intent = 'query';
+      }
+    } else {
+      parsed.transaction.amount = amt;
+    }
+  }
+
+  if (Array.isArray(parsed.transactions)) {
+    parsed.transactions = parsed.transactions.filter((tx: any) => {
+      const amt = Number(tx?.amount);
+      if (Number.isFinite(amt) && amt > 0) {
+        tx.amount = amt;
+        return true;
+      }
+      return false;
+    });
+    if (parsed.transactions.length === 0) {
+      delete parsed.transactions;
+      if (parsed.intent === 'create_transactions') {
+        parsed.intent = 'query';
+      }
+    }
+  }
+
+  // Đồng bộ lại transaction và transactions sau khi lọc
+  if (
+    parsed.transactions &&
+    Array.isArray(parsed.transactions) &&
+    parsed.transactions.length === 1 &&
+    !parsed.transaction
+  ) {
+    parsed.transaction = parsed.transactions[0];
+  } else if (
+    parsed.transaction &&
+    (!parsed.transactions || parsed.transactions.length === 0)
+  ) {
+    parsed.transactions = [parsed.transaction];
+  }
+
+  // Lọc các hành động tài chính khác nếu amount <= 0 hoặc thiếu thông tin cốt lõi
+  if (parsed.transfer) {
+    const amt = Number(parsed.transfer.amount);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      delete parsed.transfer;
+      if (parsed.intent === 'transfer_money') parsed.intent = 'query';
+    } else {
+      parsed.transfer.amount = amt;
+    }
+  }
+
+  if (parsed.debt) {
+    const amt = Number(parsed.debt.amount);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      delete parsed.debt;
+      if (parsed.intent === 'create_debt') parsed.intent = 'query';
+    } else {
+      parsed.debt.amount = amt;
+    }
+  }
+
+  if (parsed.debt_settlement) {
+    const amt = Number(parsed.debt_settlement.amount);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      delete parsed.debt_settlement;
+      if (parsed.intent === 'settle_debt') parsed.intent = 'query';
+    } else {
+      parsed.debt_settlement.amount = amt;
+    }
+  }
+
+  if (parsed.planned_expense) {
+    const amt = Number(parsed.planned_expense.amount);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      delete parsed.planned_expense;
+      if (parsed.intent === 'create_planned') parsed.intent = 'query';
+    } else {
+      parsed.planned_expense.amount = amt;
+    }
+  }
+
+  if (parsed.delete_transaction && !parsed.delete_transaction.transaction_id) {
+    delete parsed.delete_transaction;
+    if (parsed.intent === 'delete_transaction') parsed.intent = 'query';
+  }
+
+  if (parsed.update_transaction && !parsed.update_transaction.transaction_id) {
+    delete parsed.update_transaction;
+    if (parsed.intent === 'update_transaction') parsed.intent = 'query';
+  }
+
   return parsed;
 }
 
@@ -645,17 +757,16 @@ QUY TẮC PHÂN LOẠI Ý ĐỊNH (INTENT):
    - Bóc tách "debt": { person_name, amount, type: "lend" (cho vay) | "borrow" (đi vay), wallet_id, wallet_name, due_date, note }.
 
 6. INTENT "create_planned": Lên lịch kế hoạch dự chi tương lai.
-   - Ví dụ: "Nhắc tui ngày 5 tháng sau đóng tiền nhà 4.5tr", "Dự kiến 25 này đóng học phí 3 triệu ví Tech".
-   - Bóc tách "planned_expense": { title, amount, target_date (định dạng YYYY-MM-DD), wallet_id, wallet_name, category_id, category_name, note }.
+   - Ví dụ: "Nhắc tui ngày 5 tháng sau đóng tiền nhà 4.5tr", "Dự kiến 20/10 mua quà 500k ví zalopay".
+   - Bóc tách "planned_expense": { title, amount, category_id, category_name, wallet_id, wallet_name, target_date, note }.
 
-7. INTENT "query": Khi người dùng hỏi đáp về tình hình tài chính, số dư ví, thống kê chi tiêu hoặc lời khuyên.
-   - Ví dụ: "Tháng này uống cafe hết bao nhiêu?", "Ví nào nhiều tiền nhất?", "Ai đang nợ tiền tui?", "So sánh thu chi tháng này".
-   - Dựa vào THÔNG TIN TÀI CHÍNH THỰC TẾ được cung cấp ở trên để trả lời cụ thể, chính xác, ngắn gọn, có số liệu rõ ràng.
-
-8. INTENT "adjust_balance": Cân đối / điều chỉnh số dư thực tế của 1 ví về số tiền cụ thể.
-   - Ví dụ: "Ví tiền mặt thực tế đang còn 200k, cân chỉnh lại giúp tui", "Chỉnh số dư ví MoMo thành 1.5 triệu", "Số dư Vietcombank giờ là 8tr".
-   - Tra cứu DANH SÁCH VÍ để lấy ví khớp nhất, current_balance, new_balance, diff = new_balance - current_balance.
+7. INTENT "adjust_balance": Điều chỉnh/khớp lại số dư thực tế của một ví.
+   - Ví dụ: "Ví Tiền mặt chỉ còn 200k thôi", "Chỉnh lại ví MoMo thành 1 triệu", "Số dư ví Techcombank thực tế là 5.500.000đ".
    - Bóc tách "adjust_balance": { wallet_id, wallet_name, current_balance, new_balance, diff, note }.
+
+8. INTENT "create_transactions": Khi người dùng ghi nhận NHIỀU khoản thu/chi khác nhau trong 1 câu nói hoặc hình ảnh.
+   - Ví dụ: "Sáng ăn phở 40k ví tiền mặt, trưa uống trà sữa 35k momo, tối mua sắm 200k".
+   - Bóc tách mảng "transactions": [ { type, amount, note, wallet_id, wallet_name, category_id, category_name, transacted_at, items } ].
 
 9. INTENT "delete_transaction": Xóa / hủy bỏ một giao dịch đã tạo trước đó.
    - Ví dụ: "Xóa giao dịch cafe vừa tạo", "Xóa khoản chi 20k vừa rồi", "Hủy giao dịch đổ xăng trưa nay", "Xóa giao dịch bò cụng".
@@ -689,14 +800,25 @@ QUY TẮC NHẬN DIỆN HÌNH ẢNH & ĐA PHƯƠNG THỨC (MULTIMODAL - ẢNH / 
           * wallet_id & wallet_name: ví người dùng chỉ định (nếu không chỉ định, lấy ví đầu tiên)
           * category_id & category_name: danh mục phù hợp (ví dụ: Ăn uống)
           * items: BẮT BUỘC bóc tách đầy đủ danh sách TẤT CẢ các món nhận diện được trong ảnh kèm số lượng (ví dụ: [{ "name": "Tô phở bò", "quantity": 1, "price": 50000 }, { "name": "Đĩa quẩy", "quantity": 1, "price": 10000 }, { "name": "Ly trà đá", "quantity": 1, "price": 5000 }]). Nếu chỉ có số tiền tổng, hãy phân bổ giá hợp lý cho từng món để tổng bằng amount.
-     + NẾU người dùng chỉ gửi ảnh mà CHƯA CÓ số tiền:
-       -> Nhận diện rõ danh sách từng món đồ, intent = "query", phản hồi bằng giọng điệu vui vẻ, tự nhiên liệt kê các món nhìn thấy trong ảnh và hỏi người dùng số tiền và ví đã chi để ghi chép (ví dụ: "Mình thấy trong ảnh có 1 tô phở bò, 1 đĩa quẩy và 1 ly trà đá nè! 🍜 Bữa này bạn ăn hết bao nhiêu và chi từ ví nào để mình ghi lại nhé?").
+     + NẾU người dùng chỉ gửi ảnh mà CHƯA CÓ số tiền (kể cả không thể suy luận từ ngữ cảnh trò chuyện trước đó):
+       -> Nhận diện rõ danh sách từng món đồ, intent = "query", phản hồi bằng giọng điệu vui vẻ, tự nhiên liệt kê các món nhìn thấy trong ảnh và hỏi người dùng số tiền và ví đã chi để ghi chép (ví dụ: "Mình thấy trong ảnh có 1 hộp bánh cuốn chả lụa chả quế nè! 🤤 Bữa này bạn ăn hết bao nhiêu và chi từ ví nào để mình ghi lại nhé?").
+       -> TUYỆT ĐỐI CẤM: KHÔNG TRẢ VỀ object "transaction" hoặc "transactions" có amount = 0! Khi chưa biết số tiền, tuyệt đối không tạo giao dịch 0đ, chỉ dùng intent = "query" và hỏi trong message.
 
-12. QUY TẮC KẾ THỪA NGỮ CẢNH ĐA LƯỢT (MULTI-TURN MEMORY):
-   - Khi người dùng gửi tin nhắn bổ sung thông tin (bằng chữ hoặc giọng nói, ví dụ: "20k tiền mặt", "hết 65k ví momo nhé"):
+12. QUY TẮC KẾ THỪA NGỮ CẢNH ĐA LƯỢT VÀ QUY CHIẾU ĐẠI TỪ (MULTI-TURN MEMORY & CO-REFERENCE RESOLUTION):
+   - KẾ THỪA MÓN ĐỒ / HÓA ĐƠN TRƯỚC ĐÓ:
+     Khi người dùng gửi tin nhắn bổ sung thông tin (bằng chữ hoặc giọng nói, ví dụ: "20k tiền mặt", "hết 65k ví momo nhé"):
      BẮT BUỘC phải xâu chuỗi với hình ảnh hoặc nội dung đồ vật ở các lượt trò chuyện gần nhất trong lịch sử hội thoại (chatHistory)!
-   - Kế thừa toàn bộ danh sách món đồ đã nhận diện ở lượt trước để điền vào trường "note" và mảng "items" của giao dịch mới!
-   - Ví dụ: Lượt trước người dùng gửi ảnh lon bò cụng; Lượt này nhắn hoặc nói "20k tiền mặt" -> Tạo ngay giao dịch 20.000đ từ ví Tiền mặt cho "Lon bò cụng (Red Bull)" thuộc danh mục "Ăn uống" và items: [{ "name": "Lon bò cụng (Red Bull)", "quantity": 1, "price": 20000 }]. TUYỆT ĐỐI không quên món đồ ở lượt trước!
+     Kế thừa toàn bộ danh sách món đồ đã nhận diện ở lượt trước để điền vào trường "note" và mảng "items" của giao dịch mới (Ví dụ: Lượt trước người dùng gửi ảnh lon bò cụng; Lượt này nhắn hoặc nói "20k tiền mặt" -> Tạo ngay giao dịch 20.000đ từ ví Tiền mặt cho "Lon bò cụng (Red Bull)" thuộc danh mục "Ăn uống" và items: [{ "name": "Lon bò cụng (Red Bull)", "quantity": 1, "price": 20000 }]. TUYỆT ĐỐI không quên món đồ ở lượt trước!).
+   - QUY CHIẾU ĐẠI TỪ CHỈ ĐỊNH VỀ TIỀN & VÍ ("tiền đó", "số tiền đó", "tiền này", "khoản đó", "khoản vừa nạp", "ví đó", "ví vừa nạp", "bằng ví nãy"):
+     Khi người dùng nói các câu mang tính quy chiếu như:
+     * "Tôi mới dùng tiền đó ăn bánh cuốn nè"
+     * "Vừa lấy tiền đó mua cafe rồi"
+     * "Dùng khoản đó trả nợ cho Nam"
+     * "Lấy tiền vừa nạp đi đổ xăng"
+     BẮT BUỘC phải tra ngược các tin nhắn gần nhất trong chatHistory (hoặc danh sách giao dịch gần nhất vừa được nhắc tới):
+     1. Tìm số tiền của giao dịch/khoản tiền vừa được nhắc tới (Ví dụ: tin nhắn trước Copilot vừa thông báo "vụ nạp 33.840 đ vào MoMo" -> "tiền đó" chính là 33.840 đ).
+     2. Tìm ví nguồn/ví chi: Nếu giao dịch trước đó là nạp tiền/nhận tiền vào một ví (như MoMo), thì khi người dùng nói "dùng tiền đó...", ví chi tiền chính là ví đó (MoMo).
+     3. Tạo ngay giao dịch chi tiêu tương ứng với: amount = 33840, wallet_name = "MoMo", note = "Bánh cuốn (chả lụa, chả quế, nem chua)", category_name = "Ăn uống". TUYỆT ĐỐI KHÔNG hỏi lại số tiền và ví khi ngữ cảnh đã nói rõ!
 
 13. QUY TẮC PHÁT NGÔN KHI TRẢ VỀ CÁC HÀNH ĐỘNG CẦN XÁC NHẬN (CONFIRMATION CARDS):
    - Khi intent là tạo, sửa, xóa, chuyển tiền hoặc điều chỉnh số dư:
@@ -709,7 +831,7 @@ QUY TẮC NHẬN DIỆN HÌNH ẢNH & ĐA PHƯƠNG THỨC (MULTIMODAL - ẢNH / 
 {
   "transcript": "Câu nói được phiên âm tiếng Việt của người dùng (khi có âm thanh)",
   "intent": "create_transaction" | "create_transactions" | "transfer_money" | "settle_debt" | "create_debt" | "create_planned" | "adjust_balance" | "delete_transaction" | "update_transaction" | "query" | "unknown",
-  "message": "Lời nhắn hoặc câu trả lời bằng tiếng Việt (BẮT BUỘC thể hiện đậm nét tính cách [${personality.name}], văn phong sống động, dí dỏm hoặc theo đúng hướng dẫn tính cách ở trên, TUYỆT ĐỐI KHÔNG khô khan máy móc)",
+  "message": "Lời nhắn hoặc câu trả lời bằng tiếng Việt (BẮT BUỘC thể hiện đậm nét tính cách [${personality.name}])",
   "transaction": {
     "type": "expense" | "income",
     "amount": 55000,

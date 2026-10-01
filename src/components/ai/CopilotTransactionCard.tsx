@@ -109,6 +109,7 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(isSaved);
   const [showItems, setShowItems] = useState(true);
+  const isSubmittingRef = React.useRef(false);
 
   const effectiveTransaction =
     transaction ||
@@ -137,7 +138,8 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
   if (!hasAnyData) return null;
 
   const handlePressConfirm = async () => {
-    if (saved || loading) return;
+    if (saved || loading || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
     hapticLight();
     setLoading(true);
     try {
@@ -158,6 +160,7 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
       hapticSuccess();
     } catch {
       // lỗi xử lý ở parent
+      isSubmittingRef.current = false;
     } finally {
       setLoading(false);
     }

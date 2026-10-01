@@ -541,11 +541,15 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
 
   // ==================== XỬ LÝ LƯU GIAO DỊCH / HÀNH ĐỘNG 1 CHẠM ====================
 
+  const savingMsgIdsRef = useRef<Set<string>>(new Set());
+
   const handleConfirmSave = async (
     msgId: string,
     data: CopilotActionData,
     attachedImages?: string[] | string
   ) => {
+    if (savingMsgIdsRef.current.has(msgId)) return;
+    savingMsgIdsRef.current.add(msgId);
     try {
       // 0. Lưu ảnh hóa đơn vĩnh viễn (lên Cloudinary hoặc bộ nhớ máy)
       let persistentUris: string[] | null = null;

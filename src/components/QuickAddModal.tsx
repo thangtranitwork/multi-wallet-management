@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -98,6 +98,8 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
   const [scanResult, setScanResult] = useState<ReceiptScanResult | null>(null);
   const [showItemsBreakdown, setShowItemsBreakdown] = useState<boolean>(false);
   const [viewingImageUri, setViewingImageUri] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const isSavingRef = useRef(false);
 
   const triggerGeminiScan = async (imagesToScan: string[]) => {
     if (!imagesToScan || imagesToScan.length === 0) return;
@@ -723,6 +725,8 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
   };
 
   const handleSave = async () => {
+    if (isSavingRef.current || isSaving) return;
+
     if (amountNumber <= 0) {
       hapticError();
       showAlert('Số tiền không hợp lệ', 'Vui lòng nhập số tiền lớn hơn 0');
@@ -746,26 +750,29 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
       }
     }
 
-    // Lưu vĩnh viễn các ảnh hóa đơn (Cloudinary hoặc cục bộ)
-    let persistentUris: string[] | null = null;
-    if (receiptImages.length > 0) {
-      try {
-        persistentUris = await saveReceiptImages(receiptImages, db);
-      } catch (err) {
-        console.warn('Lỗi lưu ảnh hóa đơn:', err);
-        persistentUris = receiptImages;
+    isSavingRef.current = true;
+    setIsSaving(true);
+
+    try {
+      // Lưu vĩnh viễn các ảnh hóa đơn (Cloudinary hoặc cục bộ)
+      let persistentUris: string[] | null = null;
+      if (receiptImages.length > 0) {
+        try {
+          persistentUris = await saveReceiptImages(receiptImages, db);
+        } catch (err) {
+          console.warn('Lỗi lưu ảnh hóa đơn:', err);
+          persistentUris = receiptImages;
+        }
       }
-    }
 
-    // Chuẩn bị items nếu quét hóa đơn thành công
-    const itemsJson =
-      scanResult?.items && scanResult.items.length > 0
-        ? JSON.stringify({ items: scanResult.items })
-        : null;
+      // Chuẩn bị items nếu quét hóa đơn thành công
+      const itemsJson =
+        scanResult?.items && scanResult.items.length > 0
+          ? JSON.stringify({ items: scanResult.items })
+          : null;
 
-    // Xử lý riêng cho chi tiêu thẻ tín dụng có hẹn ngày thanh toán hoặc trả góp
-    if (isCreditWallet && enableCreditPlan) {
-      try {
+      // Xử lý riêng cho chi tiêu thẻ tín dụng có hẹn ngày thanh toán hoặc trả góp
+      if (isCreditWallet && enableCreditPlan) {
         const feeNumber = parseInt(feePerInstallmentStr.replace(/[^0-9]/g, ''), 10) || 0;
         await addCreditExpenseWithPlan({
           creditWalletId: selectedWalletId,
@@ -784,14 +791,8 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
         hapticSuccess();
         onClose();
         return;
-      } catch (error: any) {
-        hapticError();
-        showAlert('Lỗi lưu giao dịch thẻ', error?.message || 'Đã có lỗi xảy ra');
-        return;
       }
-    }
 
-    try {
       await addTransaction({
         type,
         amount: amountNumber,
@@ -808,6 +809,9 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
     } catch (error: any) {
       hapticError();
       showAlert('Lỗi lưu giao dịch', error?.message || 'Đã có lỗi xảy ra');
+    } finally {
+      isSavingRef.current = false;
+      setIsSaving(false);
     }
   };
 
@@ -2312,12 +2316,20 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                 type === 'expense' && styles.saveBtnExpense,
                 type === 'income' && styles.saveBtnIncome,
                 type === 'transfer' && styles.saveBtnTransfer,
-                pressed && { opacity: 0.9 },
+                isSaving && { opacity: 0.6 },
+                pressed && !isSaving && { opacity: 0.9 },
               ]}
               onPress={handleSave}
+              disabled={isSaving}
             >
-              <Ionicons name="checkmark-sharp" size={22} color="#000000" />
-              <Text style={styles.saveBtnText}>Lưu giao dịch</Text>
+              {isSaving ? (
+                <ActivityIndicator size="small" color="#000000" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-sharp" size={22} color="#000000" />
+                  <Text style={styles.saveBtnText}>Lưu giao dịch</Text>
+                </>
+              )}
             </Pressable>
           </ScrollView>
         </View>

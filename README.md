@@ -1,4 +1,4 @@
-# MultiWallet (v1.2.4) - Personal Finance & Multi-Source Wallet Management
+# MultiWallet (v1.2.5) - Personal Finance & Multi-Source Wallet Management
 
 A modern, high-performance mobile application built with **React Native (Expo SDK 57)**, **TypeScript**, and **Expo SQLite**, crafted with a distinctive, tactile Neo-Brutalist design language. 
 
@@ -207,7 +207,15 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
   - Immediately triggers Gemini AI Vision scanner to extract total amount, transfer notes, and auto-match categories without manual typing.
 - **Custom Native Config Plugin**: Integrated via `plugins/withShareIntent.js` and Android native intent filters for full EAS Build and local prebuild compatibility.
 
-### 19. Gemini AI Financial Copilot (Trợ lý Tài chính AI Đa Năng, Voice TTS, Action Tools & Quản lý Hội thoại)
+### 19. Gemini AI Financial Copilot
+- **Multi-Turn Memory & Co-reference Resolution (Quy chiếu đại từ & Kế thừa ngữ cảnh)**:
+  - Tự động xâu chuỗi món đồ ở lượt gửi ảnh trước khi người dùng gửi thêm tin nhắn bổ sung tiền/ví (ví dụ: chụp ảnh bò cụng $\rightarrow$ nói "20k tiền mặt" $\rightarrow$ tự động tạo giao dịch 20.000đ cho "Lon bò cụng (Red Bull)").
+  - Xử lý mượt mà các đại từ chỉ định ("tiền đó", "khoản vừa nạp", "ví đó") bằng cách tra cứu lịch sử hội thoại gần nhất.
+- **Multimodal Item Breakdown & 0đ Guard**:
+  - Tự động bóc tách chi tiết từng món hàng (tên, số lượng, đơn giá) vào trường `items` khi chụp hóa đơn hoặc mâm cơm/giỏ hàng nhiều món.
+  - Chặn triệt để việc tạo giao dịch 0đ khi ảnh chưa rõ giá tiền: tự động chuyển sang intent `query` để hỏi tiền và ví tự nhiên.
+- **Debounce & Double-Tap Prevention (Chống bấm nhanh tạo trùng giao dịch khi upload Cloudinary)**:
+  - Khóa đồng bộ (`useRef` lock) và hiển thị loading spinner trên tất cả các nút xác nhận giao dịch (`QuickAddModal`, `CopilotTransactionCard`, `FinancialCopilotModal`), ngăn chặn việc tạo trùng lặp giao dịch trong lúc tải ảnh lên đám mây. (Trợ lý Tài chính AI Đa Năng, Voice TTS, Action Tools & Quản lý Hội thoại)
 - **Cân đối / Điều chỉnh số dư ví tức thì (`adjust_balance`)**:
   - Tự động hiểu câu lệnh cân bằng số dư: *"Ví tiền mặt thực tế đang còn 200k, cân chỉnh lại giúp tui"*, *"Số dư Vietcombank giờ là 8tr"*.
   - AI tự đối chiếu số dư hiện tại từ SQLite, tính toán chênh lệch (`diff`) tăng/giảm và hiển thị thẻ so sánh số dư cũ $\rightarrow$ số dư mới với nút xác nhận cập nhật chỉ với 1 chạm.
