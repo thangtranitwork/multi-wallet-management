@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useCustomAlert } from './CustomAlertModal';
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { useSQLiteContext } from 'expo-sqlite';
 import dayjs from 'dayjs';
 import { THEME } from '../constants';
@@ -59,6 +60,42 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
   // Cấu hình Client ID tùy chỉnh
   const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
   const [customClientIdInput, setCustomClientIdInput] = useState<string>('');
+
+  const handlePasteClientId = async () => {
+    try {
+      hapticLight();
+      const text = await Clipboard.getStringAsync();
+      if (text && text.trim().length > 0) {
+        setCustomClientIdInput(text.trim());
+        showAlert('Đã dán Client ID', text.trim());
+      } else {
+        showAlert('Thông báo', 'Bộ nhớ tạm không có nội dung văn bản.');
+      }
+    } catch {}
+  };
+
+  const handleCopyUri = async (uri: string, label: string) => {
+    try {
+      hapticSuccess();
+      await Clipboard.setStringAsync(uri);
+      showAlert('Đã sao chép URI', `Đã chép ${label} vào bộ nhớ tạm. Hãy dán vào mục "Authorized redirect URIs" trên Google Cloud Console.`);
+    } catch {}
+  };
+
+  const handleSaveCustomClientId = async () => {
+    try {
+      hapticSuccess();
+      await saveCloudBackupConfig(db, {
+        ...(config || { isLinked: false, autoBackupEnabled: false }),
+        customClientId: customClientIdInput.trim(),
+      });
+      await fetchConfig();
+      showAlert('Đã lưu cấu hình', 'Google Client ID đã được lưu vào hệ thống thành công.');
+    } catch (err: any) {
+      hapticError();
+      showAlert('Lỗi', err?.message || 'Không thể lưu cấu hình Client ID.');
+    }
+  };
 
   const fetchConfig = useCallback(async () => {
     try {
@@ -255,7 +292,12 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
               </Pressable>
             </View>
 
-            <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={styles.body}
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator={true}
+              keyboardShouldPersistTaps="handled"
+            >
               {loadingConfig ? (
                 <View style={styles.loadingBox}>
                   <ActivityIndicator size="large" color="#000000" />
@@ -307,33 +349,79 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                   {showAdvanced && (
                     <View style={styles.advancedBox}>
                       <Text style={styles.advancedLabel}>Google OAuth Web Client ID:</Text>
-                      <TextInput
-                        style={styles.advancedInput}
-                        value={customClientIdInput}
-                        onChangeText={setCustomClientIdInput}
-                        placeholder={DEFAULT_GOOGLE_CLIENT_ID}
-                        placeholderTextColor="#9CA3AF"
-                        autoCapitalize="none"
-                      />
+                      <View style={styles.clientIdInputRow}>
+                        <TextInput
+                          style={[styles.advancedInput, { flex: 1 }]}
+                          value={customClientIdInput}
+                          onChangeText={setCustomClientIdInput}
+                          placeholder={DEFAULT_GOOGLE_CLIENT_ID}
+                          placeholderTextColor="#9CA3AF"
+                          autoCapitalize="none"
+                        />
+                        <Pressable
+                          style={styles.pasteBtn}
+                          onPress={handlePasteClientId}
+                        >
+                          <Ionicons name="clipboard-outline" size={14} color="#000000" />
+                          <Text style={styles.pasteBtnText}>Dán</Text>
+                        </Pressable>
+                      </View>
                       <Text style={styles.advancedHint}>
-                        Nếu bạn có Google Cloud Project riêng, bạn có thể dán Client ID vào đây. Nếu để trống, app sẽ dùng cấu hình mặc định.
+                        Nếu bạn có Google Cloud Project riêng, hãy dán Web Client ID vào đây và bấm nút Lưu cấu hình bên dưới.
                       </Text>
 
-                      <View style={{ marginTop: 12 }}>
-                        <Text style={styles.advancedLabel}>Authorized Redirect URI của ứng dụng:</Text>
-                        <TextInput
-                          style={[styles.advancedInput, { backgroundColor: '#F3F4F6', color: '#1F2937', fontSize: 11 }]}
-                          value={getRedirectUri()}
-                          editable={false}
-                          selectTextOnFocus={true}
-                        />
-                        <Text style={[styles.advancedHint, { marginTop: 4, color: '#D97706', fontWeight: '600' }]}>
-                          Lưu ý khi dùng Google Cloud cá nhân:
+                      {/* Nút Lưu Cài Đặt Client ID */}
+                      <Pressable
+                        style={styles.saveClientIdBtnShadow}
+                        onPress={handleSaveCustomClientId}
+                      >
+                        <View style={styles.saveClientIdBtnInner}>
+                          <Ionicons name="save-outline" size={16} color="#000000" />
+                          <Text style={styles.saveClientIdBtnText}>Lưu Cấu Hình Client ID</Text>
+                        </View>
+                      </Pressable>
+
+                      {/* Các Redirect URIs */}
+                      <View style={{ marginTop: 14 }}>
+                        <Text style={styles.advancedLabel}>
+                          Authorized Redirect URIs (Cần thêm vào Google Cloud Console):
                         </Text>
-                        <Text style={styles.advancedHint}>
-                          1. Trong tab "Credentials" &gt; OAuth Client ID: Hãy thêm URI trên và "https://auth.expo.io/@anonymous/multi-wallet-management" vào mục "Authorized redirect URIs".{'\n'}
-                          2. Nếu màn hình OAuth Consent Screen đang ở chế độ "Testing", hãy vào mục "Audience" (hoặc "Test users") và thêm địa chỉ Gmail của bạn vào danh sách "Người dùng thử nghiệm".
-                        </Text>
+                        
+                        {/* URI 1: Expo Go Redirect URI */}
+                        <View style={styles.redirectUriRow}>
+                          <View style={{ flex: 1, marginRight: 6 }}>
+                            <Text style={styles.redirectUriTypeLabel}>1. Dành cho Expo Go (Bắt buộc):</Text>
+                            <Text style={styles.redirectUriValue} selectable>
+                              https://auth.expo.io/@anonymous/multi-wallet-management
+                            </Text>
+                          </View>
+                          <Pressable
+                            style={styles.copyUriBtn}
+                            onPress={() => handleCopyUri('https://auth.expo.io/@anonymous/multi-wallet-management', 'Expo Go URI')}
+                          >
+                            <Ionicons name="copy-outline" size={13} color="#000000" />
+                            <Text style={styles.copyUriBtnText}>Chép</Text>
+                          </Pressable>
+                        </View>
+
+                        {/* Hướng dẫn cài đặt Google Cloud */}
+                        <View style={styles.cloudInstructionBox}>
+                          <Text style={styles.cloudInstructionTitle}>
+                            👉 Hướng dẫn set trên Google Cloud Console:
+                          </Text>
+                          <Text style={styles.cloudInstructionStep}>
+                            1. Trong màn hình <Text style={{ fontWeight: '900' }}>"Client ID for Web application"</Text>, tìm mục <Text style={{ fontWeight: '900' }}>Authorized redirect URIs</Text>.
+                          </Text>
+                          <Text style={styles.cloudInstructionStep}>
+                            2. Bấm nút <Text style={{ fontWeight: '900' }}>"+ Add URI"</Text> rồi dán URL số 1 ở trên vào.
+                          </Text>
+                          <Text style={styles.cloudInstructionStep}>
+                            3. Bấm nút <Text style={{ fontWeight: '900' }}>"Save"</Text> màu xanh ở cuối trang Google Cloud.
+                          </Text>
+                          <Text style={styles.cloudInstructionStep}>
+                            4. Vào menu <Text style={{ fontWeight: '900' }}>Audience</Text> (hoặc Test users), thêm địa chỉ Gmail của bạn vào danh sách để Google cấp quyền đăng nhập thử nghiệm.
+                          </Text>
+                        </View>
                       </View>
                     </View>
                   )}
@@ -529,7 +617,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#000000',
     borderTopLeftRadius: 26,
     borderTopRightRadius: 26,
-    maxHeight: '90%',
+    height: '90%',
+    maxHeight: '92%',
   },
   modalCardInner: {
     backgroundColor: '#FAF8F5',
@@ -538,6 +627,7 @@ const styles = StyleSheet.create({
     borderWidth: 2.5,
     borderColor: '#000000',
     overflow: 'hidden',
+    flex: 1,
   },
   folderTab: {
     flexDirection: 'row',
@@ -573,7 +663,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   body: {
+    flex: 1,
+  },
+  scrollContent: {
     padding: 16,
+    paddingBottom: 80,
   },
   loadingBox: {
     paddingVertical: 50,
@@ -684,6 +778,108 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     marginTop: 6,
     lineHeight: 15,
+  },
+  clientIdInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  pasteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  pasteBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  saveClientIdBtnShadow: {
+    backgroundColor: '#000000',
+    borderRadius: 10,
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  saveClientIdBtnInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: THEME.primary,
+    borderWidth: 2,
+    borderColor: '#000000',
+    paddingVertical: 10,
+    borderRadius: 10,
+    transform: [{ translateX: -2 }, { translateY: -2 }],
+  },
+  saveClientIdBtnText: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  redirectUriRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    borderRadius: 8,
+    padding: 8,
+    marginTop: 6,
+    gap: 8,
+  },
+  redirectUriTypeLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#4B5563',
+    marginBottom: 2,
+  },
+  redirectUriValue: {
+    fontSize: 11,
+    fontFamily: 'monospace',
+    color: '#111827',
+  },
+  copyUriBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  copyUriBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  cloudInstructionBox: {
+    marginTop: 12,
+    padding: 10,
+    backgroundColor: '#FEF9C3',
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+  },
+  cloudInstructionTitle: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#854D0E',
+    marginBottom: 4,
+  },
+  cloudInstructionStep: {
+    fontSize: 11,
+    color: '#713F12',
+    lineHeight: 16,
+    marginTop: 3,
   },
   // Linked state
   linkedContainer: {

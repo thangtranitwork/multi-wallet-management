@@ -592,9 +592,14 @@ export async function buildFinancialContext(
   const endOfMonth = now.endOf('month').toISOString();
 
   // 1. Số dư ví
-  const walletLines = wallets.map(
-    w => `- Ví "${w.name}" (ID: ${w.id}, Loại: ${w.type}): ${Number(w.balance).toLocaleString('vi-VN')} ₫`
-  );
+  const walletLines = wallets.map(w => {
+    if (w.type === 'credit') {
+      const limitStr = w.credit_limit ? ` (Hạn mức: ${w.credit_limit.toLocaleString('vi-VN')} ₫)` : '';
+      const cycleStr = w.due_day ? ` [Hạn thanh toán hàng tháng: ngày ${w.due_day}]` : '';
+      return `- Ví Thẻ Tín Dụng / Trả Sau "${w.name}" (ID: ${w.id}, Loại: credit): Dư nợ/Số dư: ${Number(w.balance).toLocaleString('vi-VN')} ₫${limitStr}${cycleStr}`;
+    }
+    return `- Ví "${w.name}" (ID: ${w.id}, Loại: ${w.type}): ${Number(w.balance).toLocaleString('vi-VN')} ₫`;
+  });
   const totalBalance = wallets.reduce((sum, w) => sum + Number(w.balance), 0);
 
   // 2. Thống kê tháng này

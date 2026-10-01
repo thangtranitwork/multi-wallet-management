@@ -102,6 +102,16 @@ jobs:
           echo "Prepared APK artifacts in build-output:"
           ls -lh build-output/
 
+      - name: Print APK SHA-1 Fingerprint (For Google Cloud OAuth)
+        run: |
+          echo "============================================================"
+          echo "🔑 MÃ SHA-1 CERTIFICATE FINGERPRINT CỦA APK ĐỂ DÙNG GOOGLE CLOUD:"
+          FIRST_APK=$(find build-output -name "*.apk" | head -n 1)
+          if [ -n "$FIRST_APK" ]; then
+            keytool -printcert -jarfile "$FIRST_APK" | grep -E "SHA1|SHA256" || true
+          fi
+          echo "============================================================"
+
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:

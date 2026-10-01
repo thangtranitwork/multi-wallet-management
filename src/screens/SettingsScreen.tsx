@@ -25,6 +25,7 @@ import { useSecurity } from '../context/SecurityContext';
 import { CategoryManagementModal } from '../components/CategoryManagementModal';
 import { GoogleDriveSyncModal } from '../components/GoogleDriveSyncModal';
 import { CloudinaryModal } from '../components/CloudinaryModal';
+import { LogViewerModal } from '../components/LogViewerModal';
 import { NeoDropdown, DropdownOption } from '../components/NeoDropdown';
 import { syncWidgetData } from '../services/widgetSyncService';
 import { loadCloudBackupConfig } from '../services/cloudBackupStorage';
@@ -126,6 +127,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
   }, [checkDriveStatus]);
 
   const [categoryModalVisible, setCategoryModalVisible] = useState<boolean>(false);
+  const [logModalVisible, setLogModalVisible] = useState<boolean>(false);
   const [habitConfig, setHabitConfig] = useState<HabitReminderConfig>(DEFAULT_HABIT_CONFIG);
 
   // Gemini AI Settings
@@ -1676,6 +1678,33 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
 
               <View style={styles.divider} />
 
+              {/* View System Logs */}
+              <View style={styles.settingRow}>
+                <View style={styles.settingRowLeft}>
+                  <View style={[styles.settingRowIconBox, { backgroundColor: THEME.primary }]}>
+                    <Ionicons name="terminal-outline" size={18} color="#000000" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.settingRowTitle}>Nhật ký hoạt động (Logs)</Text>
+                    <Text style={styles.settingRowDesc}>
+                      Xem lịch sử database, gọi Gemini AI, đồng bộ Cloud & lỗi hệ thống.
+                    </Text>
+                  </View>
+                </View>
+                <Pressable
+                  style={styles.logViewerBtn}
+                  onPress={() => {
+                    hapticMedium();
+                    setLogModalVisible(true);
+                  }}
+                >
+                  <Ionicons name="document-text-outline" size={14} color="#000000" />
+                  <Text style={styles.logViewerBtnText}>Xem log</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.divider} />
+
               {/* Reset Data Button */}
               <Pressable
                 style={styles.dangerResetBtn}
@@ -1954,6 +1983,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
       <CategoryManagementModal
         visible={categoryModalVisible}
         onClose={() => setCategoryModalVisible(false)}
+      />
+
+      {/* System Log Viewer Modal */}
+      <LogViewerModal
+        visible={logModalVisible}
+        onClose={() => setLogModalVisible(false)}
       />
 
       {/* Modal Thiết lập / Đổi mã PIN 4 số */}
@@ -2438,6 +2473,22 @@ const styles = StyleSheet.create({
   },
   widgetSyncBtnText: {
     fontSize: 11,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  logViewerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  logViewerBtnText: {
+    fontSize: 12,
     fontWeight: '800',
     color: '#000000',
   },

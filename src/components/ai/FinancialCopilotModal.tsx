@@ -27,6 +27,8 @@ import {
 import { useWallet } from '../../context/WalletContext';
 import { useSecurity } from '../../context/SecurityContext';
 import { THEME } from '../../constants';
+import dayjs from 'dayjs';
+import { Wallet } from '../../types';
 import { hapticLight, hapticMedium, hapticSuccess, hapticError } from '../../utils/haptics';
 import { useCustomAlert } from '../CustomAlertModal';
 import * as queries from '../../database/queries';
@@ -80,6 +82,7 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
     wallets,
     categories,
     addTransaction,
+    addCreditExpenseWithPlan,
     removeTransaction,
     updateTransactionDetails,
     adjustBalance,
@@ -543,6 +546,30 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
 
   const savingMsgIdsRef = useRef<Set<string>>(new Set());
 
+  // Helper tính ngày đến hạn thanh toán thông minh cho thẻ tín dụng
+  const getSuggestedCreditDueDate = (wallet?: Wallet, baseDate: Date = new Date()): string => {
+    const dueDay = wallet?.due_day;
+    const stmtDay = wallet?.statement_day;
+    const base = dayjs(baseDate);
+
+    if (dueDay && dueDay >= 1 && dueDay <= 31) {
+      let target = base.date(dueDay);
+      if (stmtDay && stmtDay >= 1 && stmtDay <= 31) {
+        if (base.date() > stmtDay) {
+          target = target.add(dueDay <= stmtDay ? 2 : 1, 'month');
+        } else {
+          target = target.add(dueDay <= stmtDay ? 1 : 0, 'month');
+        }
+      } else {
+        if (target.isBefore(base) || target.isSame(base, 'day')) {
+          target = target.add(1, 'month');
+        }
+      }
+      return target.format('YYYY-MM-DD');
+    }
+    return base.add(30, 'day').format('YYYY-MM-DD');
+  };
+
   const handleConfirmSave = async (
     msgId: string,
     data: CopilotActionData,
@@ -590,16 +617,35 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
           const targetWalletId =
             tx.wallet_id || (wallets.length > 0 ? wallets[0].id : null);
           if (!targetWalletId) continue;
-          await addTransaction({
-            wallet_id: targetWalletId,
-            category_id: tx.category_id || null,
-            amount: tx.amount,
-            type: tx.type,
-            note: tx.note || 'Ghi chép từ Trợ lý Copilot',
-            transacted_at: tx.transacted_at || new Date().toISOString(),
-            image_uris: persistentUris,
-            items: tx.items && tx.items.length > 0 ? JSON.stringify({ items: tx.items }) : null,
-          });
+
+          const targetWallet = wallets.find(w => w.id === targetWalletId);
+          if (targetWallet && targetWallet.type === 'credit' && tx.type === 'expense') {
+            const firstDueDate = getSuggestedCreditDueDate(
+              targetWallet,
+              tx.transacted_at ? new Date(tx.transacted_at) : new Date()
+            );
+            await addCreditExpenseWithPlan({
+              creditWalletId: targetWalletId,
+              amount: tx.amount,
+              categoryId: tx.category_id || null,
+              note: tx.note || 'Ghi chép từ Trợ lý Copilot',
+              transactedAt: tx.transacted_at || new Date().toISOString(),
+              firstDueDate,
+              image_uris: persistentUris,
+              items: tx.items && tx.items.length > 0 ? JSON.stringify({ items: tx.items }) : null,
+            });
+          } else {
+            await addTransaction({
+              wallet_id: targetWalletId,
+              category_id: tx.category_id || null,
+              amount: tx.amount,
+              type: tx.type,
+              note: tx.note || 'Ghi chép từ Trợ lý Copilot',
+              transacted_at: tx.transacted_at || new Date().toISOString(),
+              image_uris: persistentUris,
+              items: tx.items && tx.items.length > 0 ? JSON.stringify({ items: tx.items }) : null,
+            });
+          }
         }
         setMessages(prev =>
           prev.map(m => (m.id === msgId ? { ...m, isSaved: true } : m))
@@ -683,16 +729,34 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
           throw new Error('Chưa có ví hợp lệ để ghi giao dịch.');
         }
 
-        await addTransaction({
-          wallet_id: targetWalletId,
-          category_id: tx.category_id || null,
-          amount: tx.amount,
-          type: tx.type,
-          note: tx.note || 'Ghi chép từ Trợ lý Copilot',
-          transacted_at: tx.transacted_at || new Date().toISOString(),
-          image_uris: persistentUris,
-          items: tx.items && tx.items.length > 0 ? JSON.stringify({ items: tx.items }) : null,
-        });
+        const targetWallet = wallets.find(w => w.id === targetWalletId);
+        if (targetWallet && targetWallet.type === 'credit' && tx.type === 'expense') {
+          const firstDueDate = getSuggestedCreditDueDate(
+            targetWallet,
+            tx.transacted_at ? new Date(tx.transacted_at) : new Date()
+          );
+          await addCreditExpenseWithPlan({
+            creditWalletId: targetWalletId,
+            amount: tx.amount,
+            categoryId: tx.category_id || null,
+            note: tx.note || 'Ghi chép từ Trợ lý Copilot',
+            transactedAt: tx.transacted_at || new Date().toISOString(),
+            firstDueDate,
+            image_uris: persistentUris,
+            items: tx.items && tx.items.length > 0 ? JSON.stringify({ items: tx.items }) : null,
+          });
+        } else {
+          await addTransaction({
+            wallet_id: targetWalletId,
+            category_id: tx.category_id || null,
+            amount: tx.amount,
+            type: tx.type,
+            note: tx.note || 'Ghi chép từ Trợ lý Copilot',
+            transacted_at: tx.transacted_at || new Date().toISOString(),
+            image_uris: persistentUris,
+            items: tx.items && tx.items.length > 0 ? JSON.stringify({ items: tx.items }) : null,
+          });
+        }
 
         setMessages(prev =>
           prev.map(m => (m.id === msgId ? { ...m, isSaved: true } : m))

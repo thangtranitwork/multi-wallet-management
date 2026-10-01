@@ -3,6 +3,10 @@ import { registerWidgetTaskHandler } from 'react-native-android-widget';
 
 import App from './App';
 import { widgetTaskHandler } from './src/widgets/widgetTaskHandler';
+import { initLogger } from './src/services/loggerService';
+
+// Khởi tạo logger ghi nhận nhật ký hệ thống
+initLogger();
 
 // Đăng ký trình xử lý tác vụ nền cho Android Home Screen Widget
 registerWidgetTaskHandler(widgetTaskHandler);
