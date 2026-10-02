@@ -3,6 +3,7 @@ import dayjs from 'dayjs';
 import * as Speech from 'expo-speech';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Category, Wallet, ReceiptItem } from '../types';
+import { normalizeToIsoString } from '../utils/dateUtils';
 import {
   getGeminiApiKey,
   getPreferredGeminiModel,
@@ -709,6 +710,7 @@ ${recentRows
   return `
 THÔNG TIN TÀI CHÍNH THỰC TẾ TRONG HỆ THỐNG:
 - Thời gian hiện tại: ${now.format('dddd, DD/MM/YYYY HH:mm:ss')} (Giờ Việt Nam)
+- Chuỗi thời gian chuẩn ISO 8601 UTC hiện tại: "${now.toISOString()}"
 - TỔNG TÀI SẢN TẤT CẢ CÁC VÍ: ${totalBalance.toLocaleString('vi-VN')} ₫
 DANH SÁCH VÍ:
 ${walletLines.join('\n')}
@@ -732,12 +734,18 @@ function buildCopilotSystemInstruction(
   context: string,
   personality: CopilotPersonality
 ): string {
+  const currentIso = new Date().toISOString();
   return `
 Bạn là "Trợ lý Tài chính AI" (Financial Copilot) của ứng dụng MultiWallet.
 HÃY TUÂN THỦ TÍNH CÁCH VÀ VĂN PHONG DƯỚI ĐÂY KHI TRÒ CHUYỆN:
 ${personality.promptInstruction}
 
 ${context}
+
+QUY TẮC ĐỊNH DẠNG THỜI GIAN (transacted_at):
+- Trường "transacted_at" BẮT BUỘC trả về chuỗi ISO 8601 UTC (ví dụ: "${currentIso}").
+- Nếu người dùng ghi chép chi tiêu lúc này (không nhắc tới giờ trong quá khứ/tương lai), mặc định lấy chính xác thời điểm hiện tại: "${currentIso}".
+- Nếu người dùng nhắc tới thời điểm cụ thể (ví dụ "hôm qua 18h", "trưa nay 12:30", "hóa đơn 30/09"), tính toán và trả về chuỗi ISO 8601 UTC tương ứng.
 
 QUY TẮC PHÂN LOẠI Ý ĐỊNH (INTENT):
 1. INTENT "create_transaction": Ghi nhận 1 KHOẢN DUY NHẤT chi tiêu hoặc thu nhập.
@@ -1042,18 +1050,22 @@ export async function processCopilotTextInput(
 
       const parsed = cleanAndParseJSON(rawText);
 
-      // Điền thêm icon & màu danh mục cho transaction đơn lẻ
-      if (parsed.transaction && parsed.transaction.category_id) {
-        const cat = categories.find(c => c.id === parsed.transaction.category_id);
-        if (cat) {
-          parsed.transaction.category_icon = cat.icon;
-          parsed.transaction.category_color = cat.color;
+      // Chuẩn hóa thời gian cho transaction đơn lẻ
+      if (parsed.transaction) {
+        parsed.transaction.transacted_at = normalizeToIsoString(parsed.transaction.transacted_at);
+        if (parsed.transaction.category_id) {
+          const cat = categories.find(c => c.id === parsed.transaction.category_id);
+          if (cat) {
+            parsed.transaction.category_icon = cat.icon;
+            parsed.transaction.category_color = cat.color;
+          }
         }
       }
 
-      // Điền thêm icon & màu danh mục cho mảng transactions
+      // Điền thêm icon & màu danh mục và chuẩn hóa thời gian cho mảng transactions
       if (Array.isArray(parsed.transactions)) {
         parsed.transactions.forEach((tx: CopilotParsedTransaction) => {
+          tx.transacted_at = normalizeToIsoString(tx.transacted_at);
           if (tx.category_id) {
             const cat = categories.find(c => c.id === tx.category_id);
             if (cat) {
@@ -1068,8 +1080,9 @@ export async function processCopilotTextInput(
         });
       }
 
-      // Điền wallet names cho transfer nếu thiếu
+      // Điền wallet names và chuẩn hóa thời gian cho transfer nếu thiếu
       if (parsed.transfer) {
+        parsed.transfer.transacted_at = normalizeToIsoString(parsed.transfer.transacted_at);
         if (!parsed.transfer.from_wallet_name && parsed.transfer.from_wallet_id) {
           const w = wallets.find(w => w.id === parsed.transfer.from_wallet_id);
           if (w) parsed.transfer.from_wallet_name = w.name;
@@ -1108,8 +1121,13 @@ export async function processCopilotTextInput(
         }
       }
 
-      // Điền names cho update_transaction
+      // Điền names và chuẩn hóa thời gian cho update_transaction
       if (parsed.update_transaction) {
+        if (parsed.update_transaction.new_transacted_at) {
+          parsed.update_transaction.new_transacted_at = normalizeToIsoString(
+            parsed.update_transaction.new_transacted_at
+          );
+        }
         if (parsed.update_transaction.new_wallet_id && !parsed.update_transaction.new_wallet_name) {
           const w = wallets.find(w => w.id === parsed.update_transaction.new_wallet_id);
           if (w) parsed.update_transaction.new_wallet_name = w.name;
@@ -1118,6 +1136,13 @@ export async function processCopilotTextInput(
           const c = categories.find(c => c.id === parsed.update_transaction.new_category_id);
           if (c) parsed.update_transaction.new_category_name = c.name;
         }
+      }
+
+      // Chuẩn hóa thời gian cho delete_transaction
+      if (parsed.delete_transaction && parsed.delete_transaction.transacted_at) {
+        parsed.delete_transaction.transacted_at = normalizeToIsoString(
+          parsed.delete_transaction.transacted_at
+        );
       }
 
       return {

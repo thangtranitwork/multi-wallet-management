@@ -1,4 +1,6 @@
 import * as SQLite from 'expo-sqlite';
+import * as FileSystem from 'expo-file-system/legacy';
+import { normalizeToIsoString } from '../utils/dateUtils';
 
 export const DB_NAME = 'multi_wallet_emerald_v3.db';
 
@@ -137,6 +139,106 @@ export async function initDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
   try { await db.execAsync('ALTER TABLE transactions ADD COLUMN image_uris TEXT DEFAULT NULL;'); } catch {}
   try { await db.execAsync('ALTER TABLE transactions ADD COLUMN items TEXT DEFAULT NULL;'); } catch {}
 
+  // Migration: Chuẩn hóa tất cả transacted_at cũ chưa đúng chuẩn ISO UTC (ví dụ dạng "YYYY-MM-DD HH:mm:ss" do AI tạo)
+  try {
+    const nonIsoTxs = await db.getAllAsync<{ id: string; transacted_at: string }>(
+      "SELECT id, transacted_at FROM transactions WHERE transacted_at NOT LIKE '%Z' AND transacted_at NOT LIKE '%z'"
+    );
+    if (nonIsoTxs && nonIsoTxs.length > 0) {
+      for (const row of nonIsoTxs) {
+        const normalized = normalizeToIsoString(row.transacted_at);
+        if (normalized && normalized !== row.transacted_at) {
+          await db.runAsync('UPDATE transactions SET transacted_at = ? WHERE id = ?', [
+            normalized,
+            row.id,
+          ]);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Lỗi migration chuẩn hóa transacted_at:', err);
+  }
+
+  // Migration: Dọn dẹp các đường dẫn ảnh cục bộ không còn tồn tại trên máy (file rác tạm từ cache đã bị OS xóa)
+  try {
+    const txsWithImages = await db.getAllAsync<{ id: string; image_uris: string }>(
+      "SELECT id, image_uris FROM transactions WHERE image_uris IS NOT NULL AND image_uris != '' AND image_uris NOT LIKE '%res.cloudinary.com%'"
+    );
+    if (txsWithImages && txsWithImages.length > 0) {
+      for (const row of txsWithImages) {
+        let uris: string[] = [];
+        try {
+          const parsed = JSON.parse(row.image_uris);
+          uris = Array.isArray(parsed) ? parsed : [row.image_uris];
+        } catch {
+          uris = [row.image_uris];
+        }
+
+        const validUris: string[] = [];
+        let hasDeadImage = false;
+
+        for (const uri of uris) {
+          if (uri.startsWith('http://') || uri.startsWith('https://')) {
+            validUris.push(uri);
+            continue;
+          }
+          try {
+            const info = await FileSystem.getInfoAsync(uri);
+            if (info.exists) {
+              validUris.push(uri);
+            } else {
+              hasDeadImage = true;
+            }
+          } catch {
+            hasDeadImage = true;
+          }
+        }
+
+        if (hasDeadImage) {
+          await db.runAsync('UPDATE transactions SET image_uris = ? WHERE id = ?', [
+            validUris.length > 0 ? JSON.stringify(validUris) : null,
+            row.id,
+          ]);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Lỗi migration dọn dẹp ảnh hóa đơn không tồn tại:', err);
+  }
+
+  // Migration: Tự động phục hồi các liên kết ảnh Cloudinary bị mất do tính năng dọn dẹp ảnh trước đây
+  try {
+    const knownCloudinaryBackups: Record<string, string[]> = {
+      tx_1790818595719: ['https://res.cloudinary.com/dw7hrsbba/image/upload/v1790818595/multi_wallet_receipts/tgvs1vyfmknxsh86vddi.jpg'],
+      tx_1790785247835: ['https://res.cloudinary.com/dw7hrsbba/image/upload/v1790785247/multi_wallet_receipts/t0mjk7q91unzw37mrrpf.jpg'],
+      tx_1790746786560: [
+        'https://res.cloudinary.com/dw7hrsbba/image/upload/v1790746784/multi_wallet_receipts/bdzyxy6ria2t9zk8pxbn.jpg',
+        'https://res.cloudinary.com/dw7hrsbba/image/upload/v1790746786/multi_wallet_receipts/ee1hv2nxdpqjpabyoxkv.jpg',
+      ],
+      tx_1790815511568: ['https://res.cloudinary.com/dw7hrsbba/image/upload/v1790815511/multi_wallet_receipts/p9z6ljk9a4q5hkehlm9o.jpg'],
+      tx_1790731375165: ['https://res.cloudinary.com/dw7hrsbba/image/upload/v1790731374/multi_wallet_receipts/tmhtba0mgt5yameqsnjn.jpg'],
+      tx_1790684214848: ['https://res.cloudinary.com/dw7hrsbba/image/upload/v1790684214/multi_wallet_receipts/lplreeqc89xmgdm3lujp.jpg'],
+      tx_1790663926946: ['https://res.cloudinary.com/dw7hrsbba/image/upload/v1790677037/multi_wallet_receipts/yk9m13vakbfrkknzpacz.jpg'],
+      tx_1790658747901: ['https://res.cloudinary.com/dw7hrsbba/image/upload/v1790660252/multi_wallet_receipts/qxbkdtojtpfgo0bhslmv.jpg'],
+      tx_1790595520471: ['https://res.cloudinary.com/dw7hrsbba/image/upload/v1790660251/multi_wallet_receipts/awhwtvnaan9yl6dz0yny.jpg'],
+      tx_1790515794206: ['https://res.cloudinary.com/dw7hrsbba/image/upload/v1790697093/multi_wallet_receipts/nvjm7zo2zough8sgbr3u.jpg'],
+    };
+
+    for (const [txId, uris] of Object.entries(knownCloudinaryBackups)) {
+      const existing = await db.getFirstAsync<{ image_uris: string | null }>(
+        'SELECT image_uris FROM transactions WHERE id = ?',
+        [txId]
+      );
+      if (existing && (!existing.image_uris || existing.image_uris.trim() === '' || existing.image_uris === '[]')) {
+        await db.runAsync('UPDATE transactions SET image_uris = ? WHERE id = ?', [
+          JSON.stringify(uris),
+          txId,
+        ]);
+      }
+    }
+  } catch (err) {
+    console.warn('Lỗi migration phục hồi ảnh Cloudinary:', err);
+  }
 
   // ONLY seed default standard categories (no wallets, no transactions, no debts)
   const catCount = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM categories');

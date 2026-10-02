@@ -1,5 +1,6 @@
 import * as WebBrowser from 'expo-web-browser';
 import * as AuthSession from 'expo-auth-session';
+import { Platform } from 'react-native';
 import dayjs from 'dayjs';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -19,9 +20,9 @@ export interface DriveBackupFile {
   modifiedTime?: string;
 }
 
-// Client ID mặc định của ứng dụng (Người dùng có thể ghi đè bằng Client ID riêng)
+// Client ID mặc định của ứng dụng (Android OAuth 2.0 Client ID)
 export const DEFAULT_GOOGLE_CLIENT_ID =
-  '615826839377-7vu4qip994vlo3qggl4ufp529h5e4jck.apps.googleusercontent.com';
+  '615826839377-geidelig9676lcnqv1j72djulu6gcale.apps.googleusercontent.com';
 
 const GOOGLE_AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
@@ -39,8 +40,14 @@ export const GOOGLE_DRIVE_SCOPES = [
 
 /**
  * Tạo URL chuyển hướng OAuth
+ * Chuẩn OAuth 2.0 Native App (RFC 8252) và chính sách bảo mật Google:
+ * Custom URI scheme trên Android bắt buộc sử dụng định dạng 1 dấu gạch chéo: "com.thang.multiwallet:/oauthredirect"
+ * (Không được dùng "://" vì Google sẽ trả về Lỗi 400: invalid_request)
  */
 export function getRedirectUri(): string {
+  if (Platform.OS === 'android') {
+    return 'com.thang.multiwallet:/oauthredirect';
+  }
   return AuthSession.makeRedirectUri({
     scheme: 'com.thang.multiwallet',
     path: 'oauthredirect',

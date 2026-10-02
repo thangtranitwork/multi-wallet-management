@@ -1,5 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 import { Wallet, Category, Debt, Transaction, DebtPayment, PlannedExpense } from '../types';
+import { normalizeToIsoString } from '../utils/dateUtils';
 
 export interface BackupData {
   app: 'multi-wallet-management';
@@ -213,8 +214,8 @@ export async function importAllData(
             t.category_id || null,
             t.debt_id || null,
             t.note || '',
-            t.transacted_at || new Date().toISOString(),
-            t.created_at || new Date().toISOString(),
+            normalizeToIsoString(t.transacted_at),
+            normalizeToIsoString(t.created_at),
             t.is_amortized ? 1 : 0,
             t.image_uris || null,
           ]
@@ -231,7 +232,7 @@ export async function importAllData(
             p.debt_id,
             p.amount,
             p.wallet_id,
-            p.paid_at || new Date().toISOString(),
+            normalizeToIsoString(p.paid_at),
             p.note || '',
           ]
         );

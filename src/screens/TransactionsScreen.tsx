@@ -96,6 +96,15 @@ export const TransactionsScreen: React.FC = () => {
     groupedTransactions[d].push(t);
   });
 
+  // Đảm bảo các giao dịch trong cùng một ngày luôn được sắp xếp theo thời gian mới nhất lên đầu
+  Object.keys(groupedTransactions).forEach(d => {
+    groupedTransactions[d].sort((a, b) => {
+      const timeA = new Date(a.transacted_at).getTime() || 0;
+      const timeB = new Date(b.transacted_at).getTime() || 0;
+      return timeB - timeA;
+    });
+  });
+
   const dateKeys = Object.keys(groupedTransactions).sort((a, b) => b.localeCompare(a));
 
   const [txToDelete, setTxToDelete] = useState<Transaction | null>(null);

@@ -59,6 +59,13 @@ export async function loadCloudBackupConfig(
     queries.getAppSetting(db, SETTING_KEYS.LAST_BACKUP_FILE, ''),
   ]);
 
+  // Nếu customClientId lưu trong máy là Web Client ID cũ gây lỗi 400, tự động xóa để dùng Android Client ID mặc định
+  let activeCustomClientId = customClientId;
+  if (activeCustomClientId.includes('7vu4qip994vlo3qggl4ufp529h5e4jck')) {
+    activeCustomClientId = '';
+    await queries.setAppSetting(db, SETTING_KEYS.CUSTOM_CLIENT_ID, '');
+  }
+
   const isLinked = isLinkedVal === 'true' && accessToken.length > 0;
 
   const user: GoogleUser | null = isLinked
@@ -74,7 +81,7 @@ export async function loadCloudBackupConfig(
     isLinked,
     user,
     accessToken,
-    customClientId,
+    customClientId: activeCustomClientId,
     autoBackupEnabled: autoBackupVal === 'true',
     autoBackupFrequency: (autoBackupFreq as any) || 'on_change',
     lastBackupTime: lastBackupTime || null,

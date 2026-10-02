@@ -1,5 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 import dayjs from 'dayjs';
+import { normalizeToIsoString } from '../utils/dateUtils';
 import {
   Wallet,
   Transaction,
@@ -257,7 +258,7 @@ export async function createTransaction(
         tx.to_wallet_id || null,
         tx.category_id || null,
         tx.note || '',
-        tx.transacted_at,
+        normalizeToIsoString(tx.transacted_at),
         now,
         serializedUris,
         tx.items || null,
@@ -445,7 +446,7 @@ export async function updateTransactionTime(
 ): Promise<void> {
   await db.runAsync(
     'UPDATE transactions SET transacted_at = ? WHERE id = ?',
-    [transactedAt, transactionId]
+    [normalizeToIsoString(transactedAt), transactionId]
   );
 }
 
@@ -495,7 +496,7 @@ export async function updateTransactionDetails(
     // 3. Cập nhật bản ghi transactions
     const newNote = updates.note !== undefined ? updates.note : (tx.note || null);
     const newCatId = updates.category_id !== undefined ? updates.category_id : (tx.category_id || null);
-    const newTime = updates.transacted_at !== undefined ? updates.transacted_at : tx.transacted_at;
+    const newTime = updates.transacted_at !== undefined ? normalizeToIsoString(updates.transacted_at) : tx.transacted_at;
 
     await db.runAsync(
       `UPDATE transactions 
@@ -596,7 +597,7 @@ export async function splitTransactionIntoDebts(
           tx.wallet_id,
           debtId,
           `Cho ${item.personName.trim()} mượn: ${debtNote}`.trim(),
-          tx.transacted_at,
+          normalizeToIsoString(tx.transacted_at),
           now,
         ]
       );
@@ -1986,7 +1987,7 @@ export async function createCreditExpenseWithPlan(
         params.creditWalletId,
         params.categoryId || null,
         txNote,
-        params.transactedAt,
+        normalizeToIsoString(params.transactedAt),
         now,
         serializedUris,
         params.items || null,

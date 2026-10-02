@@ -36,6 +36,9 @@ import {
 import { useWallet } from '../context/WalletContext';
 import { hapticLight, hapticMedium, hapticSuccess, hapticError } from '../utils/haptics';
 
+const APP_PACKAGE_NAME = 'com.thang.multiwallet';
+const APK_SHA1 = '5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25';
+
 interface GoogleDriveSyncModalProps {
   visible: boolean;
   onClose: () => void;
@@ -74,12 +77,28 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
     } catch {}
   };
 
-  const handleCopyUri = async (uri: string, label: string) => {
+  const handleCopyText = async (text: string, label: string) => {
     try {
       hapticSuccess();
-      await Clipboard.setStringAsync(uri);
-      showAlert('Đã sao chép URI', `Đã chép ${label} vào bộ nhớ tạm. Hãy dán vào mục "Authorized redirect URIs" trên Google Cloud Console.`);
+      await Clipboard.setStringAsync(text);
+      showAlert('Đã sao chép', `Đã sao chép ${label} vào bộ nhớ tạm:\n${text}`);
     } catch {}
+  };
+
+  const handleResetClientId = async () => {
+    try {
+      hapticMedium();
+      setCustomClientIdInput('');
+      await saveCloudBackupConfig(db, {
+        ...(config || { isLinked: false, autoBackupEnabled: false }),
+        customClientId: '',
+      });
+      await fetchConfig();
+      showAlert('Đã khôi phục', 'Đã đặt lại về Client ID Android mặc định của ứng dụng.');
+    } catch (err: any) {
+      hapticError();
+      showAlert('Lỗi', err?.message || 'Không thể đặt lại Client ID.');
+    }
   };
 
   const handleSaveCustomClientId = async () => {
@@ -348,7 +367,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
 
                   {showAdvanced && (
                     <View style={styles.advancedBox}>
-                      <Text style={styles.advancedLabel}>Google OAuth Web Client ID:</Text>
+                      <Text style={styles.advancedLabel}>Google OAuth Client ID (Android):</Text>
                       <View style={styles.clientIdInputRow}>
                         <TextInput
                           style={[styles.advancedInput, { flex: 1 }]}
@@ -367,59 +386,113 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                         </Pressable>
                       </View>
                       <Text style={styles.advancedHint}>
-                        Nếu bạn có Google Cloud Project riêng, hãy dán Web Client ID vào đây và bấm nút Lưu cấu hình bên dưới.
+                        Mặc định ứng dụng đã tích hợp sẵn Client ID Android. Nếu bạn có Google Cloud Project riêng, nhập Android Client ID vào đây.
                       </Text>
 
-                      {/* Nút Lưu Cài Đặt Client ID */}
-                      <Pressable
-                        style={styles.saveClientIdBtnShadow}
-                        onPress={handleSaveCustomClientId}
-                      >
-                        <View style={styles.saveClientIdBtnInner}>
-                          <Ionicons name="save-outline" size={16} color="#000000" />
-                          <Text style={styles.saveClientIdBtnText}>Lưu Cấu Hình Client ID</Text>
-                        </View>
-                      </Pressable>
+                      {/* Các nút Lưu & Khôi phục mặc định */}
+                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                        <Pressable
+                          style={[styles.saveClientIdBtnShadow, { flex: 1 }]}
+                          onPress={handleSaveCustomClientId}
+                        >
+                          <View style={styles.saveClientIdBtnInner}>
+                            <Ionicons name="save-outline" size={16} color="#000000" />
+                            <Text style={styles.saveClientIdBtnText}>Lưu Client ID</Text>
+                          </View>
+                        </Pressable>
 
-                      {/* Các Redirect URIs */}
+                        {customClientIdInput.trim().length > 0 && (
+                          <Pressable
+                            style={[styles.saveClientIdBtnShadow, { flex: 1 }]}
+                            onPress={handleResetClientId}
+                          >
+                            <View style={[styles.saveClientIdBtnInner, { backgroundColor: '#F3F4F6' }]}>
+                              <Ionicons name="refresh-outline" size={16} color="#000000" />
+                              <Text style={styles.saveClientIdBtnText}>Dùng Mặc Định</Text>
+                            </View>
+                          </Pressable>
+                        )}
+                      </View>
+
+                      {/* Thông số cấu hình Android Client ID */}
                       <View style={{ marginTop: 14 }}>
                         <Text style={styles.advancedLabel}>
-                          Redirect URI hiện tại của ứng dụng:
+                          Thông số cấu hình Google Cloud Console:
                         </Text>
-                        
-                        {/* Current Dynamic Redirect URI */}
+
+                        {/* Package Name */}
                         <View style={styles.redirectUriRow}>
                           <View style={{ flex: 1, marginRight: 6 }}>
-                            <Text style={styles.redirectUriTypeLabel}>Redirect URI đang hoạt động:</Text>
+                            <Text style={styles.redirectUriTypeLabel}>Package Name:</Text>
                             <Text style={styles.redirectUriValue} selectable>
-                              {getRedirectUri()}
+                              {APP_PACKAGE_NAME}
                             </Text>
                           </View>
                           <Pressable
                             style={styles.copyUriBtn}
-                            onPress={() => handleCopyUri(getRedirectUri(), 'Redirect URI')}
+                            onPress={() => handleCopyText(APP_PACKAGE_NAME, 'Package Name')}
                           >
                             <Ionicons name="copy-outline" size={13} color="#000000" />
                             <Text style={styles.copyUriBtnText}>Chép</Text>
                           </Pressable>
                         </View>
 
-                        {/* Hướng dẫn cài đặt Google Cloud */}
+                        {/* SHA-1 Fingerprint */}
+                        <View style={[styles.redirectUriRow, { marginTop: 6 }]}>
+                          <View style={{ flex: 1, marginRight: 6 }}>
+                            <Text style={styles.redirectUriTypeLabel}>SHA-1 Fingerprint của APK:</Text>
+                            <Text style={styles.redirectUriValue} selectable>
+                              {APK_SHA1}
+                            </Text>
+                          </View>
+                          <Pressable
+                            style={styles.copyUriBtn}
+                            onPress={() => handleCopyText(APK_SHA1, 'SHA-1 Fingerprint')}
+                          >
+                            <Ionicons name="copy-outline" size={13} color="#000000" />
+                            <Text style={styles.copyUriBtnText}>Chép</Text>
+                          </Pressable>
+                        </View>
+
+                        {/* Redirect URI */}
+                        <View style={[styles.redirectUriRow, { marginTop: 6 }]}>
+                          <View style={{ flex: 1, marginRight: 6 }}>
+                            <Text style={styles.redirectUriTypeLabel}>Redirect URI:</Text>
+                            <Text style={styles.redirectUriValue} selectable>
+                              {getRedirectUri()}
+                            </Text>
+                          </View>
+                          <Pressable
+                            style={styles.copyUriBtn}
+                            onPress={() => handleCopyText(getRedirectUri(), 'Redirect URI')}
+                          >
+                            <Ionicons name="copy-outline" size={13} color="#000000" />
+                            <Text style={styles.copyUriBtnText}>Chép</Text>
+                          </Pressable>
+                        </View>
+
+                        {/* Hướng dẫn khắc phục lỗi 400 invalid_request */}
                         <View style={styles.cloudInstructionBox}>
                           <Text style={styles.cloudInstructionTitle}>
-                            👉 Lưu ý cấu hình Google Cloud Console:
+                            ⚠️ BẮT BUỘC ĐỂ TRÁNH LỖI 400 (INVALID_REQUEST):
                           </Text>
                           <Text style={styles.cloudInstructionStep}>
-                            1. <Text style={{ fontWeight: '900' }}>Nếu dùng Client ID loại Android</Text>: Nhập Package Name là <Text style={{ fontWeight: '900' }}>com.thang.multiwallet</Text> và SHA-1 của file APK.
+                            1. Mở <Text style={{ fontWeight: '900' }}>Google Cloud Console &gt; APIs &amp; Services &gt; Credentials</Text>.
                           </Text>
                           <Text style={styles.cloudInstructionStep}>
-                            2. <Text style={{ fontWeight: '900' }}>Nếu dùng Client ID loại Web</Text>: Thêm URI ở trên vào mục <Text style={{ fontWeight: '900' }}>Authorized redirect URIs</Text>.
+                            2. Bấm vào <Text style={{ fontWeight: '900' }}>Android Client ID</Text> của dự án.
                           </Text>
                           <Text style={styles.cloudInstructionStep}>
-                            3. Vào menu <Text style={{ fontWeight: '900' }}>OAuth consent screen</Text> &gt; <Text style={{ fontWeight: '900' }}>Audience / Test users</Text>, thêm tài khoản Gmail của bạn vào danh sách người thử nghiệm.
+                            3. Cuộn xuống cuối trang, nhấn vào <Text style={{ fontWeight: '900' }}>Advanced settings</Text> (Cài đặt nâng cao).
+                          </Text>
+                          <Text style={[styles.cloudInstructionStep, { color: '#B91C1C', fontWeight: '900' }]}>
+                            4. Tích chọn ô "Enable custom URI scheme" (Bật lược đồ URI tùy chỉnh) rồi bấm Save (Lưu).
                           </Text>
                           <Text style={styles.cloudInstructionStep}>
-                            4. Đảm bảo đã bật <Text style={{ fontWeight: '900' }}>Google Drive API</Text> trong mục Enabled APIs &amp; Services.
+                            5. Vào menu <Text style={{ fontWeight: '900' }}>OAuth consent screen &gt; Audience &gt; Test users</Text>, thêm tài khoản Gmail của bạn vào danh sách người thử nghiệm.
+                          </Text>
+                          <Text style={styles.cloudInstructionStep}>
+                            6. Đảm bảo đã bật <Text style={{ fontWeight: '900' }}>Google Drive API</Text> trong mục Enabled APIs &amp; Services.
                           </Text>
                         </View>
                       </View>

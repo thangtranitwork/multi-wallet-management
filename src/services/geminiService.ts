@@ -9,6 +9,7 @@ import {
   CloudinaryConfig,
 } from './cloudinaryService';
 import { parseImageUris } from '../utils/imageUtils';
+import { normalizeToIsoString } from '../utils/dateUtils';
 
 export const GEMINI_SETTING_KEYS = {
   API_KEY: 'gemini_api_key',
@@ -291,9 +292,24 @@ export async function saveReceiptImages(
       const targetUri = `${receiptDir}receipt_${timestamp}_${i}.${ext}`;
       await FileSystem.copyAsync({ from: src, to: targetUri });
       savedUris.push(targetUri);
+      // Dọn dẹp tệp tạm trong cache sau khi đã lưu vĩnh viễn vào documentDirectory
+      if (
+        src.includes('cache') ||
+        src.includes('shared_bank_receipt') ||
+        src.includes('ImagePicker')
+      ) {
+        try {
+          await FileSystem.deleteAsync(src, { idempotent: true });
+        } catch {}
+      }
     } catch (err) {
       console.warn('Lỗi copy ảnh hóa đơn:', err);
-      savedUris.push(src);
+      try {
+        const info = await FileSystem.getInfoAsync(src);
+        if (info.exists) {
+          savedUris.push(src);
+        }
+      } catch {}
     }
   }
 
@@ -610,7 +626,7 @@ LƯU Ý QUAN TRỌNG:
             typeof parsed.detected_payment_method === 'string'
               ? parsed.detected_payment_method.trim()
               : null,
-          transacted_at: typeof parsed.transacted_at === 'string' ? parsed.transacted_at : null,
+          transacted_at: typeof parsed.transacted_at === 'string' ? normalizeToIsoString(parsed.transacted_at) : null,
           items: Array.isArray(parsed.items)
             ? parsed.items.map((it: any) => ({
                 name: String(it.name || ''),
@@ -655,7 +671,8 @@ export function formatFileSize(bytes: number): string {
 }
 
 /**
- * Thống kê số lượng ảnh và dung lượng của các giao dịch cũ hơn N ngày
+ * Thống kê số lượng ảnh CỤC BỘ và dung lượng của các giao dịch cũ hơn N ngày
+ * Chỉ tính các ảnh lưu trên máy (file://), không tính các ảnh lưu trên Cloudinary (http://, https://)
  */
 export async function getReceiptStorageStats(
   db: SQLite.SQLiteDatabase,
@@ -672,26 +689,32 @@ export async function getReceiptStorageStats(
 
   let imageCount = 0;
   let totalBytes = 0;
+  let transactionCount = 0;
 
   for (const row of rows) {
     const uris = parseImageUris(row.image_uris);
-    imageCount += uris.length;
-    for (const uri of uris) {
-      try {
-        if (uri.startsWith('file://')) {
-          const info = await FileSystem.getInfoAsync(uri);
-          if (info.exists && (info as any).size) {
-            totalBytes += (info as any).size;
+    const localUris = uris.filter(u => !u.startsWith('http://') && !u.startsWith('https://'));
+
+    if (localUris.length > 0) {
+      transactionCount++;
+      imageCount += localUris.length;
+      for (const uri of localUris) {
+        try {
+          if (uri.startsWith('file://')) {
+            const info = await FileSystem.getInfoAsync(uri);
+            if (info.exists && (info as any).size) {
+              totalBytes += (info as any).size;
+            }
           }
+        } catch {
+          // Bỏ qua lỗi đọc file đơn lẻ
         }
-      } catch {
-        // bỏ qua lỗi đọc file đơn lẻ
       }
     }
   }
 
   return {
-    transactionCount: rows.length,
+    transactionCount,
     imageCount,
     totalBytes,
     totalFormatted: formatFileSize(totalBytes),
@@ -700,7 +723,8 @@ export async function getReceiptStorageStats(
 }
 
 /**
- * Xóa vĩnh viễn các file ảnh của các giao dịch cũ hơn N ngày và giải phóng bộ nhớ
+ * Xóa vĩnh viễn các file ảnh CỤC BỘ (file://) của các giao dịch cũ hơn N ngày để giải phóng bộ nhớ máy.
+ * TUYỆT ĐỐI KHÔNG XÓA HOẶC GỠ BỎ các ảnh đã lưu trên Cloudinary (http:// hoặc https://).
  */
 export async function purgeReceiptImagesOlderThan(
   db: SQLite.SQLiteDatabase,
@@ -724,13 +748,23 @@ export async function purgeReceiptImagesOlderThan(
     };
   }
 
-  const allUrisToDelete: string[] = [];
+  const allLocalUrisToDelete: string[] = [];
   let totalBytes = 0;
+  let cleanedTxCount = 0;
 
   for (const row of rows) {
     const uris = parseImageUris(row.image_uris);
-    for (const u of uris) {
-      allUrisToDelete.push(u);
+    const localUris = uris.filter(u => !u.startsWith('http://') && !u.startsWith('https://'));
+    const cloudUris = uris.filter(u => u.startsWith('http://') || u.startsWith('https://'));
+
+    // Nếu giao dịch này không có ảnh cục bộ nào (chỉ có ảnh Cloudinary), bỏ qua hoàn toàn!
+    if (localUris.length === 0) {
+      continue;
+    }
+
+    cleanedTxCount++;
+    for (const u of localUris) {
+      allLocalUrisToDelete.push(u);
       try {
         if (u.startsWith('file://')) {
           const info = await FileSystem.getInfoAsync(u);
@@ -740,22 +774,21 @@ export async function purgeReceiptImagesOlderThan(
         }
       } catch {}
     }
+
+    // Cập nhật database: Giữ lại các ảnh Cloudinary (nếu có), chỉ xóa ảnh cục bộ
+    const newImageUrisVal = cloudUris.length > 0 ? JSON.stringify(cloudUris) : null;
+    await db.runAsync(
+      `UPDATE transactions SET image_uris = ? WHERE id = ?`,
+      [newImageUrisVal, row.id]
+    );
   }
 
-  // 1. Xóa file vật lý khỏi bộ nhớ máy
-  await deleteReceiptFiles(allUrisToDelete);
-
-  // 2. Cập nhật database: gán image_uris = NULL cho các giao dịch trước cutoffDate
-  await db.runAsync(
-    `UPDATE transactions 
-     SET image_uris = NULL 
-     WHERE image_uris IS NOT NULL AND image_uris != '' AND transacted_at < ?`,
-    [cutoffIso]
-  );
+  // Xóa file vật lý cục bộ khỏi bộ nhớ máy
+  await deleteReceiptFiles(allLocalUrisToDelete);
 
   return {
-    cleanedTransactions: rows.length,
-    cleanedImages: allUrisToDelete.length,
+    cleanedTransactions: cleanedTxCount,
+    cleanedImages: allLocalUrisToDelete.length,
     freedFormatted: formatFileSize(totalBytes),
     cutoffDateStr: cutoffDate.format('DD/MM/YYYY'),
   };

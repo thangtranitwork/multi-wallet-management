@@ -478,7 +478,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
       const filename = `MultiWallet_Backup_${dateStr}.json`;
       const backupFile = new File(Paths.cache, filename);
       backupFile.create({ overwrite: true });
-      backupFile.write(jsonStr);
+      await backupFile.write(jsonStr);
       const fileUri = backupFile.uri;
 
       const isAvailable = await Sharing.isAvailableAsync();

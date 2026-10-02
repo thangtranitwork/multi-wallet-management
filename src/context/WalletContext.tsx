@@ -20,6 +20,7 @@ import { uploadBackupToDrive } from '../services/googleDriveService';
 import { syncWidgetData } from '../services/widgetSyncService';
 import { refreshHabitReminders } from '../services/habitNotificationService';
 import { deleteReceiptFiles, parseImageUris, purgeReceiptImagesOlderThan } from '../services/geminiService';
+import { normalizeToIsoString } from '../utils/dateUtils';
 
 interface WalletContextType {
   wallets: Wallet[];
@@ -242,8 +243,14 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         queries.getRecentDebtPersons(db),
       ]);
 
+      const sortedTxs = [...fetchedTxs].sort((a, b) => {
+        const timeA = new Date(a.transacted_at).getTime() || 0;
+        const timeB = new Date(b.transacted_at).getTime() || 0;
+        return timeB - timeA;
+      });
+
       setWallets(fetchedWallets);
-      setTransactions(fetchedTxs);
+      setTransactions(sortedTxs);
       setDebts(fetchedDebts);
       setCategories(fetchedCategories);
       setPlannedExpenses(fetchedPlanned);
@@ -354,7 +361,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     await queries.createTransaction(db, {
       id,
       ...tx,
-      transacted_at: tx.transacted_at || new Date().toISOString(),
+      transacted_at: normalizeToIsoString(tx.transacted_at),
     });
     await refreshData();
     triggerAutoBackup();
@@ -400,7 +407,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const updateTransactionTime = async (transactionId: string, transactedAt: string) => {
-    await queries.updateTransactionTime(db, transactionId, transactedAt);
+    await queries.updateTransactionTime(db, transactionId, normalizeToIsoString(transactedAt));
     await refreshData();
     triggerAutoBackup();
   };
@@ -416,7 +423,11 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       transacted_at?: string;
     }
   ) => {
-    await queries.updateTransactionDetails(db, id, updates);
+    const normalizedUpdates = {
+      ...updates,
+      ...(updates.transacted_at ? { transacted_at: normalizeToIsoString(updates.transacted_at) } : {}),
+    };
+    await queries.updateTransactionDetails(db, id, normalizedUpdates);
     await refreshData();
     triggerAutoBackup();
   };

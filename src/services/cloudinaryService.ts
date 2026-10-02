@@ -99,7 +99,10 @@ export async function uploadToCloudinary(
   const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
 
   // Kiểm tra và giải quyết đường dẫn đọc được (phòng trường hợp đổi giữa Dev Build và Expo Go)
-  const targetUri = (await resolveReadableUri(localUri)) || localUri;
+  const targetUri = await resolveReadableUri(localUri);
+  if (!targetUri) {
+    throw new Error(`FILE_NOT_FOUND: Tệp ảnh cục bộ không tồn tại trên thiết bị (${localUri})`);
+  }
 
   // 1. Thử dùng FileSystem.uploadAsync để stream native trực tiếp từ thiết bị
   try {
@@ -257,43 +260,22 @@ export async function resolveReadableUri(uri: string): Promise<string | null> {
   const docDir = FileSystem.documentDirectory;
   const cacheDir = FileSystem.cacheDirectory;
 
-  if (uri.includes('wallet_qrs/')) {
-    const fileName = uri.split('wallet_qrs/').pop();
-    if (fileName) {
-      if (docDir) {
-        const candidate = `${docDir}wallet_qrs/${fileName}`;
-        try {
-          const info = await FileSystem.getInfoAsync(candidate);
-          if (info.exists) return candidate;
-        } catch {}
-      }
-      if (cacheDir) {
-        const candidate = `${cacheDir}wallet_qrs/${fileName}`;
-        try {
-          const info = await FileSystem.getInfoAsync(candidate);
-          if (info.exists) return candidate;
-        } catch {}
-      }
-    }
-  }
+  const rawFileName = uri.split('/').pop()?.split('?')[0];
+  if (rawFileName) {
+    const candidates = [
+      docDir ? `${docDir}transaction_receipts/${rawFileName}` : null,
+      docDir ? `${docDir}wallet_qrs/${rawFileName}` : null,
+      docDir ? `${docDir}${rawFileName}` : null,
+      cacheDir ? `${cacheDir}${rawFileName}` : null,
+      cacheDir ? `${cacheDir}transaction_receipts/${rawFileName}` : null,
+      cacheDir ? `${cacheDir}wallet_qrs/${rawFileName}` : null,
+    ].filter(Boolean) as string[];
 
-  if (uri.includes('transaction_receipts/')) {
-    const fileName = uri.split('transaction_receipts/').pop();
-    if (fileName) {
-      if (docDir) {
-        const candidate = `${docDir}transaction_receipts/${fileName}`;
-        try {
-          const info = await FileSystem.getInfoAsync(candidate);
-          if (info.exists) return candidate;
-        } catch {}
-      }
-      if (cacheDir) {
-        const candidate = `${cacheDir}transaction_receipts/${fileName}`;
-        try {
-          const info = await FileSystem.getInfoAsync(candidate);
-          if (info.exists) return candidate;
-        } catch {}
-      }
+    for (const candidate of candidates) {
+      try {
+        const info = await FileSystem.getInfoAsync(candidate);
+        if (info.exists) return candidate;
+      } catch {}
     }
   }
 
@@ -431,8 +413,26 @@ export async function migrateLocalImagesToCloudinary(
           successCount++;
         }
       }
-    } catch (e) {
-      console.warn('Lỗi migrate ảnh hóa đơn:', e);
+    } catch (e: any) {
+      if (e?.message?.includes('FILE_NOT_FOUND')) {
+        console.log(`[Cloudinary] Tệp ảnh không còn tồn tại trên máy, đang dọn liên kết hỏng: ${task.localUri}`);
+        try {
+          const tx = await db.getFirstAsync<{ image_uris: string }>(
+            'SELECT image_uris FROM transactions WHERE id = ?',
+            [task.txId]
+          );
+          if (tx) {
+            const uris = parseImageUris(tx.image_uris);
+            const filtered = uris.filter(u => u !== task.localUri);
+            await db.runAsync('UPDATE transactions SET image_uris = ? WHERE id = ?', [
+              filtered.length > 0 ? JSON.stringify(filtered) : null,
+              task.txId,
+            ]);
+          }
+        } catch {}
+      } else {
+        console.warn('Lỗi migrate ảnh hóa đơn:', e);
+      }
       failCount++;
     }
   }
@@ -458,8 +458,17 @@ export async function migrateLocalImagesToCloudinary(
         await FileSystem.deleteAsync(task.localUri, { idempotent: true });
       } catch {}
       successCount++;
-    } catch (e) {
-      console.warn('Lỗi migrate ảnh QR ví:', e);
+    } catch (e: any) {
+      if (e?.message?.includes('FILE_NOT_FOUND')) {
+        console.log(`[Cloudinary] Ảnh QR ví không còn tồn tại trên máy, đã gỡ bỏ: ${task.localUri}`);
+        try {
+          await db.runAsync('UPDATE wallets SET qr_image_uri = NULL WHERE id = ?', [
+            task.walletId,
+          ]);
+        } catch {}
+      } else {
+        console.warn('Lỗi migrate ảnh QR ví:', e);
+      }
       failCount++;
     }
   }

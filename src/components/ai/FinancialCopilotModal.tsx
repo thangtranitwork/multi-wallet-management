@@ -31,6 +31,7 @@ import dayjs from 'dayjs';
 import { Wallet } from '../../types';
 import { hapticLight, hapticMedium, hapticSuccess, hapticError } from '../../utils/haptics';
 import { useCustomAlert } from '../CustomAlertModal';
+import { normalizeToIsoString } from '../../utils/dateUtils';
 import * as queries from '../../database/queries';
 import { saveReceiptImages } from '../../services/geminiService';
 import {
@@ -629,7 +630,7 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
               amount: tx.amount,
               categoryId: tx.category_id || null,
               note: tx.note || 'Ghi chép từ Trợ lý Copilot',
-              transactedAt: tx.transacted_at || new Date().toISOString(),
+              transactedAt: normalizeToIsoString(tx.transacted_at),
               firstDueDate,
               image_uris: persistentUris,
               items: tx.items && tx.items.length > 0 ? JSON.stringify({ items: tx.items }) : null,
@@ -641,7 +642,7 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
               amount: tx.amount,
               type: tx.type,
               note: tx.note || 'Ghi chép từ Trợ lý Copilot',
-              transacted_at: tx.transacted_at || new Date().toISOString(),
+              transacted_at: normalizeToIsoString(tx.transacted_at),
               image_uris: persistentUris,
               items: tx.items && tx.items.length > 0 ? JSON.stringify({ items: tx.items }) : null,
             });
@@ -666,7 +667,7 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
           to_wallet_id: toWalletId,
           amount: tr.amount,
           note: tr.note || 'Chuyển tiền qua Trợ lý Copilot',
-          transacted_at: tr.transacted_at || new Date().toISOString(),
+          transacted_at: normalizeToIsoString(tr.transacted_at),
         });
         setMessages(prev =>
           prev.map(m => (m.id === msgId ? { ...m, isSaved: true } : m))
@@ -809,7 +810,7 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
           note: ut.new_note,
           wallet_id: ut.new_wallet_id,
           category_id: ut.new_category_id,
-          transacted_at: ut.new_transacted_at,
+          transacted_at: ut.new_transacted_at ? normalizeToIsoString(ut.new_transacted_at) : undefined,
         });
         setMessages(prev =>
           prev.map(m => (m.id === msgId ? { ...m, isSaved: true } : m))
