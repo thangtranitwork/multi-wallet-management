@@ -384,20 +384,20 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                       {/* Các Redirect URIs */}
                       <View style={{ marginTop: 14 }}>
                         <Text style={styles.advancedLabel}>
-                          Authorized Redirect URIs (Cần thêm vào Google Cloud Console):
+                          Redirect URI hiện tại của ứng dụng:
                         </Text>
                         
-                        {/* URI 1: Expo Go Redirect URI */}
+                        {/* Current Dynamic Redirect URI */}
                         <View style={styles.redirectUriRow}>
                           <View style={{ flex: 1, marginRight: 6 }}>
-                            <Text style={styles.redirectUriTypeLabel}>1. Dành cho Expo Go (Bắt buộc):</Text>
+                            <Text style={styles.redirectUriTypeLabel}>Redirect URI đang hoạt động:</Text>
                             <Text style={styles.redirectUriValue} selectable>
-                              https://auth.expo.io/@anonymous/multi-wallet-management
+                              {getRedirectUri()}
                             </Text>
                           </View>
                           <Pressable
                             style={styles.copyUriBtn}
-                            onPress={() => handleCopyUri('https://auth.expo.io/@anonymous/multi-wallet-management', 'Expo Go URI')}
+                            onPress={() => handleCopyUri(getRedirectUri(), 'Redirect URI')}
                           >
                             <Ionicons name="copy-outline" size={13} color="#000000" />
                             <Text style={styles.copyUriBtnText}>Chép</Text>
@@ -407,19 +407,19 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                         {/* Hướng dẫn cài đặt Google Cloud */}
                         <View style={styles.cloudInstructionBox}>
                           <Text style={styles.cloudInstructionTitle}>
-                            👉 Hướng dẫn set trên Google Cloud Console:
+                            👉 Lưu ý cấu hình Google Cloud Console:
                           </Text>
                           <Text style={styles.cloudInstructionStep}>
-                            1. Trong màn hình <Text style={{ fontWeight: '900' }}>"Client ID for Web application"</Text>, tìm mục <Text style={{ fontWeight: '900' }}>Authorized redirect URIs</Text>.
+                            1. <Text style={{ fontWeight: '900' }}>Nếu dùng Client ID loại Android</Text>: Nhập Package Name là <Text style={{ fontWeight: '900' }}>com.thang.multiwallet</Text> và SHA-1 của file APK.
                           </Text>
                           <Text style={styles.cloudInstructionStep}>
-                            2. Bấm nút <Text style={{ fontWeight: '900' }}>"+ Add URI"</Text> rồi dán URL số 1 ở trên vào.
+                            2. <Text style={{ fontWeight: '900' }}>Nếu dùng Client ID loại Web</Text>: Thêm URI ở trên vào mục <Text style={{ fontWeight: '900' }}>Authorized redirect URIs</Text>.
                           </Text>
                           <Text style={styles.cloudInstructionStep}>
-                            3. Bấm nút <Text style={{ fontWeight: '900' }}>"Save"</Text> màu xanh ở cuối trang Google Cloud.
+                            3. Vào menu <Text style={{ fontWeight: '900' }}>OAuth consent screen</Text> &gt; <Text style={{ fontWeight: '900' }}>Audience / Test users</Text>, thêm tài khoản Gmail của bạn vào danh sách người thử nghiệm.
                           </Text>
                           <Text style={styles.cloudInstructionStep}>
-                            4. Vào menu <Text style={{ fontWeight: '900' }}>Audience</Text> (hoặc Test users), thêm địa chỉ Gmail của bạn vào danh sách để Google cấp quyền đăng nhập thử nghiệm.
+                            4. Đảm bảo đã bật <Text style={{ fontWeight: '900' }}>Google Drive API</Text> trong mục Enabled APIs &amp; Services.
                           </Text>
                         </View>
                       </View>

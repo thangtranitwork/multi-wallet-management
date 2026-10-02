@@ -24,6 +24,7 @@ export const DEFAULT_GOOGLE_CLIENT_ID =
   '615826839377-7vu4qip994vlo3qggl4ufp529h5e4jck.apps.googleusercontent.com';
 
 const GOOGLE_AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
+const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 const GOOGLE_USERINFO_ENDPOINT = 'https://www.googleapis.com/oauth2/v2/userinfo';
 const DRIVE_FILES_ENDPOINT = 'https://www.googleapis.com/drive/v3/files';
 const DRIVE_UPLOAD_ENDPOINT = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
@@ -42,6 +43,7 @@ export const GOOGLE_DRIVE_SCOPES = [
 export function getRedirectUri(): string {
   return AuthSession.makeRedirectUri({
     scheme: 'com.thang.multiwallet',
+    path: 'oauthredirect',
   });
 }
 
@@ -61,43 +63,74 @@ export async function signInWithGoogle(customClientId?: string): Promise<{
 
     const redirectUri = getRedirectUri();
 
-    // Khởi tạo AuthRequest
+    // Khởi tạo AuthRequest với chuẩn PKCE Authorization Code Flow
+    // (Google đã chặn luồng implicit ResponseType.Token gây ra lỗi 400: invalid_request)
     const request = new AuthSession.AuthRequest({
       clientId,
       redirectUri,
       scopes: GOOGLE_DRIVE_SCOPES,
-      responseType: AuthSession.ResponseType.Token,
-      usePKCE: false,
+      responseType: AuthSession.ResponseType.Code,
+      usePKCE: true,
     });
 
     const discovery = {
       authorizationEndpoint: GOOGLE_AUTH_ENDPOINT,
+      tokenEndpoint: GOOGLE_TOKEN_ENDPOINT,
     };
 
     const result = await request.promptAsync(discovery);
 
-    if (result.type === 'success' && result.params && result.params.access_token) {
-      const accessToken = result.params.access_token;
-      const user = await fetchGoogleUserInfo(accessToken);
+    if (result.type === 'success' && result.params) {
+      let accessToken = result.params.access_token;
 
-      return {
-        success: true,
-        accessToken,
-        user: user || {
-          id: 'user_connected',
-          email: 'Đã liên kết Google Drive',
-          name: 'Tài khoản Google',
-        },
-      };
+      // Nếu luồng trả về code (chuẩn PKCE), đổi code lấy access_token
+      if (!accessToken && result.params.code) {
+        const tokenResponse = await AuthSession.exchangeCodeAsync(
+          {
+            clientId,
+            code: result.params.code,
+            redirectUri,
+            extraParams: {
+              code_verifier: request.codeVerifier || '',
+            },
+          },
+          discovery
+        );
+        accessToken = tokenResponse.accessToken;
+      }
+
+      if (accessToken) {
+        const user = await fetchGoogleUserInfo(accessToken);
+
+        return {
+          success: true,
+          accessToken,
+          user: user || {
+            id: 'user_connected',
+            email: 'Đã liên kết Google Drive',
+            name: 'Tài khoản Google',
+          },
+        };
+      } else {
+        return {
+          success: false,
+          error: 'Không nhận được mã truy cập (Access Token) từ Google.',
+        };
+      }
     } else if (result.type === 'cancel' || result.type === 'dismiss') {
       return {
         success: false,
         error: 'Người dùng đã hủy đăng nhập.',
       };
     } else {
+      const errDetail =
+        (result as any).error?.message ||
+        (result as any).params?.error_description ||
+        (result as any).params?.error ||
+        'Không thể hoàn tất đăng nhập Google.';
       return {
         success: false,
-        error: (result as any).error?.message || 'Không thể hoàn tất đăng nhập Google.',
+        error: errDetail,
       };
     }
   } catch (err: any) {
