@@ -29,6 +29,7 @@ import {
   savePreferredGeminiModel,
   formatGeminiErrorMessage,
 } from '../services/geminiService';
+import { upsertPayeeMapping } from '../database/queries';
 
 interface QuickAddModalProps {
   visible: boolean;
@@ -924,6 +925,24 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
         image_uris: persistentUris,
         items: itemsJson,
       });
+
+      // Tự động học thói quen người nhận nếu giao dịch có thông tin người nhận
+      if (scanResult?.recipient_name && note.trim().length > 0) {
+        try {
+          await upsertPayeeMapping(db, {
+            payee_name: scanResult.recipient_name,
+            payee_display_name: scanResult.recipient_name,
+            account_number: scanResult.recipient_account,
+            bank_name: scanResult.recipient_bank,
+            note: note.trim(),
+            category_id: type === 'transfer' ? null : selectedCategoryId,
+            wallet_id: selectedWalletId,
+          });
+        } catch (mapErr) {
+          console.warn('Lỗi lưu payee mapping:', mapErr);
+        }
+      }
+
       hapticSuccess();
       onClose();
     } catch (error: any) {
@@ -2314,6 +2333,33 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                         <Text style={styles.receiptResultValueBold} numberOfLines={1}>
                           {scanResult.detected_payment_method}
                         </Text>
+                      </View>
+                    ) : null}
+
+                    {scanResult.learned_mapping ? (
+                      <View style={styles.learnedPayeeBadge}>
+                        <Ionicons name="sparkles" size={13} color="#D97706" style={{ marginTop: 1 }} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.learnedPayeeBadgeText}>
+                            Tự động điền theo thói quen chuyển khoản cho {scanResult.learned_mapping.payee_display_name}
+                          </Text>
+                          {scanResult.learned_mapping.alternative_notes && scanResult.learned_mapping.alternative_notes.length > 0 && (
+                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 4 }}>
+                              {scanResult.learned_mapping.alternative_notes.map((altNote, aIdx) => (
+                                <Pressable
+                                  key={aIdx}
+                                  style={styles.altNoteChip}
+                                  onPress={() => {
+                                    hapticLight();
+                                    setNote(altNote);
+                                  }}
+                                >
+                                  <Text style={styles.altNoteChipText}>{altNote}</Text>
+                                </Pressable>
+                              ))}
+                            </View>
+                          )}
+                        </View>
                       </View>
                     ) : null}
                   </View>
@@ -4117,6 +4163,37 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#15803D',
     maxWidth: '65%',
+  },
+  learnedPayeeBadge: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    marginTop: 6,
+  },
+  learnedPayeeBadgeText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#92400E',
+    lineHeight: 14,
+  },
+  altNoteChip: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  altNoteChipText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#B45309',
   },
   addItemsManualBtn: {
     flexDirection: 'row',

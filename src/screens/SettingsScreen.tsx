@@ -73,6 +73,13 @@ import {
   HabitReminderConfig,
   DEFAULT_HABIT_CONFIG,
 } from '../services/habitNotificationService';
+import {
+  getSmartPayeeMappingEnabled,
+  setSmartPayeeMappingEnabled,
+  getAllPayeeMappings,
+  deletePayeeMapping,
+} from '../database/queries';
+import { PayeeMapping } from '../types';
 
 interface SettingsScreenProps {
   navigation: any;
@@ -164,6 +171,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
   const [isTestingGemini, setIsTestingGemini] = useState<boolean>(false);
   const [inAppMicEnabled, setInAppMicEnabledState] = useState<boolean>(true);
   const [copilotTtsEnabled, setCopilotTtsEnabledState] = useState<boolean>(true);
+  const [smartPayeeEnabled, setSmartPayeeEnabledState] = useState<boolean>(true);
+  const [payeeMappings, setPayeeMappings] = useState<PayeeMapping[]>([]);
+  const [showPayeeModal, setShowPayeeModal] = useState<boolean>(false);
   const [geminiStatus, setGeminiStatus] = useState<{ checked: boolean; success: boolean; message: string; model?: string }>({
     checked: false,
     success: false,
@@ -294,6 +304,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
     getCopilotPersonality(db).then((p) => {
       setCopilotPersonalityState(p);
     });
+    getSmartPayeeMappingEnabled(db).then((enabled) => {
+      setSmartPayeeEnabledState(enabled);
+    });
+    getAllPayeeMappings(db).then((mappings) => {
+      setPayeeMappings(mappings);
+    });
   }, [db]);
 
   const [copilotPersonality, setCopilotPersonalityState] =
@@ -309,6 +325,37 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
     hapticLight();
     setCopilotTtsEnabledState(val);
     await setCopilotTtsEnabled(db, val);
+  };
+
+  const handleToggleSmartPayee = async (val: boolean) => {
+    hapticLight();
+    setSmartPayeeEnabledState(val);
+    await setSmartPayeeMappingEnabled(db, val);
+    if (val) {
+      const list = await getAllPayeeMappings(db);
+      setPayeeMappings(list);
+    }
+  };
+
+  const handleDeletePayeeMapping = async (id: string, name: string) => {
+    hapticLight();
+    showAlert(
+      'Xóa thói quen đã nhớ',
+      `Bạn có chắc muốn xóa thói quen gắn cho "${name}" không?`,
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Xóa',
+          style: 'destructive',
+          onPress: async () => {
+            await deletePayeeMapping(db, id);
+            hapticSuccess();
+            const list = await getAllPayeeMappings(db);
+            setPayeeMappings(list);
+          },
+        },
+      ]
+    );
   };
 
   const handleSelectPersonality = async (id: CopilotPersonalityId) => {
@@ -1401,6 +1448,77 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                   </Text>
                 </View>
               </View>
+
+              {/* Divider */}
+              <View style={{ height: 1.5, backgroundColor: '#E5E7EB', marginVertical: 14 }} />
+
+              {/* Smart Payee Mapping Setting */}
+              <View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <View style={{ flex: 1, marginRight: 12 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Ionicons name="repeat" size={17} color="#000000" />
+                      <Text style={{ fontSize: 13, fontWeight: '800', color: '#000000' }}>
+                        Tự động học thói quen người nhận
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 11, color: '#6B7280', marginTop: 3, lineHeight: 15 }}>
+                      Tự động nhớ và điền nội dung & danh mục khi quét bill chuyển khoản cho cùng người nhận (ví dụ: chuyển khoản cho Nguyễn Văn A tự điền "Bò cụng", danh mục "Cà phê & Đồ uống").
+                    </Text>
+                  </View>
+
+                  <Switch
+                    value={smartPayeeEnabled}
+                    onValueChange={handleToggleSmartPayee}
+                    trackColor={{ false: '#D1D5DB', true: '#86EFAC' }}
+                    thumbColor={smartPayeeEnabled ? '#15803D' : '#9CA3AF'}
+                  />
+                </View>
+
+                {smartPayeeEnabled && (
+                  <View
+                    style={{
+                      marginTop: 10,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      backgroundColor: '#F3F4F6',
+                      borderWidth: 1.5,
+                      borderColor: '#000000',
+                      borderRadius: 8,
+                      paddingHorizontal: 10,
+                      paddingVertical: 7,
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                      <Ionicons name="sparkles" size={15} color="#D97706" />
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#1F2937' }}>
+                        {payeeMappings.length > 0
+                          ? `Đã ghi nhớ ${payeeMappings.length} người nhận`
+                          : 'Chưa có dữ liệu thói quen người nhận'}
+                      </Text>
+                    </View>
+                    {payeeMappings.length > 0 && (
+                      <Pressable
+                        style={{
+                          backgroundColor: '#FEF08A',
+                          borderWidth: 1.5,
+                          borderColor: '#000000',
+                          borderRadius: 6,
+                          paddingHorizontal: 8,
+                          paddingVertical: 4,
+                        }}
+                        onPress={() => {
+                          hapticLight();
+                          setShowPayeeModal(true);
+                        }}
+                      >
+                        <Text style={{ fontSize: 11, fontWeight: '900', color: '#000000' }}>Xem & Quản lý</Text>
+                      </Pressable>
+                    )}
+                  </View>
+                )}
+              </View>
             </View>
             )}
           </View>
@@ -2236,7 +2354,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
         <View style={styles.footerContainer}>
           <Text style={styles.footerAppName}>Ví Của Tôi • Multi-Wallet Manager</Text>
           <Text style={styles.footerNote}>
-            Phiên bản 1.2.6 • SQLite Offline Local Storage
+            Phiên bản 1.2.7 • SQLite Offline Local Storage
           </Text>
           <Text style={styles.footerPrivacy}>
             100% dữ liệu được lưu trữ trên thiết bị của bạn, hoàn toàn riêng tư và không tải lên máy chủ ngoài.
@@ -2378,6 +2496,99 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
         visible={logModalVisible}
         onClose={() => setLogModalVisible(false)}
       />
+
+      {/* Modal Quản lý thói quen người nhận đã học (Smart Payee Mapping) */}
+      <Modal
+        visible={showPayeeModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowPayeeModal(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalContent, { maxHeight: '82%' }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, marginRight: 8 }}>
+                <Ionicons name="repeat" size={20} color="#000000" />
+                <Text style={styles.modalTitle} numberOfLines={1}>
+                  Thói Quen Người Nhận ({payeeMappings.length})
+                </Text>
+              </View>
+              <Pressable
+                style={styles.modalCloseBtn}
+                onPress={() => setShowPayeeModal(false)}
+              >
+                <Ionicons name="close" size={20} color="#000000" />
+              </Pressable>
+            </View>
+
+            <Text style={styles.modalSubtitle}>
+              Khi bạn quét bill chuyển khoản đến các người nhận này, AI sẽ tự động điền sẵn nội dung và danh mục tương ứng.
+            </Text>
+
+            <ScrollView style={{ marginTop: 8 }} showsVerticalScrollIndicator={false}>
+              {payeeMappings.map(m => {
+                const catName = categories.find(c => c.id === m.suggested_category_id)?.name;
+                return (
+                  <View
+                    key={m.id}
+                    style={{
+                      backgroundColor: '#FFFFFF',
+                      borderWidth: 1.5,
+                      borderColor: '#000000',
+                      borderRadius: 8,
+                      padding: 10,
+                      marginBottom: 8,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '800', color: '#000000' }}>
+                          {m.payee_display_name || m.payee_name}
+                        </Text>
+                        {(m.bank_name || m.account_number) && (
+                          <Text style={{ fontSize: 10, color: '#6B7280' }}>
+                            ({[m.bank_name, m.account_number].filter(Boolean).join(' - ')})
+                          </Text>
+                        )}
+                      </View>
+                      <Text style={{ fontSize: 12, color: '#2563EB', fontWeight: '700', marginTop: 3 }}>
+                        👉 "{m.suggested_note}"
+                        {catName ? ` • [${catName}]` : ''}
+                      </Text>
+                      <Text style={{ fontSize: 10, color: '#6B7280', marginTop: 3 }}>
+                        Đã áp dụng: {m.use_count} lần
+                      </Text>
+                    </View>
+
+                    <Pressable
+                      style={{
+                        backgroundColor: '#FEE2E2',
+                        borderWidth: 1.5,
+                        borderColor: '#000000',
+                        borderRadius: 6,
+                        padding: 7,
+                      }}
+                      onPress={() => handleDeletePayeeMapping(m.id, m.payee_display_name || m.payee_name)}
+                    >
+                      <Ionicons name="trash-outline" size={16} color="#DC2626" />
+                    </Pressable>
+                  </View>
+                );
+              })}
+            </ScrollView>
+
+            <Pressable
+              style={[styles.modalConfirmBtn, { marginTop: 12 }]}
+              onPress={() => setShowPayeeModal(false)}
+            >
+              <Text style={styles.modalConfirmBtnText}>Đóng</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       {/* Modal Thiết lập / Đổi mã PIN 4 số */}
       <Modal

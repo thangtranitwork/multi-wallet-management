@@ -14,6 +14,7 @@ import {
   CategoryComparisonItem,
   PeriodComparisonResult,
   ContactPerson,
+  PayeeMapping,
 } from '../types';
 
 // ==================== WALLET QUERIES ====================
@@ -2198,6 +2199,213 @@ export async function getRecentDebtPersons(
     name: r.person_name.trim(),
     phone: r.person_phone?.trim() || null,
   }));
+}
+
+// ==================== SMART PAYEE MAPPING (QUY TẮC HỌC NGƯỜI NHẬN) ====================
+
+export const SMART_PAYEE_MAPPING_SETTING_KEY = 'smart_payee_mapping_enabled';
+
+export async function getSmartPayeeMappingEnabled(
+  db: SQLite.SQLiteDatabase
+): Promise<boolean> {
+  const val = await getAppSetting(db, SMART_PAYEE_MAPPING_SETTING_KEY, 'true');
+  return val === 'true';
+}
+
+export async function setSmartPayeeMappingEnabled(
+  db: SQLite.SQLiteDatabase,
+  enabled: boolean
+): Promise<void> {
+  await setAppSetting(db, SMART_PAYEE_MAPPING_SETTING_KEY, enabled ? 'true' : 'false');
+}
+
+/**
+ * Chuẩn hóa tên người nhận chuyển khoản / thụ hưởng:
+ * Loại bỏ dấu tiếng Việt, ký tự đặc biệt và các tiền tố ngân hàng phổ biến
+ * Ví dụ: "Chuyển khoản đến Nguyễn Văn A" -> "NGUYEN VAN A"
+ */
+export function cleanPayeeName(name: string): string {
+  if (!name) return '';
+  let cleaned = name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd');
+
+  // Xóa các tiền tố thường gặp trên bill chuyển khoản ngân hàng
+  cleaned = cleaned
+    .replace(/\b(chuyen khoan den|chuyen tien cho|chuyen den|nguoi nhan|nguoi thu huong|ben nhan|tai khoan nhan|stk nhan|stk|tk)\b/gi, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return cleaned.toUpperCase();
+}
+
+/**
+ * Tìm mapping theo tên người nhận hoặc số tài khoản ngân hàng
+ */
+export async function findPayeeMapping(
+  db: SQLite.SQLiteDatabase,
+  payeeName?: string | null,
+  accountNumber?: string | null
+): Promise<PayeeMapping | null> {
+  // 1. Ưu tiên tìm chính xác theo số tài khoản nếu có
+  if (accountNumber && accountNumber.trim().length >= 6) {
+    const cleanAcc = accountNumber.trim().replace(/[^0-9]/g, '');
+    if (cleanAcc.length >= 6) {
+      const byAcc = await db.getFirstAsync<PayeeMapping>(
+        'SELECT * FROM payee_mappings WHERE account_number = ? ORDER BY use_count DESC LIMIT 1',
+        [cleanAcc]
+      );
+      if (byAcc) return byAcc;
+    }
+  }
+
+  // 2. Tìm theo tên người nhận đã chuẩn hóa
+  if (!payeeName) return null;
+  const cleaned = cleanPayeeName(payeeName);
+  if (cleaned.length < 2) return null;
+
+  // 2A. Khớp chính xác tên chuẩn hóa
+  const exactMatch = await db.getFirstAsync<PayeeMapping>(
+    'SELECT * FROM payee_mappings WHERE payee_name = ? ORDER BY use_count DESC LIMIT 1',
+    [cleaned]
+  );
+  if (exactMatch) return exactMatch;
+
+  // 2B. Khớp tương đối nếu tên có ít nhất 2 từ (e.g. "NGUYEN VAN A" vs "NGUYEN VAN A VCB")
+  if (cleaned.includes(' ')) {
+    const fuzzyMatch = await db.getFirstAsync<PayeeMapping>(
+      'SELECT * FROM payee_mappings WHERE payee_name LIKE ? OR ? LIKE ("%" || payee_name || "%") ORDER BY use_count DESC LIMIT 1',
+      [`%${cleaned}%`, cleaned]
+    );
+    if (fuzzyMatch) return fuzzyMatch;
+  }
+
+  return null;
+}
+
+/**
+ * Học hoặc cập nhật quy tắc người nhận khi người dùng lưu/sửa giao dịch
+ */
+export async function upsertPayeeMapping(
+  db: SQLite.SQLiteDatabase,
+  params: {
+    payee_name: string;
+    payee_display_name?: string | null;
+    account_number?: string | null;
+    bank_name?: string | null;
+    note: string;
+    category_id?: string | null;
+    wallet_id?: string | null;
+  }
+): Promise<void> {
+  const isEnabled = await getSmartPayeeMappingEnabled(db);
+  if (!isEnabled) return;
+
+  const cleanedName = cleanPayeeName(params.payee_name);
+  if (cleanedName.length < 2) return;
+
+  const note = (params.note || '').trim();
+  if (note.length === 0) return;
+
+  const cleanAcc = params.account_number ? params.account_number.trim().replace(/[^0-9]/g, '') : null;
+  const now = new Date().toISOString();
+
+  // Kiểm tra xem đã có mapping của người này chưa
+  const existing = await findPayeeMapping(db, cleanedName, cleanAcc);
+
+  if (existing) {
+    // Đọc lịch sử các ghi chú gần đây
+    let recentList: Array<{ note: string; count: number }> = [];
+    try {
+      if (existing.recent_notes) {
+        recentList = JSON.parse(existing.recent_notes);
+      }
+    } catch {}
+
+    const foundNoteIdx = recentList.findIndex(item => item.note.toLowerCase() === note.toLowerCase());
+    if (foundNoteIdx >= 0) {
+      recentList[foundNoteIdx].count += 1;
+    } else {
+      recentList.unshift({ note, count: 1 });
+    }
+    // Giữ tối đa 5 ghi chú phổ biến nhất
+    recentList.sort((a, b) => b.count - a.count);
+    recentList = recentList.slice(0, 5);
+
+    await db.runAsync(
+      `UPDATE payee_mappings
+       SET suggested_note = ?,
+           suggested_category_id = COALESCE(?, suggested_category_id),
+           suggested_wallet_id = COALESCE(?, suggested_wallet_id),
+           payee_display_name = COALESCE(?, payee_display_name),
+           account_number = COALESCE(?, account_number),
+           bank_name = COALESCE(?, bank_name),
+           use_count = use_count + 1,
+           recent_notes = ?,
+           last_used_at = ?
+       WHERE id = ?`,
+      [
+        note,
+        params.category_id || null,
+        params.wallet_id || null,
+        params.payee_display_name || null,
+        cleanAcc || null,
+        params.bank_name || null,
+        JSON.stringify(recentList),
+        now,
+        existing.id,
+      ]
+    );
+  } else {
+    // Thêm mới
+    const id = `payee_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const recentList = [{ note, count: 1 }];
+
+    await db.runAsync(
+      `INSERT INTO payee_mappings (
+         id, payee_name, payee_display_name, account_number, bank_name,
+         suggested_note, suggested_category_id, suggested_wallet_id,
+         use_count, recent_notes, last_used_at, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
+      [
+        id,
+        cleanedName,
+        params.payee_display_name || params.payee_name.trim(),
+        cleanAcc || null,
+        params.bank_name || null,
+        note,
+        params.category_id || null,
+        params.wallet_id || null,
+        JSON.stringify(recentList),
+        now,
+        now,
+      ]
+    );
+  }
+}
+
+/**
+ * Lấy danh sách toàn bộ các quy tắc người nhận đã học
+ */
+export async function getAllPayeeMappings(
+  db: SQLite.SQLiteDatabase
+): Promise<PayeeMapping[]> {
+  return await db.getAllAsync<PayeeMapping>(
+    'SELECT * FROM payee_mappings ORDER BY use_count DESC, last_used_at DESC'
+  );
+}
+
+/**
+ * Xóa một quy tắc người nhận
+ */
+export async function deletePayeeMapping(
+  db: SQLite.SQLiteDatabase,
+  id: string
+): Promise<void> {
+  await db.runAsync('DELETE FROM payee_mappings WHERE id = ?', [id]);
 }
 
 

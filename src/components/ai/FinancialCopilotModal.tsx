@@ -647,6 +647,19 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
               items: tx.items && tx.items.length > 0 ? JSON.stringify({ items: tx.items }) : null,
             });
           }
+
+          if (tx.recipient_name && tx.note) {
+            try {
+              await queries.upsertPayeeMapping(db, {
+                payee_name: tx.recipient_name,
+                note: tx.note,
+                category_id: tx.category_id || null,
+                wallet_id: targetWalletId,
+              });
+            } catch (payeeErr) {
+              console.warn('[Copilot] Could not upsert payee mapping:', payeeErr);
+            }
+          }
         }
         setMessages(prev =>
           prev.map(m => (m.id === msgId ? { ...m, isSaved: true } : m))
@@ -757,6 +770,19 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
             image_uris: persistentUris,
             items: tx.items && tx.items.length > 0 ? JSON.stringify({ items: tx.items }) : null,
           });
+        }
+
+        if (tx.recipient_name && tx.note) {
+          try {
+            await queries.upsertPayeeMapping(db, {
+              payee_name: tx.recipient_name,
+              note: tx.note,
+              category_id: tx.category_id || null,
+              wallet_id: targetWalletId,
+            });
+          } catch (payeeErr) {
+            console.warn('[Copilot] Could not upsert payee mapping:', payeeErr);
+          }
         }
 
         setMessages(prev =>

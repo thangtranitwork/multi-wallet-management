@@ -74,6 +74,7 @@ export interface CopilotParsedTransaction {
   note?: string;
   transacted_at: string;
   items?: ReceiptItem[] | null;
+  recipient_name?: string | null;
 }
 
 export interface CopilotParsedTransfer {
@@ -715,6 +716,26 @@ ${recentRows
     }
   } catch {}
 
+  // 6. Lịch sử thói quen chuyển khoản đã học từ người dùng (Smart Payee Mapping)
+  let payeeMappingInfo = '';
+  try {
+    const isPayeeEnabled = await queries.getSmartPayeeMappingEnabled(db);
+    if (isPayeeEnabled) {
+      const mappings = await queries.getAllPayeeMappings(db);
+      if (mappings.length > 0) {
+        payeeMappingInfo = `
+THÓI QUEN CHUYỂN KHOẢN ĐÃ HỌC TỪ NGƯỜI DÙNG (SMART PAYEE MAPPING):
+${mappings
+  .slice(0, 15)
+  .map(
+    m =>
+      `- Người nhận "${m.payee_display_name || m.payee_name}": Thường gán Ghi chú là "${m.suggested_note}" (Danh mục ID: "${m.suggested_category_id || ''}")`
+  )
+  .join('\n')}`;
+      }
+    }
+  } catch {}
+
   return `
 THÔNG TIN TÀI CHÍNH THỰC TẾ TRONG HỆ THỐNG:
 - Thời gian hiện tại: ${now.format('dddd, DD/MM/YYYY HH:mm:ss')} (Giờ Việt Nam)
@@ -727,6 +748,7 @@ DANH SÁCH DANH MỤC THU/CHI CÓ TRÊN THIẾT BỊ:
 ${categories.map(c => `- ID: "${c.id}", Tên: "${c.name}", Loại: "${c.type}"`).join('\n')}
 ${monthlyInfo}
 ${debtInfo}
+${payeeMappingInfo}
 ${recentTxInfo}
 ${specificSearchResults}
 `.trim();
@@ -833,6 +855,16 @@ QUY TẮC NHẬN DIỆN HÌNH ẢNH & ĐA PHƯƠNG THỨC (MULTIMODAL - ẢNH / 
      + NẾU người dùng chỉ gửi ảnh mà CHƯA CÓ số tiền (kể cả không thể suy luận từ ngữ cảnh trò chuyện trước đó):
        -> Nhận diện rõ danh sách từng món đồ, intent = "query", phản hồi bằng giọng điệu vui vẻ, tự nhiên liệt kê các món nhìn thấy trong ảnh và hỏi người dùng số tiền và ví đã chi để ghi chép (ví dụ: "Mình thấy trong ảnh có 1 hộp bánh cuốn chả lụa chả quế nè! 🤤 Bữa này bạn ăn hết bao nhiêu và chi từ ví nào để mình ghi lại nhé?").
        -> TUYỆT ĐỐI CẤM: KHÔNG TRẢ VỀ object "transaction" hoặc "transactions" có amount = 0! Khi chưa biết số tiền, tuyệt đối không tạo giao dịch 0đ, chỉ dùng intent = "query" và hỏi trong message.
+    - Trường hợp C - Màn hình chuyển khoản ngân hàng / Ví điện tử (Vietcombank, MB, Techcombank, MoMo...):
+      + Bóc tách số tiền (amount), tên người nhận (recipient_name) và số tài khoản nếu có.
+      + NẾU người nhận đã có trong "THÓI QUEN CHUYỂN KHOẢN ĐÃ HỌC TỪ NGƯỜI DÙNG" ở trên:
+        * BẮT BUỘC tự động đặt "note" và "category_id" theo thói quen đó (ví dụ: chuyển khoản cho Nguyễn Văn A thì note = "Bò cụng", category_id = Cà phê & Đồ uống).
+        * Điền recipient_name vào trường tương ứng.
+        * Giải thích trong message: "Theo thói quen của bạn, em đã điền là [Ghi chú] ([Danh mục]) nhé!".
+      + NẾU người nhận chưa có trong thói quen đã học:
+        * Điền note theo nội dung chuyển khoản hoặc tên người nhận (ví dụ: "Chuyển tiền đến Nguyễn Văn A").
+        * Đặt category_id phù hợp nhất.
+        * Điền recipient_name = "Tên người nhận" để hệ thống học thói quen sau khi người dùng xác nhận hoặc điều chỉnh.
 
 12. QUY TẮC KẾ THỪA NGỮ CẢNH ĐA LƯỢT VÀ QUY CHIẾU ĐẠI TỪ (MULTI-TURN MEMORY & CO-REFERENCE RESOLUTION):
    - KẾ THỪA MÓN ĐỒ / HÓA ĐƠN TRƯỚC ĐÓ:
@@ -870,6 +902,7 @@ QUY TẮC NHẬN DIỆN HÌNH ẢNH & ĐA PHƯƠNG THỨC (MULTIMODAL - ẢNH / 
     "category_id": "...",
     "category_name": "...",
     "note": "...",
+    "recipient_name": "Tên người nhận (nếu ảnh chuyển khoản)",
     "transacted_at": "...",
     "items": [
       {
@@ -888,6 +921,7 @@ QUY TẮC NHẬN DIỆN HÌNH ẢNH & ĐA PHƯƠNG THỨC (MULTIMODAL - ẢNH / 
       "category_id": "...",
       "category_name": "...",
       "note": "...",
+      "recipient_name": "Tên người nhận (nếu ảnh chuyển khoản)",
       "transacted_at": "...",
       "items": []
     }
@@ -1096,6 +1130,53 @@ export async function processCopilotTextInput(
           }
         });
       }
+
+      // Tự động đối chiếu Smart Payee Mapping nếu người dùng bật tính năng
+      try {
+        const isPayeeEnabled = await queries.getSmartPayeeMappingEnabled(db);
+        if (isPayeeEnabled) {
+          const enrichWithPayee = async (tx: CopilotParsedTransaction) => {
+            if (tx.recipient_name) {
+              const mapping = await queries.findPayeeMapping(db, tx.recipient_name);
+              if (mapping) {
+                if (
+                  !tx.note ||
+                  tx.note.toLowerCase().includes('chuyển') ||
+                  tx.note.toLowerCase().includes('người nhận')
+                ) {
+                  tx.note = mapping.suggested_note;
+                }
+                if (
+                  mapping.suggested_category_id &&
+                  (!tx.category_id || tx.category_id === 'other')
+                ) {
+                  tx.category_id = mapping.suggested_category_id;
+                  const cat = categories.find(c => c.id === mapping.suggested_category_id);
+                  if (cat) {
+                    tx.category_name = cat.name;
+                    tx.category_icon = cat.icon;
+                    tx.category_color = cat.color;
+                  }
+                }
+                if (mapping.suggested_wallet_id && !tx.wallet_id) {
+                  tx.wallet_id = mapping.suggested_wallet_id;
+                  const w = wallets.find(w => w.id === mapping.suggested_wallet_id);
+                  if (w) tx.wallet_name = w.name;
+                }
+              }
+            }
+          };
+
+          if (parsed.transaction) {
+            await enrichWithPayee(parsed.transaction);
+          }
+          if (Array.isArray(parsed.transactions)) {
+            for (const tx of parsed.transactions) {
+              await enrichWithPayee(tx);
+            }
+          }
+        }
+      } catch {}
 
       // Điền wallet names và chuẩn hóa thời gian cho transfer nếu thiếu
       if (parsed.transfer) {

@@ -115,12 +115,28 @@ export async function initDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
       FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
     );
 
+    CREATE TABLE IF NOT EXISTS payee_mappings (
+      id TEXT PRIMARY KEY NOT NULL,
+      payee_name TEXT NOT NULL,
+      payee_display_name TEXT,
+      account_number TEXT,
+      bank_name TEXT,
+      suggested_note TEXT NOT NULL,
+      suggested_category_id TEXT,
+      suggested_wallet_id TEXT,
+      use_count INTEGER DEFAULT 1,
+      recent_notes TEXT,
+      last_used_at TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_transactions_transacted_at ON transactions(transacted_at DESC);
     CREATE INDEX IF NOT EXISTS idx_transactions_wallet ON transactions(wallet_id);
     CREATE INDEX IF NOT EXISTS idx_debts_status ON debts(status);
     CREATE INDEX IF NOT EXISTS idx_planned_target_date ON planned_expenses(target_date ASC);
     CREATE INDEX IF NOT EXISTS idx_planned_status ON planned_expenses(status);
     CREATE INDEX IF NOT EXISTS idx_contacts_name ON contacts(name);
+    CREATE INDEX IF NOT EXISTS idx_payee_mappings_name ON payee_mappings(payee_name);
   `);
 
   // Safe ALTER TABLE migrations for existing installations

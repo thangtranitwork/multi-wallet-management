@@ -196,6 +196,23 @@ function normalizeText(str: string): string {
 }
 
 /**
+ * Normalizes recurring notes by removing fluctuating month/period markers
+ * e.g. "Tiền phòng T8" -> "tien phong", "Internet tháng 9" -> "internet"
+ */
+export function cleanRecurringNote(note: string): string {
+  if (!note) return '';
+  let cleaned = normalizeText(note);
+  // Loại bỏ các chỉ số tháng/năm, kỳ hạn, số hóa đơn thường biến động theo tháng:
+  // Ví dụ: "tháng 8", "tháng 09", "t8", "t09", "tháng 10/2026", "t10/2026", "kỳ 1", "đợt 1"...
+  cleaned = cleaned
+    .replace(/\b(thang|th|t|ky|dot)\s*\d+(\/\d+)?\b/gi, '')
+    .replace(/\b\d{1,2}\/\d{4}\b/g, '')
+    .replace(/[\s\-_.:,]+/g, ' ')
+    .trim();
+  return cleaned;
+}
+
+/**
  * Main prediction function: evaluates current context and scores all candidate categories
  */
 export function predictCategory({
@@ -450,72 +467,140 @@ export function detectRecurringBills(
   categories: Category[],
   filterType: 'expense' | 'income' = 'expense'
 ): RecurringBillPattern[] {
-  // Group transactions by category + day of month window
   const catMap = new Map<string, Category>(categories.map(c => [c.id, c]));
-  const targetTxs = transactions.filter(t => t.type === filterType && t.category_id && t.amount > 0);
-
-  // Group by category_id
-  const byCategory = new Map<string, Transaction[]>();
-  targetTxs.forEach(t => {
-    const list = byCategory.get(t.category_id!) || [];
-    list.push(t);
-    byCategory.set(t.category_id!, list);
-  });
+  const targetTxs = transactions.filter(
+    t => t.type === filterType && t.category_id && t.amount > 0 && t.transacted_at
+  );
 
   const patterns: RecurringBillPattern[] = [];
   const currentMonthStr = dayjs().format('YYYY-MM');
 
-  byCategory.forEach((txList, categoryId) => {
+  // Nhóm giao dịch trước hết theo: Danh mục + Định danh nội dung ghi chú (hoặc loại hóa đơn tiện ích)
+  const byIdentity = new Map<string, Transaction[]>();
+
+  targetTxs.forEach(t => {
+    const d = dayjs(t.transacted_at);
+    if (!d.isValid()) return;
+    const cat = catMap.get(t.category_id!);
+    if (!cat) return;
+
+    const cleanedNote = cleanRecurringNote(t.note || '');
+
+    // Nếu có ghi chú: định danh = `${categoryId}:::note:::${cleanedNote}`
+    // Nếu không có ghi chú: chỉ gom nếu danh mục mang tính chất hóa đơn/tiện ích cố định
+    let groupKey: string;
+    if (cleanedNote.length >= 2) {
+      groupKey = `${t.category_id}:::note:::${cleanedNote}`;
+    } else {
+      const catNorm = normalizeText(cat.name);
+      const isUtilityCat = [
+        'hoa don',
+        'tien ich',
+        'nha cua',
+        'thue nha',
+        'tien dien',
+        'tien nuoc',
+        'wifi',
+        'internet',
+        'hoc phi',
+        'bao hiem',
+        'tra gop',
+        'subscription',
+      ].some(k => catNorm.includes(k));
+
+      if (!isUtilityCat) {
+        // Danh mục thông thường (ăn uống, mua sắm...) không có ghi chú thì không coi là hóa đơn định kỳ!
+        return;
+      }
+      groupKey = `${t.category_id}:::empty_note`;
+    }
+
+    const list = byIdentity.get(groupKey) || [];
+    list.push(t);
+    byIdentity.set(groupKey, list);
+  });
+
+  byIdentity.forEach((txList, groupKey) => {
+    // Phải có ít nhất 2 giao dịch có cùng nội dung/định danh
     if (txList.length < 2) return;
 
-    // Check days of month
-    const dayCluster: { [day: number]: Transaction[] } = {};
-    txList.forEach(tx => {
+    const categoryId = groupKey.split(':::')[0];
+    const cat = catMap.get(categoryId);
+    if (!cat) return;
+
+    // Phân cụm theo ngày trong tháng (khoảng cách ngày chi trả <= 3 ngày)
+    const clusters: Transaction[][] = [];
+    const sortedByDay = [...txList].sort(
+      (a, b) => dayjs(a.transacted_at).date() - dayjs(b.transacted_at).date()
+    );
+
+    sortedByDay.forEach(tx => {
       const day = dayjs(tx.transacted_at).date();
-      // Bucket into 3-day clusters
-      const bucket = Math.round(day / 2) * 2;
-      dayCluster[bucket] = dayCluster[bucket] || [];
-      dayCluster[bucket].push(tx);
+      let added = false;
+      for (const cluster of clusters) {
+        const clusterDays = cluster.map(t => dayjs(t.transacted_at).date());
+        const avgDay = clusterDays.reduce((s, d) => s + d, 0) / clusterDays.length;
+        if (Math.abs(day - avgDay) <= 3) {
+          cluster.push(tx);
+          added = true;
+          break;
+        }
+      }
+      if (!added) {
+        clusters.push([tx]);
+      }
     });
 
-    Object.entries(dayCluster).forEach(([dayStr, clusterTxs]) => {
-      // Must occur across at least 2 different months
+    clusters.forEach(clusterTxs => {
+      if (clusterTxs.length < 2) return;
+
+      // 1. Phải diễn ra ở ít nhất 2 tháng KHÁC NHAU
       const distinctMonths = new Set(clusterTxs.map(t => dayjs(t.transacted_at).format('YYYY-MM')));
-      if (distinctMonths.size >= 2) {
-        const cat = catMap.get(categoryId);
-        if (!cat) return;
+      if (distinctMonths.size < 2) return;
 
-        // Average amount
-        const totalAmount = clusterTxs.reduce((sum, t) => sum + t.amount, 0);
-        const avgAmount = Math.round(totalAmount / clusterTxs.length);
-
-        // Most frequent note
-        const noteCounts: { [k: string]: number } = {};
-        clusterTxs.forEach(t => {
-          if (t.note) {
-            noteCounts[t.note] = (noteCounts[t.note] || 0) + 1;
-          }
-        });
-        const mostCommonNote = Object.entries(noteCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || cat.name;
-
-        // Latest transacted date
-        const sortedDates = clusterTxs.map(t => t.transacted_at).sort().reverse();
-        const latestDate = sortedDates[0];
-        const isPaidThisMonth = sortedDates.some(d => dayjs(d).format('YYYY-MM') === currentMonthStr);
-
-        patterns.push({
-          categoryId,
-          categoryName: cat.name,
-          categoryIcon: cat.icon,
-          categoryColor: cat.color,
-          approxDayOfMonth: parseInt(dayStr, 10),
-          averageAmount: avgAmount,
-          mostCommonNote,
-          occurrences: clusterTxs.length,
-          lastTransactedDate: latestDate,
-          isPaidThisMonth,
-        });
+      // 2. Độ tương đồng về số tiền (Amount consistency):
+      // Các hóa đơn định kỳ cùng tên không được chênh lệch nhau quá 2.5 lần
+      const amounts = clusterTxs.map(t => t.amount);
+      const minAmount = Math.min(...amounts);
+      const maxAmount = Math.max(...amounts);
+      if (minAmount <= 0 || maxAmount / minAmount > 2.5) {
+        return;
       }
+
+      // 3. Ghi chú đại diện
+      const noteCounts: { [k: string]: number } = {};
+      clusterTxs.forEach(t => {
+        if (t.note && t.note.trim()) {
+          noteCounts[t.note.trim()] = (noteCounts[t.note.trim()] || 0) + 1;
+        }
+      });
+      const sortedNotes = Object.entries(noteCounts).sort((a, b) => b[1] - a[1]);
+      let mostCommonNote = sortedNotes[0]?.[0] || cat.name;
+
+      // 4. Số tiền trung bình & ngày trung bình
+      const totalAmount = clusterTxs.reduce((sum, t) => sum + t.amount, 0);
+      const avgAmount = Math.round(totalAmount / clusterTxs.length);
+      const approxDayOfMonth = Math.round(
+        clusterTxs.reduce((s, t) => s + dayjs(t.transacted_at).date(), 0) / clusterTxs.length
+      );
+
+      // Latest transacted date
+      const sortedDates = clusterTxs.map(t => t.transacted_at).sort().reverse();
+      const latestDate = sortedDates[0];
+      const isPaidThisMonth = sortedDates.some(d => dayjs(d).format('YYYY-MM') === currentMonthStr);
+
+      patterns.push({
+        categoryId,
+        categoryName: cat.name,
+        categoryIcon: cat.icon,
+        categoryColor: cat.color,
+        approxDayOfMonth,
+        averageAmount: avgAmount,
+        mostCommonNote,
+        occurrences: clusterTxs.length,
+        lastTransactedDate: latestDate,
+        isPaidThisMonth,
+      });
     });
   });
 
@@ -549,10 +634,10 @@ export function detectWeeklyHabits(
   const patterns: WeeklyHabitPattern[] = [];
 
   groupMap.forEach((txList, key) => {
-    // Require at least 3 occurrences on this day of week
+    // Yêu cầu ít nhất 3 giao dịch vào thứ này
     if (txList.length < 3) return;
 
-    // Check distinct calendar dates across weeks
+    // Phải diễn ra ở ít nhất 2 tuần khác nhau
     const distinctDates = new Set(txList.map(t => dayjs(t.transacted_at).format('YYYY-MM-DD')));
     if (distinctDates.size < 2) return;
 
@@ -561,21 +646,39 @@ export function detectWeeklyHabits(
     const cat = catMap.get(categoryId);
     if (!cat) return;
 
-    // Calculate average amount
-    const totalAmount = txList.reduce((sum, t) => sum + t.amount, 0);
-    const avgAmount = Math.round(totalAmount / txList.length);
-
-    // Most frequent note
-    const noteCounts: Record<string, number> = {};
+    // Tìm ghi chú thực sự lặp lại vào ngày thứ này (ví dụ: thứ Bảy nào cũng ghi "Siêu thị")
+    const noteMap = new Map<string, Transaction[]>();
     txList.forEach(t => {
-      if (t.note) {
-        noteCounts[t.note] = (noteCounts[t.note] || 0) + 1;
+      const cleaned = cleanRecurringNote(t.note || '');
+      if (cleaned.length >= 2) {
+        const list = noteMap.get(cleaned) || [];
+        list.push(t);
+        noteMap.set(cleaned, list);
       }
     });
-    const mostCommonNote = Object.entries(noteCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || cat.name;
+
+    const repeatedNotes = Array.from(noteMap.entries())
+      .filter(([_, list]) => list.length >= 2)
+      .sort((a, b) => b[1].length - a[1].length);
+
+    // Nếu không có bất kỳ hành vi/ghi chú nào lặp lại trên ngày thứ này -> Không phải thói quen tuần!
+    if (repeatedNotes.length === 0) {
+      return;
+    }
+
+    const habitTxs = repeatedNotes[0][1];
+    const rawNoteCounts: Record<string, number> = {};
+    habitTxs.forEach(t => {
+      if (t.note) rawNoteCounts[t.note] = (rawNoteCounts[t.note] || 0) + 1;
+    });
+    const mostCommonNote = Object.entries(rawNoteCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || cat.name;
+
+    // Tính số tiền trung bình dựa trên các giao dịch của chính thói quen này
+    const totalAmount = habitTxs.reduce((sum, t) => sum + t.amount, 0);
+    const avgAmount = Math.round(totalAmount / habitTxs.length);
 
     // Preferred hour (median hour)
-    const hours = txList
+    const hours = habitTxs
       .map(t => {
         const d = dayjs(t.transacted_at);
         return d.hour() + d.minute() / 60;
@@ -592,7 +695,7 @@ export function detectWeeklyHabits(
       dayOfWeekName: VIETNAMESE_DAYS[dayOfWeek] || `Thứ ${dayOfWeek + 1}`,
       averageAmount: avgAmount,
       mostCommonNote,
-      occurrences: txList.length,
+      occurrences: habitTxs.length,
       preferredHour: Math.round(medianHour * 10) / 10,
     });
   });

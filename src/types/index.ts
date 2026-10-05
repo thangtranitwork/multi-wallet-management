@@ -68,6 +68,21 @@ export interface ReceiptItem {
   price?: number;
 }
 
+export interface PayeeMapping {
+  id: string;
+  payee_name: string; // Tên chuẩn hóa không dấu: e.g. "NGUYEN VAN A"
+  payee_display_name?: string | null; // Tên hiển thị gốc: e.g. "Nguyễn Văn A"
+  account_number?: string | null; // Số tài khoản nếu có
+  bank_name?: string | null; // Ngân hàng nhận nếu có
+  suggested_note: string; // Ghi chú thường dùng nhất: e.g. "Bò cụng"
+  suggested_category_id?: string | null; // Danh mục thường dùng nhất
+  suggested_wallet_id?: string | null; // Ví nguồn hay chuyển
+  use_count: number;
+  recent_notes?: string | null; // JSON lưu các ghi chú khác
+  last_used_at: string;
+  created_at: string;
+}
+
 export interface ReceiptScanResult {
   amount?: number;
   note?: string;
@@ -83,6 +98,16 @@ export interface ReceiptScanResult {
   used_model?: string;
   is_fallback?: boolean;
   original_model?: string;
+  recipient_name?: string | null;
+  recipient_account?: string | null;
+  recipient_bank?: string | null;
+  learned_mapping?: {
+    payee_display_name: string;
+    suggested_note: string;
+    suggested_category_id?: string | null;
+    suggested_wallet_id?: string | null;
+    alternative_notes?: string[];
+  } | null;
 }
 
 export interface CategoryComparisonItem {

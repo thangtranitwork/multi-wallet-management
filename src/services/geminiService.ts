@@ -2,7 +2,12 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as SQLite from 'expo-sqlite';
 import dayjs from 'dayjs';
 import { Category, ReceiptScanResult, Wallet, ReceiptItem } from '../types';
-import { getAppSetting, setAppSetting } from '../database/queries';
+import {
+  getAppSetting,
+  setAppSetting,
+  getSmartPayeeMappingEnabled,
+  findPayeeMapping,
+} from '../database/queries';
 import {
   getCloudinaryConfig,
   uploadToCloudinary,
@@ -602,6 +607,9 @@ HÌNH ẢNH ĐƯỢC TẢI LÊN CÓ THỂ THUỘC CÁC TRƯỜNG HỢP SAU:
 
 3. ẢNH MÀN HÌNH CHUYỂN KHOẢN / APP NGÂN HÀNG / VÍ ĐIỆN TỬ (Vietcombank, MB, Techcombank, TPBank, BIDV, ACB, MoMo, ZaloPay, ShopeePay, VNPay...):
    - "amount": Số tiền giao dịch chuyển khoản / thanh toán.
+   - "recipient_name": Tên người/đơn vị thụ hưởng nhận tiền chuyển khoản nếu có trên bill (ví dụ: "NGUYEN VAN A", "TRAN THI B", "CONG TY XYZ"), nếu không có để null.
+   - "recipient_account": Số tài khoản thụ hưởng nhận tiền nếu hiển thị trên bill, nếu không có để null.
+   - "recipient_bank": Tên ngân hàng thụ hưởng nếu có (ví dụ "MB", "Vietcombank", "Techcombank"), nếu không có để null.
    - "note": Nội dung chuyển khoản hoặc tên người/đơn vị nhận tiền (ví dụ: "Chuyển tiền trọ tháng 9", "MoMo - Tiền ăn trưa").
    - "transacted_at": Ngày giờ giao dịch nếu hiển thị trên màn hình.
 
@@ -633,6 +641,9 @@ ${walletPromptList}
 HÃY TRẢ VỀ ĐÚNG ĐỊNH DẠNG JSON SAU (TUYỆT ĐỐI KHÔNG KÈM TEXT NGOÀI JSON):
 {
   "amount": number (số tiền thực tế thanh toán bằng VND, số nguyên. Nếu không thấy giá tiền trả về 0),
+  "recipient_name": string hoặc null (tên người/đơn vị nhận tiền nếu là ảnh chuyển khoản/bill, nếu không có để null),
+  "recipient_account": string hoặc null (số tài khoản nhận tiền nếu có trên bill, nếu không có để null),
+  "recipient_bank": string hoặc null (ngân hàng nhận nếu có, nếu không có để null),
   "note": string (mô tả món đồ/đồ ăn/tên quán/nội dung giao dịch, ví dụ "2 hộp cơm", "Highlands Coffee - 2 Cà phê", "Chuyển khoản tiền phòng"),
   "transacted_at": string hoặc null (format "YYYY-MM-DDTHH:mm:ss" hoặc "YYYY-MM-DD", nếu không thấy để null),
   "category_id": string hoặc null (ID danh mục chi tiêu phù hợp nhất từ danh sách trên, hoặc null),
@@ -717,12 +728,71 @@ LƯU Ý QUAN TRỌNG:
 
         const hasDiscrepancy = sanitizedItems.length > 0 && itemsSum > 0 && finalAmount > 0 && Math.abs(itemsSum - finalAmount) > 100;
 
+        const recipientName =
+          typeof parsed.recipient_name === 'string' && parsed.recipient_name.trim().length > 0
+            ? parsed.recipient_name.trim()
+            : null;
+        const recipientAccount =
+          typeof parsed.recipient_account === 'string' && parsed.recipient_account.trim().length > 0
+            ? parsed.recipient_account.trim()
+            : null;
+        const recipientBank =
+          typeof parsed.recipient_bank === 'string' && parsed.recipient_bank.trim().length > 0
+            ? parsed.recipient_bank.trim()
+            : null;
+
+        let finalNote = typeof parsed.note === 'string' ? parsed.note.trim() : '';
+        let finalCategoryId = typeof parsed.category_id === 'string' ? parsed.category_id : null;
+        let finalCategoryName = typeof parsed.category_name === 'string' ? parsed.category_name : null;
+        let finalWalletId = typeof parsed.wallet_id === 'string' ? parsed.wallet_id : null;
+
+        let learnedMapping: ReceiptScanResult['learned_mapping'] = null;
+        const isPayeeMappingEnabled = await getSmartPayeeMappingEnabled(db);
+
+        if (isPayeeMappingEnabled && (recipientName || recipientAccount || (finalNote && /chuyen\s*(khoan|tien)/i.test(finalNote)))) {
+          try {
+            const mapping = await findPayeeMapping(db, recipientName || finalNote, recipientAccount);
+            if (mapping) {
+              let altNotes: string[] = [];
+              try {
+                if (mapping.recent_notes) {
+                  const parsedList = JSON.parse(mapping.recent_notes);
+                  altNotes = parsedList
+                    .map((x: any) => x.note)
+                    .filter((n: string) => n && n !== mapping.suggested_note);
+                }
+              } catch {}
+
+              learnedMapping = {
+                payee_display_name: mapping.payee_display_name || mapping.payee_name,
+                suggested_note: mapping.suggested_note,
+                suggested_category_id: mapping.suggested_category_id,
+                suggested_wallet_id: mapping.suggested_wallet_id,
+                alternative_notes: altNotes,
+              };
+
+              // Tự động gán Note và Danh mục theo thói quen đã học
+              finalNote = mapping.suggested_note;
+              if (mapping.suggested_category_id) {
+                finalCategoryId = mapping.suggested_category_id;
+                const matchedCat = categories.find(c => c.id === mapping.suggested_category_id);
+                if (matchedCat) finalCategoryName = matchedCat.name;
+              }
+              if (mapping.suggested_wallet_id && wallets && wallets.some(w => w.id === mapping.suggested_wallet_id)) {
+                finalWalletId = mapping.suggested_wallet_id;
+              }
+            }
+          } catch (mapErr) {
+            console.warn('Lỗi tra cứu payee mapping:', mapErr);
+          }
+        }
+
         return {
           amount: finalAmount,
-          note: typeof parsed.note === 'string' ? parsed.note.trim() : '',
-          category_id: typeof parsed.category_id === 'string' ? parsed.category_id : null,
-          category_name: typeof parsed.category_name === 'string' ? parsed.category_name : null,
-          wallet_id: typeof parsed.wallet_id === 'string' ? parsed.wallet_id : null,
+          note: finalNote,
+          category_id: finalCategoryId,
+          category_name: finalCategoryName,
+          wallet_id: finalWalletId,
           detected_payment_method:
             typeof parsed.detected_payment_method === 'string'
               ? parsed.detected_payment_method.trim()
@@ -735,6 +805,10 @@ LƯU Ý QUAN TRỌNG:
           used_model: model,
           is_fallback: isFallback,
           original_model: originalPreferredModel,
+          recipient_name: recipientName,
+          recipient_account: recipientAccount,
+          recipient_bank: recipientBank,
+          learned_mapping: learnedMapping,
         };
       }
     } catch (err: any) {
