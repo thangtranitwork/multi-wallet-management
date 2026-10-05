@@ -330,7 +330,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                   </View>
 
                   {/* Chọn biểu tượng */}
-                  <Text style={[styles.inputLabel, { marginTop: 14 }]}>BIỂU TƯỢNG (ICON)</Text>
+                  <Text style={[styles.inputLabel, { marginTop: 14 }]}>BIỂU TƯỢNG</Text>
                   <View style={styles.iconGrid}>
                     {POPULAR_ICONS.map(iconName => {
                       const isSelected = selectedIcon === iconName;

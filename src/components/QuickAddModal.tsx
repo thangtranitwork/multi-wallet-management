@@ -1020,7 +1020,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
             {/* Wallet Selection */}
             <View style={styles.sectionContainer}>
               <Text style={styles.sectionLabel}>
-                {type === 'transfer' ? 'Từ nguồn tiền (Ví nguồn)' : 'Nguồn tiền (Ví)'}
+                {type === 'transfer' ? 'Ví chuyển tiền' : 'Nguồn tiền'}
               </Text>
               <ScrollView
                 horizontal
@@ -1157,7 +1157,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                     {/* Single Mode: Due Date */}
                     {creditMode === 'single' ? (
                       <View style={styles.creditDueSection}>
-                        <Text style={styles.creditFieldLabel}>HẠN THANH TOÁN (SAO KÊ)</Text>
+                        <Text style={styles.creditFieldLabel}>HẠN THANH TOÁN</Text>
 
                         {/* Interactive Hero Date Banner */}
                         <View style={styles.creditDateHeroCard}>
@@ -1347,7 +1347,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                         {/* SỐ KỲ ĐÃ THANH TOÁN TRƯỚC ĐÓ */}
                         <View style={styles.paidTermsContainer}>
                           <View style={styles.paidTermsHeader}>
-                            <Text style={styles.creditFieldLabel}>SỐ KỲ ĐÃ TRẢ TRƯỚC ĐÓ (NẾU CÓ)</Text>
+                            <Text style={styles.creditFieldLabel}>SỐ KỲ ĐÃ TRẢ TRƯỚC ĐÓ</Text>
                             {paidInstallmentCount > 0 && (
                               <View style={styles.paidTermsBadge}>
                                 <Text style={styles.paidTermsBadgeText}>
@@ -1386,7 +1386,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                               />
                               <Text style={styles.paidTermsValueTitle}>
                                 {paidInstallmentCount === 0
-                                  ? '0 kỳ (Mới mua / Chưa trả kỳ nào)'
+                                  ? '0 kỳ • Mới mua'
                                   : `Đã trả trước ${paidInstallmentCount} / ${installmentCount} kỳ`}
                               </Text>
                             </View>
@@ -1472,7 +1472,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                                 keyboardType="numeric"
                                 value={termAmountStr === '0' ? '' : termAmountStr}
                                 onChangeText={handleTermAmountChange}
-                                placeholder="Nhập số tiền 1 kỳ (VD: 1500000)"
+                                placeholder="Ví dụ: 1.500.000"
                                 placeholderTextColor={THEME.textMuted}
                               />
                               <Text style={styles.installmentInputUnit}>₫/kỳ</Text>
@@ -1485,7 +1485,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
 
                         <View style={styles.installmentInputsRow}>
                           <View style={{ flex: 1 }}>
-                            <Text style={styles.creditFieldLabel}>PHÍ MỖI KỲ (NẾU CÓ)</Text>
+                            <Text style={styles.creditFieldLabel}>PHÍ MỖI KỲ</Text>
                             <View style={styles.installmentInputWrapper}>
                               <TextInput
                                 style={styles.installmentTextInput}
@@ -1781,7 +1781,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
             {/* If Transfer: Destination Wallet */}
             {type === 'transfer' && (
               <View style={styles.sectionContainer}>
-                <Text style={styles.sectionLabel}>Đến nguồn tiền (Ví đích)</Text>
+                <Text style={styles.sectionLabel}>Ví nhận tiền</Text>
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}

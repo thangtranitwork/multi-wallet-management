@@ -14,12 +14,15 @@ import { Ionicons } from '@expo/vector-icons';
 import dayjs from 'dayjs';
 import { useWallet } from '../context/WalletContext';
 import { DebtModal } from '../components/DebtModal';
+import { WalletQRModal } from '../components/WalletQRModal';
 import { NeoDropdown } from '../components/NeoDropdown';
 import { Debt } from '../types';
 import { THEME, formatVND } from '../constants';
+import { getDebtQRWallet } from '../utils/debtUtils';
 
 export const DebtsScreen: React.FC = () => {
   const {
+    wallets,
     debts,
     summary,
     isLoading,
@@ -36,6 +39,7 @@ export const DebtsScreen: React.FC = () => {
 
   const [createModalVisible, setCreateModalVisible] = useState<boolean>(false);
   const [targetPaymentDebt, setTargetPaymentDebt] = useState<Debt | null>(null);
+  const [qrDebt, setQrDebt] = useState<Debt | null>(null);
 
   // Filter debts
   const currentDebts = debts.filter(d => {
@@ -71,7 +75,7 @@ export const DebtsScreen: React.FC = () => {
       [
         { text: 'Hủy', style: 'cancel' },
         {
-          text: 'Xóa (không hoàn tiền)',
+          text: 'Xóa không hoàn tiền',
           style: 'destructive',
           onPress: async () => {
             await removeDebt(debt.id, false);
@@ -272,7 +276,7 @@ export const DebtsScreen: React.FC = () => {
           options={[
             { id: 'all', label: 'Tất cả trạng thái', icon: 'layers-outline' },
             { id: 'active', label: 'Đang nợ', icon: 'time-outline', color: '#F59E0B' },
-            { id: 'settled', label: 'Đã xong (Đã trả hết)', icon: 'checkmark-done-outline', color: '#10B981' },
+            { id: 'settled', label: 'Đã trả hết', icon: 'checkmark-done-outline', color: '#10B981' },
           ]}
           selectedValue={filterStatus}
           onSelect={val => setFilterStatus((val || 'all') as any)}
@@ -443,29 +447,41 @@ export const DebtsScreen: React.FC = () => {
                     {/* Bottom Action Row */}
                     <View style={styles.cardActionsRow}>
                       {!isSettled ? (
-                        <Pressable
-                          style={styles.payBtnShadow}
-                          onPress={() => setTargetPaymentDebt(debt)}
-                        >
-                          <View
-                            style={[
-                              styles.payBtnInner,
-                              {
-                                backgroundColor:
-                                  activeTab === 'lend' ? THEME.primary : THEME.popYellow,
-                              },
-                            ]}
+                        <>
+                          <Pressable
+                            style={styles.payBtnShadow}
+                            onPress={() => setTargetPaymentDebt(debt)}
                           >
-                            <Ionicons
-                              name={activeTab === 'lend' ? 'cash-outline' : 'send-outline'}
-                              size={15}
-                              color="#000000"
-                            />
-                            <Text style={styles.payBtnText}>
-                              {activeTab === 'lend' ? 'Ghi nhận thu nợ' : 'Ghi nhận trả nợ'}
-                            </Text>
-                          </View>
-                        </Pressable>
+                            <View
+                              style={[
+                                styles.payBtnInner,
+                                {
+                                  backgroundColor:
+                                    activeTab === 'lend' ? THEME.primary : THEME.popYellow,
+                                },
+                              ]}
+                            >
+                              <Ionicons
+                                name={activeTab === 'lend' ? 'cash-outline' : 'send-outline'}
+                                size={15}
+                                color="#000000"
+                              />
+                              <Text style={styles.payBtnText}>
+                                {activeTab === 'lend' ? 'Ghi nhận thu nợ' : 'Ghi nhận trả nợ'}
+                              </Text>
+                            </View>
+                          </Pressable>
+
+                          <Pressable
+                            style={styles.qrBtnShadow}
+                            onPress={() => setQrDebt(debt)}
+                          >
+                            <View style={styles.qrBtnInner}>
+                              <Ionicons name="qr-code-outline" size={15} color="#000000" />
+                              <Text style={styles.qrBtnText}>Mã QR</Text>
+                            </View>
+                          </Pressable>
+                        </>
                       ) : (
                         <View style={styles.settledBanner}>
                           <Ionicons name="checkmark-circle" size={16} color="#15803D" />
@@ -530,6 +546,29 @@ export const DebtsScreen: React.FC = () => {
           debtToPay={targetPaymentDebt}
         />
       )}
+
+      {/* Debt QR Modal */}
+      {qrDebt && (() => {
+        const effectiveWallet = getDebtQRWallet(qrDebt, wallets);
+        const isLend = qrDebt.type === 'lend' || activeTab === 'lend';
+        const purposeText = isLend
+          ? `${qrDebt.person_name} tra no`
+          : `Nhan tien vay ${qrDebt.person_name}`;
+        const modalTitle = isLend
+          ? `MÃ QR THU NỢ: ${qrDebt.person_name.toUpperCase()}`
+          : `MÃ QR NHẬN TIỀN VAY: ${qrDebt.person_name.toUpperCase()}`;
+
+        return (
+          <WalletQRModal
+            visible={true}
+            onClose={() => setQrDebt(null)}
+            wallet={effectiveWallet}
+            amount={qrDebt.remaining_amount}
+            purpose={purposeText}
+            title={modalTitle}
+          />
+        );
+      })()}
 
       {AlertModalComponent}
     </SafeAreaView>
@@ -1018,6 +1057,27 @@ const styles = StyleSheet.create({
   createDebtBtnText: {
     fontSize: 13,
     fontWeight: '900',
+    color: '#000000',
+  },
+  qrBtnShadow: {
+    backgroundColor: '#000000',
+    borderRadius: 10,
+  },
+  qrBtnInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    backgroundColor: '#FFFFFF',
+    transform: [{ translateX: -1.5 }, { translateY: -1.5 }],
+  },
+  qrBtnText: {
+    fontSize: 11.5,
+    fontWeight: '800',
     color: '#000000',
   },
 });

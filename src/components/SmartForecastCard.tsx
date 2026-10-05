@@ -33,87 +33,102 @@ export const SmartForecastCard: React.FC<SmartForecastCardProps> = ({
   const isUrgent = forecast.isUrgent;
 
   return (
-    <View style={[styles.container, isUrgent && styles.containerUrgent]}>
-      {/* Top Banner Row */}
-      <View style={styles.topRow}>
-        <View style={[styles.badge, { backgroundColor: forecast.badgeColor + '20' }]}>
-          <Ionicons name="sparkles" size={12} color={forecast.badgeColor} style={{ marginRight: 4 }} />
-          <Text style={[styles.badgeText, { color: forecast.badgeColor }]} numberOfLines={1}>
-            {forecast.badgeText}
-          </Text>
-        </View>
-
-        <Pressable
-          onPress={handleDismiss}
-          hitSlop={12}
-          style={({ pressed }) => [styles.dismissBtn, pressed && { opacity: 0.6 }]}
-        >
-          <Ionicons name="close" size={16} color={THEME.textMuted} />
-        </Pressable>
-      </View>
-
-      {/* Main Content Row */}
-      <View style={styles.bodyRow}>
-        <View style={[styles.iconWrapper, { backgroundColor: forecast.category.color + '15' }]}>
-          <Ionicons
-            name={(forecast.category.icon as any) || 'flash-outline'}
-            size={24}
-            color={forecast.category.color}
-          />
-        </View>
-
-        <View style={styles.contentCol}>
-          <Text style={styles.title} numberOfLines={1}>
-            {forecast.title}
-          </Text>
-          <Text style={styles.subtitle} numberOfLines={2}>
-            {forecast.subtitle}
-          </Text>
-
-          {forecast.suggestedAmount ? (
-            <Text style={styles.amountText}>
-              Dự kiến: <Text style={styles.amountValue}>{formatVND(forecast.suggestedAmount)}</Text>
+    <View style={styles.cardShadow}>
+      <View style={styles.cardShadowBlock} />
+      <View style={[styles.cardInner, isUrgent && styles.cardInnerUrgent]}>
+        {/* Top Banner Row */}
+        <View style={styles.topRow}>
+          <View style={[styles.badge, { backgroundColor: isUrgent ? '#FEE2E2' : '#FEF08A' }]}>
+            <Ionicons name="sparkles" size={12} color="#000000" style={{ marginRight: 4 }} />
+            <Text style={styles.badgeText} numberOfLines={1}>
+              {forecast.badgeText}
             </Text>
-          ) : null}
-        </View>
-      </View>
+          </View>
 
-      {/* Action Footer */}
-      <View style={styles.footerRow}>
-        <Pressable
-          onPress={handlePress}
-          style={({ pressed }) => [
-            styles.actionButton,
-            { backgroundColor: forecast.badgeColor },
-            pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] },
-          ]}
-        >
-          <Ionicons name="add-circle" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-          <Text style={styles.actionButtonText}>Ghi chép nhanh</Text>
-          <Ionicons name="chevron-forward" size={14} color="#FFFFFF" style={{ marginLeft: 4 }} />
-        </Pressable>
+          <Pressable
+            onPress={handleDismiss}
+            hitSlop={12}
+            style={({ pressed }) => [styles.dismissBtn, pressed && { opacity: 0.6 }]}
+          >
+            <Ionicons name="close" size={14} color="#000000" />
+          </Pressable>
+        </View>
+
+        {/* Main Content Row */}
+        <View style={styles.bodyRow}>
+          <View
+            style={[
+              styles.iconWrapper,
+              { backgroundColor: forecast.category.color ? forecast.category.color + '25' : '#FEF08A' },
+            ]}
+          >
+            <Ionicons
+              name={(forecast.category.icon as any) || 'flash-outline'}
+              size={22}
+              color="#000000"
+            />
+          </View>
+
+          <View style={styles.contentCol}>
+            <Text style={styles.title} numberOfLines={1}>
+              {forecast.title}
+            </Text>
+            <Text style={styles.subtitle} numberOfLines={2}>
+              {forecast.subtitle}
+            </Text>
+
+            {forecast.suggestedAmount ? (
+              <Text style={styles.amountText}>
+                Dự kiến: <Text style={styles.amountValue}>{formatVND(forecast.suggestedAmount)}</Text>
+              </Text>
+            ) : null}
+          </View>
+        </View>
+
+        {/* Action Footer */}
+        <View style={styles.footerRow}>
+          <Pressable
+            onPress={handlePress}
+            style={({ pressed }) => [
+              styles.actionButton,
+              isUrgent ? styles.actionButtonUrgent : styles.actionButtonNormal,
+              pressed && styles.actionButtonPressed,
+            ]}
+          >
+            <Ionicons name="add-circle" size={16} color="#000000" style={{ marginRight: 6 }} />
+            <Text style={styles.actionButtonText}>Ghi chép nhanh</Text>
+            <Ionicons name="chevron-forward" size={14} color="#000000" style={{ marginLeft: 4 }} />
+          </Pressable>
+        </View>
       </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  cardShadow: {
+    position: 'relative',
+    marginBottom: 16,
+    marginRight: 4,
+  },
+  cardShadowBlock: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    right: -4,
+    bottom: -4,
+    backgroundColor: '#000000',
+    borderRadius: 16,
+  },
+  cardInner: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 14,
-    marginBottom: 16,
-    borderWidth: 1.5,
-    borderColor: '#FDE68A', // soft amber border
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    borderWidth: 2.5,
+    borderColor: '#000000',
   },
-  containerUrgent: {
-    borderColor: '#FCA5A5', // soft red border
-    backgroundColor: '#FFF5F5',
+  cardInnerUrgent: {
+    backgroundColor: '#FFF1F2',
   },
   topRow: {
     flexDirection: 'row',
@@ -127,17 +142,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#000000',
     flexShrink: 1,
     marginRight: 8,
   },
   badgeText: {
-    fontSize: 11,
-    fontWeight: '700',
+    fontSize: 10.5,
+    fontWeight: '900',
+    color: '#000000',
     textTransform: 'uppercase',
     letterSpacing: 0.4,
   },
   dismissBtn: {
     padding: 4,
+    borderRadius: 6,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1.5,
+    borderColor: '#000000',
   },
   bodyRow: {
     flexDirection: 'row',
@@ -148,33 +170,41 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#000000',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
+    shadowColor: '#000000',
+    shadowOffset: { width: 1.5, height: 1.5 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 2,
   },
   contentCol: {
     flex: 1,
   },
   title: {
     fontSize: 15,
-    fontWeight: '700',
-    color: THEME.text,
+    fontWeight: '900',
+    color: '#000000',
     marginBottom: 3,
   },
   subtitle: {
     fontSize: 12,
-    color: THEME.textSecondary,
+    color: '#4B5563',
     lineHeight: 17,
+    fontWeight: '600',
   },
   amountText: {
     fontSize: 12,
-    color: THEME.textMuted,
+    color: '#6B7280',
     marginTop: 4,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   amountValue: {
-    color: THEME.text,
-    fontWeight: '700',
+    color: '#000000',
+    fontWeight: '900',
   },
   footerRow: {
     flexDirection: 'row',
@@ -187,10 +217,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#000000',
+    shadowColor: '#000000',
+    shadowOffset: { width: 2, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 2,
+  },
+  actionButtonNormal: {
+    backgroundColor: '#FFE600',
+  },
+  actionButtonUrgent: {
+    backgroundColor: '#FCA5A5',
+  },
+  actionButtonPressed: {
+    transform: [{ translateX: 1 }, { translateY: 1 }],
+    shadowOffset: { width: 1, height: 1 },
   },
   actionButtonText: {
-    color: '#FFFFFF',
+    color: '#000000',
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '900',
   },
 });

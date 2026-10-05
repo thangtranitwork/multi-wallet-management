@@ -20,6 +20,7 @@ import { useWallet } from '../context/WalletContext';
 import { useSecurity } from '../context/SecurityContext';
 import { Wallet, WalletType } from '../types';
 import { THEME, WALLET_TYPES, WALLET_COLORS, WALLET_ICONS, formatVND } from '../constants';
+import { VIETNAMESE_BANKS, findBankByBin, BankInfo } from '../constants/banks';
 import { hapticLight, hapticSuccess, hapticError } from '../utils/haptics';
 
 interface WalletModalProps {
@@ -53,6 +54,10 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   const [creditLimitStr, setCreditLimitStr] = useState<string>('0');
   const [statementDayStr, setStatementDayStr] = useState<string>('');
   const [dueDayStr, setDueDayStr] = useState<string>('');
+  const [bankBin, setBankBin] = useState<string>('970422');
+  const [bankAccount, setBankAccount] = useState<string>('');
+  const [isBankPickerOpen, setIsBankPickerOpen] = useState<boolean>(false);
+  const [bankSearchText, setBankSearchText] = useState<string>('');
   const [qrImageUri, setQrImageUri] = useState<string | null>(null);
   const [color, setColor] = useState<string>(WALLET_COLORS[0]);
   const [icon, setIcon] = useState<string>(WALLET_ICONS[0]);
@@ -78,6 +83,10 @@ export const WalletModal: React.FC<WalletModalProps> = ({
           setCreditLimitStr((currentWallet.credit_limit || 0).toString());
           setStatementDayStr(currentWallet.statement_day ? currentWallet.statement_day.toString() : '');
           setDueDayStr(currentWallet.due_day ? currentWallet.due_day.toString() : '');
+          setBankBin(currentWallet.bank_bin || '970422');
+          setBankAccount(currentWallet.bank_account || '');
+          setIsBankPickerOpen(false);
+          setBankSearchText('');
           setQrImageUri(currentWallet.qr_image_uri || null);
           setColor(currentWallet.color || WALLET_COLORS[0]);
           setIcon(currentWallet.icon || WALLET_ICONS[0]);
@@ -91,6 +100,10 @@ export const WalletModal: React.FC<WalletModalProps> = ({
         setCreditLimitStr('0');
         setStatementDayStr('');
         setDueDayStr('');
+        setBankBin('970422');
+        setBankAccount('');
+        setIsBankPickerOpen(false);
+        setBankSearchText('');
         setQrImageUri(null);
         setColor(WALLET_COLORS[1]);
         setIcon('business-outline');
@@ -186,6 +199,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     const stmtDay = stmtDayRaw >= 1 && stmtDayRaw <= 31 ? stmtDayRaw : null;
     const dueDay = dueDayRaw >= 1 && dueDayRaw <= 31 ? dueDayRaw : null;
     const finalQr = type === 'cash' ? null : qrImageUri;
+    const cleanBin = (type === 'bank' || type === 'credit') ? (bankBin || null) : null;
+    const cleanAccount = (type === 'bank' || type === 'credit') ? (bankAccount.trim() || null) : null;
 
     try {
       if (currentWallet) {
@@ -196,6 +211,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
           credit_limit: type === 'credit' ? limit : 0,
           statement_day: type === 'credit' ? stmtDay : null,
           due_day: type === 'credit' ? dueDay : null,
+          bank_bin: cleanBin,
+          bank_account: cleanAccount,
           qr_image_uri: finalQr,
           color,
           icon,
@@ -210,6 +227,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
           credit_limit: type === 'credit' ? limit : 0,
           statement_day: type === 'credit' ? stmtDay : null,
           due_day: type === 'credit' ? dueDay : null,
+          bank_bin: cleanBin,
+          bank_account: cleanAccount,
           qr_image_uri: finalQr,
           currency: 'VND',
           color,
@@ -228,7 +247,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     if (!currentWallet) return;
     showConfirm(
       'Xóa nguồn tiền',
-      `Ngài có chắc chắn muốn xóa "${currentWallet.name}"? Toàn bộ giao dịch liên quan sẽ bị xóa.`,
+      `Bạn có chắc chắn muốn xóa "${currentWallet.name}"? Toàn bộ giao dịch liên quan sẽ bị xóa.`,
       async () => {
         await removeWallet(currentWallet.id);
         onClose();
@@ -294,7 +313,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                             { color: isIncrease ? '#15803D' : '#E11D48' },
                           ]}
                         >
-                          Chênh lệch: {isIncrease ? '+' : ''}{formatVND(diff)} ({isIncrease ? 'Ghi nhận tiền vào' : 'Ghi nhận hao hụt'})
+                          Chênh lệch: {isIncrease ? '+' : ''}{formatVND(diff)} • {isIncrease ? 'Ghi nhận tiền vào' : 'Ghi nhận hao hụt'}
                         </Text>
                       </View>
                     );
@@ -302,7 +321,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 </View>
 
                 <View style={styles.sectionContainer}>
-                  <Text style={styles.sectionLabel}>Số dư thực tế mới (VNĐ) (*)</Text>
+                  <Text style={styles.sectionLabel}>Số dư thực tế mới (*)</Text>
                   <TextInput
                     style={styles.inputLarge}
                     keyboardType="numeric"
@@ -396,7 +415,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 {/* Initial Balance (Only when create) */}
                 {!currentWallet && (
                   <View style={styles.sectionContainer}>
-                    <Text style={styles.sectionLabel}>Số dư ban đầu (VNĐ)</Text>
+                    <Text style={styles.sectionLabel}>Số dư ban đầu</Text>
                     <TextInput
                       style={styles.inputLarge}
                       keyboardType="numeric"
@@ -412,7 +431,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 {type === 'credit' && (
                   <>
                     <View style={styles.sectionContainer}>
-                      <Text style={styles.sectionLabel}>Hạn mức thẻ tín dụng (VNĐ)</Text>
+                      <Text style={styles.sectionLabel}>Hạn mức thẻ tín dụng</Text>
                       <TextInput
                         style={styles.inputLarge}
                         keyboardType="numeric"
@@ -427,7 +446,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                       <Text style={styles.sectionLabel}>Chu kỳ sao kê & thanh toán (tùy chọn)</Text>
                       <View style={{ flexDirection: 'row', gap: 10 }}>
                         <View style={{ flex: 1 }}>
-                          <Text style={styles.subFieldLabel}>Ngày chốt sao kê (1-31)</Text>
+                          <Text style={styles.subFieldLabel}>Ngày chốt sao kê</Text>
                           <TextInput
                             style={styles.input}
                             keyboardType="numeric"
@@ -439,7 +458,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                           />
                         </View>
                         <View style={{ flex: 1 }}>
-                          <Text style={styles.subFieldLabel}>Ngày đến hạn trả (1-31)</Text>
+                          <Text style={styles.subFieldLabel}>Ngày đến hạn trả</Text>
                           <TextInput
                             style={styles.input}
                             keyboardType="numeric"
@@ -458,10 +477,51 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                   </>
                 )}
 
+                {/* Bank Selection & Account Number (VietQR NAPAS 24/7) */}
+                {(type === 'bank' || type === 'credit') && (
+                  <View style={styles.sectionContainer}>
+                    <Text style={styles.sectionLabel}>Thông tin ngân hàng</Text>
+                    
+                    <Text style={styles.subFieldLabel}>Ngân hàng thụ hưởng</Text>
+                    <Pressable
+                      style={styles.bankSelectBtn}
+                      onPress={() => {
+                        hapticLight();
+                        setIsBankPickerOpen(true);
+                      }}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.bankSelectName}>
+                          {findBankByBin(bankBin)?.shortName || 'Chọn ngân hàng...'}
+                        </Text>
+                        <Text style={styles.bankSelectFull} numberOfLines={1}>
+                          {findBankByBin(bankBin)?.name || 'Nhấn để chọn ngân hàng'}
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-down" size={18} color="#000000" />
+                    </Pressable>
+
+                    <View style={{ marginTop: 8 }}>
+                      <Text style={styles.subFieldLabel}>Số tài khoản ngân hàng</Text>
+                      <TextInput
+                        style={styles.input}
+                        keyboardType="numeric"
+                        value={bankAccount}
+                        onChangeText={setBankAccount}
+                        placeholder="Ví dụ: 0367854658 hoặc 1903..."
+                        placeholderTextColor={THEME.textMuted}
+                      />
+                    </View>
+                    <Text style={styles.helperText}>
+                      Khi điền Ngân hàng & STK, app sẽ tự động tạo mã VietQR chuẩn NAPAS 24/7 khi in hóa đơn hoặc nhận tiền.
+                    </Text>
+                  </View>
+                )}
+
                 {/* QR Image Upload for Wallets (All types except cash) */}
                 {type !== 'cash' && (
                   <View style={styles.sectionContainer}>
-                    <Text style={styles.sectionLabel}>Ảnh mã QR của ví (Thanh toán / Nhận tiền)</Text>
+                    <Text style={styles.sectionLabel}>Ảnh mã QR nhận tiền • Thanh toán</Text>
                     {qrImageUri ? (
                       <View style={styles.qrPreviewCard}>
                         <View style={styles.qrThumbWrap}>
@@ -600,6 +660,84 @@ export const WalletModal: React.FC<WalletModalProps> = ({
             )}
           </ScrollView>
         </View>
+
+        {/* Bank Picker Modal */}
+        {isBankPickerOpen && (
+          <View style={styles.bankPickerOverlay}>
+            <View style={styles.bankPickerModal}>
+              <View style={styles.bankPickerHeader}>
+                <Text style={styles.bankPickerTitle}>CHỌN NGÂN HÀNG THỤ HƯỞNG</Text>
+                <Pressable
+                  style={styles.bankPickerCloseBtn}
+                  onPress={() => setIsBankPickerOpen(false)}
+                >
+                  <Ionicons name="close" size={20} color="#000000" />
+                </Pressable>
+              </View>
+
+              <View style={styles.bankSearchBox}>
+                <Ionicons name="search-outline" size={16} color="#6B7280" />
+                <TextInput
+                  style={styles.bankSearchInput}
+                  placeholder="Tìm ngân hàng: MB, VCB, TCB, ACB..."
+                  placeholderTextColor={THEME.textMuted}
+                  value={bankSearchText}
+                  onChangeText={setBankSearchText}
+                  autoFocus
+                />
+                {bankSearchText ? (
+                  <Pressable onPress={() => setBankSearchText('')}>
+                    <Ionicons name="close-circle" size={16} color="#6B7280" />
+                  </Pressable>
+                ) : null}
+              </View>
+
+              <ScrollView style={styles.bankListScroll} showsVerticalScrollIndicator={false}>
+                {VIETNAMESE_BANKS.filter(b => {
+                  if (!bankSearchText.trim()) return true;
+                  const q = bankSearchText.toLowerCase();
+                  return (
+                    b.shortName.toLowerCase().includes(q) ||
+                    b.name.toLowerCase().includes(q) ||
+                    b.code.toLowerCase().includes(q) ||
+                    b.bin.includes(q)
+                  );
+                }).map(b => {
+                  const isSelected = bankBin === b.bin;
+                  return (
+                    <Pressable
+                      key={b.bin}
+                      style={[
+                        styles.bankListItem,
+                        isSelected && styles.bankListItemSelected,
+                      ]}
+                      onPress={() => {
+                        hapticLight();
+                        setBankBin(b.bin);
+                        if (!name.trim() || name === 'Tài khoản ngân hàng') {
+                          setName(b.shortName);
+                        }
+                        setIsBankPickerOpen(false);
+                      }}
+                    >
+                      <View style={styles.bankListCodeBadge}>
+                        <Text style={styles.bankListCodeText}>{b.code}</Text>
+                      </View>
+                      <View style={styles.bankListTextCol}>
+                        <Text style={styles.bankListShortName}>{b.shortName}</Text>
+                        <Text style={styles.bankListFullName} numberOfLines={1}>{b.name}</Text>
+                      </View>
+                      {isSelected && (
+                        <Ionicons name="checkmark-circle" size={20} color="#047857" />
+                      )}
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          </View>
+        )}
+
         {AlertModalComponent}
       </View>
     </Modal>
@@ -945,5 +1083,132 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#64748B',
     marginTop: 2,
+  },
+  bankSelectBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#000000',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginTop: 4,
+  },
+  bankSelectName: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  bankSelectFull: {
+    fontSize: 10.5,
+    color: '#6B7280',
+    marginTop: 1,
+  },
+  bankPickerOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+    zIndex: 100,
+  },
+  bankPickerModal: {
+    width: '100%',
+    maxHeight: '85%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 2.5,
+    borderColor: '#000000',
+    padding: 16,
+    shadowColor: '#000000',
+    shadowOffset: { width: 4, height: 4 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 6,
+  },
+  bankPickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  bankPickerTitle: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#000000',
+    letterSpacing: 0.5,
+  },
+  bankPickerCloseBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bankSearchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1.5,
+    borderColor: '#D1D5DB',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    marginBottom: 10,
+  },
+  bankSearchInput: {
+    flex: 1,
+    height: 38,
+    fontSize: 12.5,
+    color: '#000000',
+    marginLeft: 6,
+  },
+  bankListScroll: {
+    maxHeight: 340,
+  },
+  bankListItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  bankListItemSelected: {
+    backgroundColor: '#ECFDF5',
+  },
+  bankListCodeBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    marginRight: 10,
+    minWidth: 50,
+    alignItems: 'center',
+  },
+  bankListCodeText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  bankListTextCol: {
+    flex: 1,
+  },
+  bankListShortName: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  bankListFullName: {
+    fontSize: 10.5,
+    color: '#6B7280',
+    marginTop: 1,
   },
 });

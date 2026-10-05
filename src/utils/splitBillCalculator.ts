@@ -184,3 +184,157 @@ export function calculateItemizedBillShares(
     unassignedItemsCount: unassignedCount,
   };
 }
+
+export interface MemberItemizedPayload {
+  items: BillItem[];
+  adjustments: BillAdjustment[];
+  members: BillMember[];
+  itemsSummary: string;
+}
+
+/**
+ * Trích xuất danh sách món và phụ phí / giảm giá cho riêng một thành viên khi tách đơn
+ */
+export function buildMemberItemizedPayload(
+  share: BillMemberShare,
+  billItems: BillItem[],
+  billAdjustments: BillAdjustment[],
+  totalMembersCount: number
+): MemberItemizedPayload {
+  const userItems: BillItem[] = [];
+
+  billItems.forEach(it => {
+    const assignedIds = it.assignedMemberIds || [];
+    if (!assignedIds.includes(share.memberId)) return;
+
+    const hasCustomQuantities =
+      it.memberQuantities &&
+      typeof it.memberQuantities[share.memberId] === 'number' &&
+      it.memberQuantities[share.memberId] > 0;
+
+    if (hasCustomQuantities) {
+      const qty = it.memberQuantities![share.memberId];
+      const totalAssignedQty = assignedIds.reduce(
+        (sum, id) => sum + Math.max(0, it.memberQuantities?.[id] || 0),
+        0
+      );
+      const totalItemCost = Math.max(0, it.price || 0) * Math.max(1, it.quantity || 1);
+      const memberCost = totalAssignedQty > 0
+        ? Math.round((qty / totalAssignedQty) * totalItemCost)
+        : Math.round(totalItemCost / assignedIds.length);
+      const unitPrice = qty > 0 ? Math.round(memberCost / qty) : memberCost;
+
+      userItems.push({
+        id: `split_${it.id}_${share.memberId}`,
+        name: it.name,
+        quantity: Math.max(1, qty),
+        price: unitPrice,
+        assignedMemberIds: [share.memberId],
+      });
+    } else {
+      const count = assignedIds.length;
+      const totalItemCost = Math.max(0, it.price || 0) * Math.max(1, it.quantity || 1);
+      const sharePerPerson = count > 0 ? Math.round(totalItemCost / count) : totalItemCost;
+
+      if (count > 1 && it.quantity > 1 && it.quantity % count === 0) {
+        const userQty = it.quantity / count;
+        userItems.push({
+          id: `split_${it.id}_${share.memberId}`,
+          name: it.name,
+          quantity: userQty,
+          price: it.price,
+          assignedMemberIds: [share.memberId],
+        });
+      } else if (count > 1) {
+        userItems.push({
+          id: `split_${it.id}_${share.memberId}`,
+          name: `${it.name} (Chia ${count})`,
+          quantity: 1,
+          price: sharePerPerson,
+          assignedMemberIds: [share.memberId],
+        });
+      } else {
+        userItems.push({
+          id: `split_${it.id}_${share.memberId}`,
+          name: it.name,
+          quantity: Math.max(1, it.quantity || 1),
+          price: it.price,
+          assignedMemberIds: [share.memberId],
+        });
+      }
+    }
+  });
+
+  const userAdjustments: BillAdjustment[] = [];
+  if (billAdjustments && billAdjustments.length > 0 && totalMembersCount > 0) {
+    billAdjustments.forEach(adj => {
+      const adjAmount = Math.max(0, adj.amount || 0);
+      const shareAdj = Math.round(adjAmount / totalMembersCount);
+      if (shareAdj > 0) {
+        userAdjustments.push({
+          id: `split_${adj.id}_${share.memberId}`,
+          name: totalMembersCount > 1 ? `${adj.name} (Chia ${totalMembersCount})` : adj.name,
+          type: adj.type,
+          amount: shareAdj,
+        });
+      }
+    });
+  }
+
+  // Khớp chính xác với share.finalAmount để không bị lệch 1 đồng do làm tròn
+  const itemsSum = userItems.reduce((sum, it) => sum + it.price * it.quantity, 0);
+  const adjNet = userAdjustments.reduce(
+    (sum, adj) => sum + (adj.type === 'fee' ? adj.amount : -adj.amount),
+    0
+  );
+  const currentTotal = itemsSum + adjNet;
+  const roundingDiff = share.finalAmount - currentTotal;
+
+  if (roundingDiff !== 0) {
+    const singleQtyItem = userItems.find(it => it.quantity === 1);
+    if (singleQtyItem) {
+      singleQtyItem.price += roundingDiff;
+    } else if (userItems.length > 0) {
+      if (userItems[0].quantity > 1) {
+        userItems[0].quantity -= 1;
+        userItems.push({
+          id: `${userItems[0].id}_adj`,
+          name: userItems[0].name,
+          quantity: 1,
+          price: userItems[0].price + roundingDiff,
+          assignedMemberIds: [share.memberId],
+        });
+      } else {
+        userItems[0].price += roundingDiff;
+      }
+    }
+  }
+
+  if (userItems.length === 0 && share.finalAmount > 0) {
+    userItems.push({
+      id: `split_item_${Date.now()}_${share.memberId}`,
+      name: 'Phần chia hóa đơn',
+      quantity: 1,
+      price: share.finalAmount,
+      assignedMemberIds: [share.memberId],
+    });
+  }
+
+  const itemsSummary = userItems.length > 0
+    ? userItems.map(it => `${it.name}${it.quantity > 1 ? ` (x${it.quantity})` : ''}`).join(', ')
+    : 'Chia đều hóa đơn';
+
+  return {
+    items: userItems,
+    adjustments: userAdjustments,
+    members: [
+      {
+        id: share.memberId,
+        name: share.memberName,
+        phone: share.memberPhone || null,
+        isPayer: false,
+      },
+    ],
+    itemsSummary,
+  };
+}

@@ -1,4 +1,4 @@
-# MultiWallet (v1.2.7) - Personal Finance & Multi-Source Wallet Management
+# MultiWallet (v1.2.8) - Personal Finance & Multi-Source Wallet Management
 
 A modern, high-performance mobile application built with **React Native (Expo SDK 57)**, **TypeScript**, and **Expo SQLite**, crafted with a distinctive, tactile Neo-Brutalist design language. 
 
@@ -45,10 +45,15 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
   - Track remaining balances, borrower contact, and due dates with overdue notices.
   - **Partial or Full Debt Collection**: Collect repayments directly into your chosen wallet.
   - Automatically accounted as an **Asset** in Net Worth calculation.
+  - **1-Tap Debt QR Collection & Smart Wallet Fallback**:
+    - Tap the **"Mã QR"** button directly on any active debt card in the debt list to display a dynamic VietQR with the exact remaining balance and auto-generated payment note (`[Name] tra no`).
+    - **Intelligent Receiving Wallet Fallback (`getDebtQRWallet`)**: If the wallet spent from (`debt.wallet_id`, e.g. Cash) does not have a QR code configured, the app automatically finds and displays the QR from the **first wallet with a QR code** (e.g. Vietcombank, MB Bank).
+    - **Real-Time Receiving Wallet Switcher**: Easily switch destination accounts directly in the QR modal via tactile Neo-Brutalist wallet chips.
 - **Borrow / Payables (Money you owe others)**:
   - Record borrowed amounts and the destination wallet receiving the funds.
   - **Installment or Lump-sum Repayment**: Deduct payments from any wallet.
   - Automatically accounted as **Liabilities**.
+  - 1-tap QR display to share your receiving bank account code when accepting loans.
 
 ### 4. Rapid Transaction Logging with Date & Time Selection
 - **Expenses**: Deduct from wallet, assign category (Food & Dining, Coffee, Transport, Shopping, Bills, etc.).
@@ -195,6 +200,11 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
   - **Equal Split**: Divide total amount evenly across all participants.
   - **Itemized Split**: Assign individual items (food, drinks, items) to specific people with multiple assignees per item.
   - **Per-Item Quantity Distribution**: Support assigning specific quantities of an item across participants (e.g. 4 cans of drink $\rightarrow$ 1 for Person A, 3 for Person B) with automated fractional price calculation.
+- **Dedicated Structured Items List for Child Split Transactions**:
+  - When splitting by product, the system automatically builds an isolated structured `items` list (JSON) for each participant's child transaction (`debt_lend`) via `buildMemberItemizedPayload`.
+  - Automatically isolates shared vs individually consumed items (`Item Name (Chia N)`), applies proportional fees/discounts, and eliminates rounding differences down to 0đ.
+  - Child transactions cleanly display the **"Món trong đơn • X món"** card in Transaction Details with exact item prices instead of dumping raw text into the transaction note.
+  - Individual **"In / Xuất bill"** action on each child transaction to export or print personalized receipts with VietQR payment codes.
 - **Dynamic Item Management & Editable Breakdown**:
   - Add, remove, or modify item names, quantities, and prices directly in the bill creation modal with real-time balance reconciliation.
 - **Intelligent Extra Fee & Discount Allocation**:
@@ -311,6 +321,20 @@ Designed for 100% offline-first privacy, MultiWallet gives you total control ove
   - Quick-copy redirect URIs for both Expo Go development and standalone APK builds.
   - CI/CD workflow automatically extracts and prints keystore SHA-1 fingerprint for Google Cloud Console setup.
 
+### 24. VietQR Invoice & Bill Printing Engine (`InvoicePrintModal`)
+- **Digital Receipts & Bill Export**:
+  - Export professional Neo-Brutalist receipts and bills directly from any transaction or split invoice.
+  - **4 Tailored Visual Styles**:
+    - **Modern Compact**: Polished card with integrated VietQR and itemized summary.
+    - **Detailed Itemized**: Full restaurant/retail bill format with unit prices, custom quantities, and allocated fees/discounts.
+    - **Minimal Summary**: Clean, uncluttered total and payment details.
+    - **Clean Text**: Pure typographic receipt suitable for text sharing or quick copy.
+  - **Seamless Dynamic VietQR Embedding**:
+    - Automatically builds NAPAS-compliant VietQR codes matching the recipient's bank account with exact transaction amount and auto-formatted transfer notes.
+  - **Multi-Format Export & Instant Sharing**:
+    - Export directly to printable PDF documents via `expo-print`.
+    - Render pixel-perfect high-resolution image snapshots via `react-native-view-shot` for 1-tap sharing (`expo-sharing`) to messaging apps (Zalo, Messenger, Telegram).
+
 ---
 
 ## Technology Stack
@@ -410,6 +434,7 @@ adb install android/app/build/outputs/apk/release/app-release.apk
 │   │   ├── CategoryManagementModal.tsx # Custom category creation & color/icon picker
 │   │   ├── CloudinaryModal.tsx     # Cloudinary cloud sync & local image migration sheet
 │   │   ├── DebtModal.tsx           # Loan creation & payment modal
+│   │   ├── InvoicePrintModal.tsx   # Multi-template VietQR invoice generator & PDF/Image export
 │   │   ├── LockScreenOverlay.tsx   # Biometric & PIN lock overlay
 │   │   ├── LogViewerModal.tsx      # System activity logs, filtering & export modal
 │   │   ├── NeoCard.tsx             # Tactile card component
@@ -422,7 +447,8 @@ adb install android/app/build/outputs/apk/release/app-release.apk
 │   │   ├── WalletCard.tsx          # Interactive wallet balance card
 │   │   ├── WalletModal.tsx         # Wallet creation & editing modal
 │   │   └── WalletQRModal.tsx       # Fullscreen Banking QR code modal & download/share
-│   ├── constants/                  # Theme tokens, palettes & formatters
+│   ├── constants/                  # Theme tokens, palettes, formatters & banks list
+│   │   └── banks.ts                # Vietnam NAPAS banks registry & BIN lookup
 │   ├── context/
 │   │   ├── SecurityContext.tsx     # Biometrics & PIN lock state
 │   │   └── WalletContext.tsx       # Global finance state & SQLite bridge
@@ -443,8 +469,11 @@ adb install android/app/build/outputs/apk/release/app-release.apk
 │   │   ├── predictionService.ts    # Category heuristic prediction
 │   │   └── widgetSyncService.ts    # Android Home Widget persistent state sync
 │   ├── utils/
+│   │   ├── debtUtils.ts            # QR wallet resolution & fallback logic for debts
 │   │   ├── haptics.ts              # Fine-tuned vibration & haptic helpers
-│   │   └── imageUtils.ts           # Unified image Base64/URI conversion helper
+│   │   ├── imageUtils.ts           # Unified image Base64/URI conversion helper
+│   │   ├── invoiceGenerator.ts     # HTML invoice generator for PDF/Image export
+│   │   └── splitBillCalculator.ts  # Proportional/equal bill splitting & member payload builder
 │   ├── widgets/
 │   │   ├── WalletWidget.tsx        # Neo-brutalist Android Home Screen Widget (4x2)
 │   │   └── widgetTaskHandler.tsx   # Background click & update task handler

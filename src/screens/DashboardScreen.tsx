@@ -417,7 +417,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
                 </View>
                 <Text style={styles.emptyTitle}>Chưa có nguồn tiền nào!</Text>
                 <Text style={styles.emptySub}>
-                  Ứng dụng hiện đang sạch 100% dữ liệu. Ngài hãy chọn nhanh một nguồn tiền
+                  Ứng dụng hiện đang sạch 100% dữ liệu. Hãy chọn nhanh một nguồn tiền
                   để khởi tạo ngay:
                 </Text>
 

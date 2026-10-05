@@ -359,7 +359,7 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
     hapticLight();
     showConfirm(
       `Xóa ${selectedIds.size} kế hoạch dự chi`,
-      `Ngài có chắc chắn muốn xóa ${selectedIds.size} khoản dự chi đã chọn? Thao tác này sẽ xóa vĩnh viễn và không thể hoàn tác.`,
+      `Bạn có chắc chắn muốn xóa ${selectedIds.size} khoản dự chi đã chọn? Thao tác này sẽ xóa vĩnh viễn và không thể hoàn tác.`,
       async () => {
         try {
           await db.withTransactionAsync(async () => {
@@ -552,7 +552,7 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
     hapticLight();
     showConfirm(
       'Xóa kế hoạch dự chi',
-      `Ngài có chắc chắn muốn xóa "${item.title}"?`,
+      `Bạn có chắc chắn muốn xóa "${item.title}"?`,
       async () => {
         await removePlannedExpense(item.id);
         hapticSuccess();
@@ -1153,7 +1153,7 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
                 />
 
                 {/* Số tiền */}
-                <Text style={[styles.inputLabel, { marginTop: 12 }]}>SỐ TIỀN DỰ KIẾN (₫) *</Text>
+                <Text style={[styles.inputLabel, { marginTop: 12 }]}>SỐ TIỀN DỰ KIẾN *</Text>
                 <TextInput
                   style={[styles.inputField, styles.amountInputField]}
                   value={amountInput}

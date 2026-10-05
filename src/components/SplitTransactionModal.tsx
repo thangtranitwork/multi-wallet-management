@@ -23,9 +23,10 @@ import {
 } from '../types';
 import { THEME, formatVND } from '../constants';
 import { hapticLight, hapticSuccess, hapticError } from '../utils/haptics';
-import { calculateItemizedBillShares } from '../utils/splitBillCalculator';
+import { calculateItemizedBillShares, buildMemberItemizedPayload } from '../utils/splitBillCalculator';
 import { ContactPickerSheet } from './ContactPickerSheet';
 import { ErrorBoundary } from './ErrorBoundary';
+import { InvoicePrintModal } from './InvoicePrintModal';
 
 interface MemberSplit {
   id: string;
@@ -46,12 +47,13 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
   onClose,
   transaction,
 }) => {
-  const { categories, splitTransaction, updateTransactionCategory } = useWallet();
+  const { categories, wallets, splitTransaction, updateTransactionCategory } = useWallet();
   const { showAlert, AlertModalComponent } = useCustomAlert(false);
 
   // ── Tab state ──
   const [activeTab, setActiveTab] = useState<'itemized' | 'quick'>('itemized');
   const [isChangingCat, setIsChangingCat] = useState<boolean>(false);
+  const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
 
   // ── Contact Picker State ──
   const [showContactPicker, setShowContactPicker] = useState(false);
@@ -59,7 +61,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
 
   // ==================== TAB 1: CHIA THEO MÓN (ITEMIZED) ====================
   const [billMembers, setBillMembers] = useState<BillMember[]>([
-    { id: 'me', name: 'Tôi (Chủ chi)', isPayer: true },
+    { id: 'me', name: 'Tôi', isPayer: true },
   ]);
 
   const [billItems, setBillItems] = useState<BillItem[]>([]);
@@ -100,7 +102,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
       setIsChangingCat(false);
 
       // 2. Khởi tạo Itemized Split
-      const defaultPayer: BillMember = { id: 'me', name: 'Tôi (Chủ chi)', isPayer: true };
+      const defaultPayer: BillMember = { id: 'me', name: 'Tôi', isPayer: true };
       setBillMembers([defaultPayer]);
       setBillAdjustments([]);
       setNewItemName('');
@@ -208,6 +210,30 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
     0
   );
   const remainingForMeQuick = totalAmount - totalQuickSplit;
+
+  const parsedBillForPrint = useMemo(() => {
+    if (activeTab === 'itemized') {
+      return { items: billItems, adjustments: billAdjustments, members: billMembers };
+    }
+    const quickMembersFormatted = quickMembers.map((m) => ({ id: m.id, name: m.name, phone: m.phone }));
+    return {
+      items: [
+        {
+          id: 'total_item',
+          name: transaction?.note || 'Khoản chi tiêu gốc',
+          quantity: 1,
+          price: totalAmount,
+          assignedMemberIds: quickMembers.map((m) => m.id),
+        },
+      ],
+      adjustments: [],
+      members: [{ id: 'me', name: 'Tôi', isPayer: true }, ...quickMembersFormatted],
+    };
+  }, [activeTab, billItems, billAdjustments, billMembers, quickMembers, transaction?.note, totalAmount]);
+
+  const currentWallet = useMemo(() => {
+    return (wallets || []).find((w) => w.id === transaction?.wallet_id);
+  }, [wallets, transaction?.wallet_id]);
 
   if (!transaction) return null;
 
@@ -464,16 +490,23 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
 
     try {
       const splits = othersWithShare.map(s => {
-        const userItems = billItems
-          .filter(it => (it.assignedMemberIds || []).includes(s.memberId))
-          .map(it => `${it.name}${it.quantity > 1 ? ` (x${it.quantity})` : ''}`)
-          .join(', ');
+        const payload = buildMemberItemizedPayload(
+          s,
+          billItems,
+          billAdjustments,
+          billMembers.length
+        );
 
         return {
           personName: s.memberName,
           personPhone: s.memberPhone,
           amount: s.finalAmount,
-          itemsSummary: userItems || 'Chia đều món & chi phí',
+          itemsSummary: payload.itemsSummary || 'Chia đều món & chi phí',
+          items: JSON.stringify({
+            items: payload.items,
+            adjustments: payload.adjustments,
+            members: payload.members,
+          }),
         };
       });
 
@@ -646,9 +679,20 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
                 Chuyển một phần chi tiêu thành khoản người khác nợ
               </Text>
             </View>
-            <Pressable style={styles.closeBtn} onPress={onClose}>
-              <Ionicons name="close" size={22} color={THEME.text} />
-            </Pressable>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Pressable
+                style={styles.headerPrintBtn}
+                onPress={() => {
+                  hapticLight();
+                  setShowPrintModal(true);
+                }}
+              >
+                <Ionicons name="print-outline" size={18} color="#000000" />
+              </Pressable>
+              <Pressable style={styles.closeBtn} onPress={onClose}>
+                <Ionicons name="close" size={22} color={THEME.text} />
+              </Pressable>
+            </View>
           </View>
 
           {/* Original Transaction Summary Card */}
@@ -1226,6 +1270,20 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
                   </View>
                 </View>
 
+                {/* Print & Share bill button */}
+                <Pressable
+                  style={styles.printActionBtn}
+                  onPress={() => {
+                    hapticLight();
+                    setShowPrintModal(true);
+                  }}
+                >
+                  <Ionicons name="print-outline" size={17} color="#000000" />
+                  <Text style={styles.printActionBtnText}>
+                    In / Xuất hóa đơn
+                  </Text>
+                </Pressable>
+
                 {/* Confirm Button for Itemized Split */}
                 <Pressable
                   style={({ pressed }) => [
@@ -1471,6 +1529,15 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
               ? 'Chọn bạn bè vào đơn'
               : 'Chọn người trả nợ'
           }
+        />
+
+        {/* Invoice Print & Share Modal */}
+        <InvoicePrintModal
+          visible={showPrintModal}
+          onClose={() => setShowPrintModal(false)}
+          transaction={transaction}
+          parsedBill={parsedBillForPrint}
+          wallets={wallets}
         />
 
         {AlertModalComponent}
@@ -2470,5 +2537,32 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '900',
     color: '#000000',
+  },
+  headerPrintBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: '#FAF8F5',
+    borderWidth: 2,
+    borderColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  printActionBtn: {
+    flexDirection: 'row',
+    height: 44,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 2,
+    borderColor: '#059669',
+    marginBottom: 10,
+  },
+  printActionBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#065F46',
   },
 });

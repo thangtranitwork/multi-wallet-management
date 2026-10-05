@@ -35,8 +35,7 @@ export const NeoBox: React.FC<NeoBoxProps> = ({
     <View
       style={[
         {
-          backgroundColor: '#000000',
-          borderRadius,
+          position: 'relative',
           marginBottom: shadowOffset,
           marginRight: shadowOffset,
         },
@@ -44,13 +43,23 @@ export const NeoBox: React.FC<NeoBoxProps> = ({
       ]}
     >
       <View
+        style={{
+          position: 'absolute',
+          top: shadowOffset,
+          left: shadowOffset,
+          right: -shadowOffset,
+          bottom: -shadowOffset,
+          backgroundColor: '#000000',
+          borderRadius,
+        }}
+      />
+      <View
         style={[
           {
             backgroundColor: color,
             borderRadius,
             borderWidth,
             borderColor: '#000000',
-            transform: [{ translateX: -shadowOffset }, { translateY: -shadowOffset }],
           },
           contentStyle,
         ]}

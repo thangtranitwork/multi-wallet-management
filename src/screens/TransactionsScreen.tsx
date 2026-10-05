@@ -200,7 +200,7 @@ export const TransactionsScreen: React.FC = () => {
         />
 
         <NeoDropdown
-          title="Lọc theo nguồn tiền (Ví)"
+          title="Lọc theo nguồn tiền"
           triggerLabel={selectedWalletLabel}
           triggerIcon="wallet-outline"
           isActive={activeWalletFilter !== null}
@@ -231,11 +231,16 @@ export const TransactionsScreen: React.FC = () => {
             const isToday = d.isSame(dayjs(), 'day');
             const isYesterday = d.isSame(dayjs().subtract(1, 'day'), 'day');
 
+            const formatVietnameseDateHeader = (date: dayjs.Dayjs) => {
+              const raw = date.locale('vi').format('dddd, DD/MM/YYYY');
+              return raw.charAt(0).toUpperCase() + raw.slice(1);
+            };
+
             const dateLabel = isToday
               ? 'Hôm nay'
               : isYesterday
               ? 'Hôm qua'
-              : d.format('dddd, DD/MM/YYYY');
+              : formatVietnameseDateHeader(d);
 
             const dayTotal = dayTxs.reduce((sum, t) => {
               if (t.type === 'expense' || t.type === 'debt_lend' || t.type === 'debt_repay') {

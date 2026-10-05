@@ -3,6 +3,10 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { SQLiteProvider } from 'expo-sqlite';
+import dayjs from 'dayjs';
+import 'dayjs/locale/vi';
+
+dayjs.locale('vi');
 import { DB_NAME, initDatabase } from './src/database/db';
 import { WalletProvider } from './src/context/WalletContext';
 import { SecurityProvider } from './src/context/SecurityContext';

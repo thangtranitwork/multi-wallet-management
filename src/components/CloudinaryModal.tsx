@@ -162,7 +162,7 @@ export const CloudinaryModal: React.FC<CloudinaryModalProps> = ({
 
     showConfirm(
       'Di chuyển ảnh lên Cloudinary',
-      `Tải ${stats.totalCount} ảnh trên bộ nhớ máy (${stats.receiptImagesCount} hóa đơn, ${stats.qrImagesCount} mã QR ví) lên đám mây Cloudinary và giải phóng bộ nhớ máy.\n\nQuá trình này cần kết nối mạng. Ngài có muốn tiếp tục?`,
+      `Tải ${stats.totalCount} ảnh trên bộ nhớ máy (${stats.receiptImagesCount} hóa đơn, ${stats.qrImagesCount} mã QR ví) lên đám mây Cloudinary và giải phóng bộ nhớ máy.\n\nQuá trình này cần kết nối mạng. Bạn có muốn tiếp tục không?`,
       async () => {
         try {
           hapticMedium();
@@ -354,7 +354,7 @@ export const CloudinaryModal: React.FC<CloudinaryModalProps> = ({
 
                   {/* Upload Preset */}
                   <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Upload Preset (Unsigned):</Text>
+                    <Text style={styles.inputLabel}>Upload Preset:</Text>
                     <TextInput
                       style={styles.textInput}
                       placeholder="vd: billings"

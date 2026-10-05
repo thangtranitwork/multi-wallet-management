@@ -19,6 +19,7 @@ import * as queries from '../database/queries';
 import { THEME, formatVND } from '../constants';
 import { hapticLight, hapticMedium, hapticSuccess, hapticError } from '../utils/haptics';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
+import { InvoicePrintModal } from './InvoicePrintModal';
 import { useCustomAlert } from './CustomAlertModal';
 import { useSecurity } from '../context/SecurityContext';
 import {
@@ -97,6 +98,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   const [viewingImageUri, setViewingImageUri] = useState<string | null>(null);
   const [isAttachingImages, setIsAttachingImages] = useState<boolean>(false);
   const [isScanningReceipt, setIsScanningReceipt] = useState<boolean>(false);
+  const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
 
   const handleScanReceipt = async (imageUris: string[]) => {
     if (!transaction || imageUris.length === 0) return;
@@ -120,16 +122,24 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
         hapticSuccess();
 
         const calculatedSum = res.items_sum || res.items.reduce((s, it) => s + ((it.price || 0) * (it.quantity || 1)), 0);
+        const splitMatch = transaction.note?.match(/\[Đã tách cho ([^\]]+)\]/i);
 
         if (calculatedSum > 0 && Math.abs(calculatedSum - transaction.amount) > 100) {
-          showConfirm(
-            `Đã bóc tách ${res.items.length} món`,
-            `Gemini AI nhận diện được ${res.items.length} món với tổng tiền là ${formatVND(calculatedSum)}, khác với số tiền giao dịch hiện tại (${formatVND(transaction.amount)}).\n\nBạn có muốn cập nhật số tiền giao dịch thành ${formatVND(calculatedSum)} không?`,
-            async () => {
-              await updateTransactionDetails(transaction.id, { amount: calculatedSum });
-              hapticSuccess();
-            }
-          );
+          if (splitMatch) {
+            showAlert(
+              'Bóc tách thành công',
+              `Gemini AI đã bóc tách ${res.items.length} món vào hóa đơn (tổng bill: ${formatVND(calculatedSum)}).\n\nVì giao dịch này đã tách tiền cho ${splitMatch[1]}, số tiền chi tiêu của bạn (${formatVND(transaction.amount)}) được giữ nguyên!`
+            );
+          } else {
+            showConfirm(
+              `Đã bóc tách ${res.items.length} món`,
+              `Gemini AI nhận diện được ${res.items.length} món với tổng tiền là ${formatVND(calculatedSum)}, khác với số tiền giao dịch hiện tại (${formatVND(transaction.amount)}).\n\nBạn có muốn cập nhật số tiền giao dịch thành ${formatVND(calculatedSum)} không?`,
+              async () => {
+                await updateTransactionDetails(transaction.id, { amount: calculatedSum });
+                hapticSuccess();
+              }
+            );
+          }
         } else {
           showAlert(
             'Bóc tách thành công',
@@ -352,22 +362,22 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
     typeColor = '#0284C7';
     typeIcon = 'swap-horizontal';
   } else if (transaction.type === 'debt_lend') {
-    typeLabel = 'Cho vay (Sổ nợ)';
+    typeLabel = 'Cho vay';
     typeBadgeBg = '#FEF08A';
     typeColor = '#854D0E';
     typeIcon = 'send';
   } else if (transaction.type === 'debt_borrow') {
-    typeLabel = 'Đi vay (Sổ nợ)';
+    typeLabel = 'Đi vay';
     typeBadgeBg = '#FEF9C3';
     typeColor = '#A16207';
     typeIcon = 'download';
   } else if (transaction.type === 'debt_collect') {
-    typeLabel = 'Thu hồi nợ (Sổ nợ)';
+    typeLabel = 'Thu hồi nợ';
     typeBadgeBg = '#DCFCE7';
     typeColor = '#15803D';
     typeIcon = 'checkmark-circle';
   } else if (transaction.type === 'debt_repay') {
-    typeLabel = 'Trả nợ vay (Sổ nợ)';
+    typeLabel = 'Trả nợ vay';
     typeBadgeBg = '#FCE7F3';
     typeColor = '#9D174D';
     typeIcon = 'refresh-circle';
@@ -415,11 +425,11 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
       ? transferWalletTarget === 'source'
         ? 'ví gửi'
         : 'ví nhận'
-      : 'nguồn tiền (ví)';
+      : 'nguồn tiền';
 
     showConfirm(
       'Đổi nguồn tiền',
-      `Ngài có muốn đổi ${targetLabel} sang "${w.name}"? Số dư các ví sẽ được tự động điều chỉnh.`,
+      `Bạn có muốn đổi ${targetLabel} sang "${w.name}"? Số dư các ví sẽ được tự động điều chỉnh.`,
       async () => {
         setIsUpdating(true);
         try {
@@ -610,8 +620,9 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
 
 
 
-  const txDate = dayjs(transaction.transacted_at);
-  const formattedDate = txDate.format('dddd, DD/MM/YYYY');
+  const txDate = dayjs(transaction.transacted_at).locale('vi');
+  const rawDate = txDate.format('dddd, DD/MM/YYYY');
+  const formattedDate = rawDate.charAt(0).toUpperCase() + rawDate.slice(1);
   const formattedTime = txDate.format('HH:mm');
 
   const currentWallet = wallets.find(w => w.id === transaction.wallet_id);
@@ -670,7 +681,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                 <View style={styles.sectionTitleGroup}>
                   <Ionicons name="wallet-outline" size={18} color="#000000" />
                   <Text style={styles.sectionTitle}>
-                    {isTransfer ? 'Nguồn tiền (Ví chuyển / nhận)' : 'Nguồn tiền (Ví)'}
+                    {isTransfer ? 'Ví chuyển & nhận' : 'Nguồn tiền'}
                   </Text>
                 </View>
                 <Pressable
@@ -697,7 +708,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                   <View style={[styles.walletDot, { backgroundColor: currentWallet?.color || THEME.primary }]} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.walletRoleLabel}>
-                      {isTransfer ? 'Ví gửi (Trừ tiền):' : 'Ví giao dịch:'}
+                      {isTransfer ? 'Ví gửi:' : 'Ví giao dịch:'}
                     </Text>
                     <Text style={styles.walletNameText}>
                       {transaction.wallet_name || 'Ví không xác định'}
@@ -712,7 +723,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                   <View style={[styles.walletItemRow, { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#E5E7EB' }]}>
                     <View style={[styles.walletDot, { backgroundColor: currentToWallet?.color || '#0284C7' }]} />
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.walletRoleLabel}>Ví nhận (Cộng tiền):</Text>
+                      <Text style={styles.walletRoleLabel}>Ví nhận:</Text>
                       <Text style={styles.walletNameText}>
                         {transaction.to_wallet_name || 'Ví không xác định'}
                       </Text>
@@ -1521,6 +1532,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
             {/* Amortization Setting (Trải đều thống kê theo tháng) */}
             {(transaction.type === 'expense' || transaction.type === 'income') && (
               <View style={styles.amortizeCardShadow}>
+                <View style={styles.cardShadowBlock} />
                 <View style={styles.amortizeCardInner}>
                   <View style={styles.amortizeHeaderRow}>
                     <View style={styles.amortizeIconBox}>
@@ -1576,25 +1588,69 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
             {/* Bill Items Breakdown if present */}
             {parsedBill && parsedBill.items && parsedBill.items.length > 0 && (
               <View style={styles.billItemsCardShadow}>
+                <View style={styles.cardShadowBlock} />
                 <View style={styles.billItemsCardInner}>
                   <View style={styles.billItemsHeader}>
-                    <Ionicons name="receipt-outline" size={18} color="#000000" />
-                    <Text style={styles.billItemsTitle}>
-                      Món trong đơn ({parsedBill.items.length} món)
-                    </Text>
-                  </View>
-                  {parsedBill.items.map((it: any, idx: number) => (
-                    <View key={it.id || idx} style={styles.billItemRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.billItemName}>
-                          {it.name} {it.quantity > 1 ? `× ${it.quantity}` : ''}
-                        </Text>
-                      </View>
-                      <Text style={styles.billItemPrice}>
-                        {formatVND((it.price || 0) * (it.quantity || 1))}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                      <Ionicons name="receipt-outline" size={18} color="#000000" />
+                      <Text style={styles.billItemsTitle}>
+                        Món trong đơn • {parsedBill.items.length} món
                       </Text>
                     </View>
-                  ))}
+                    <Pressable
+                      style={styles.printBillHeaderBtn}
+                      onPress={() => {
+                        hapticLight();
+                        setShowPrintModal(true);
+                      }}
+                    >
+                      <Ionicons name="print-outline" size={13} color="#000000" />
+                      <Text style={styles.printBillHeaderBtnText}>In / Xuất bill</Text>
+                    </Pressable>
+                  </View>
+                  {parsedBill.items.map((it: any, idx: number) => {
+                    const memberMap = new Map<string, string>(
+                      (parsedBill.members || []).map((m: any) => [m.id, m.name])
+                    );
+                    const hasQuantities = it.memberQuantities && Object.keys(it.memberQuantities).length > 0;
+                    const hasAssigned = Array.isArray(it.assignedMemberIds) && it.assignedMemberIds.length > 0;
+
+                    let allocationText = '';
+                    if (hasQuantities) {
+                      const parts = Object.entries(it.memberQuantities)
+                        .filter(([_, q]) => Number(q) > 0)
+                        .map(([mId, q]) => `${memberMap.get(mId) || (mId === 'me' ? 'Bạn' : 'Người khác')} ×${q}`);
+                      if (parts.length > 0) allocationText = parts.join(' • ');
+                    } else if (hasAssigned && (parsedBill.members || []).length > 1) {
+                      const names = it.assignedMemberIds.map(
+                        (mId: string) => memberMap.get(mId) || (mId === 'me' ? 'Bạn' : 'Người khác')
+                      );
+                      if (names.length > 0) allocationText = names.join(', ');
+                    }
+
+                    return (
+                      <View key={it.id || idx} style={styles.billItemRowContainer}>
+                        <View style={styles.billItemRow}>
+                          <View style={{ flex: 1, paddingRight: 8 }}>
+                            <Text style={styles.billItemName}>
+                              {it.name} {it.quantity > 1 ? `× ${it.quantity}` : ''}
+                            </Text>
+                          </View>
+                          <Text style={styles.billItemPrice}>
+                            {formatVND((it.price || 0) * (it.quantity || 1))}
+                          </Text>
+                        </View>
+                        {!!allocationText && (
+                          <View style={styles.billItemAssignedRow}>
+                            <Ionicons name="people-outline" size={11} color="#4B5563" />
+                            <Text style={styles.billItemAssignedBadgeText} numberOfLines={1}>
+                              {allocationText}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })}
                   {Array.isArray(parsedBill.adjustments) &&
                     parsedBill.adjustments.map((adj: any) => (
                       <View key={adj.id} style={styles.billItemRow}>
@@ -1618,14 +1674,80 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                       </View>
                     ))}
 
-                  {/* Summary of items & discrepancy with total */}
+                  {/* Summary of items & discrepancy or split breakdown */}
                   {(() => {
                     const rawItemsSum = parsedBill.items.reduce((s: number, it: any) => s + ((it.price || 0) * (it.quantity || 1)), 0);
                     const netAdj = Array.isArray(parsedBill.adjustments)
                       ? parsedBill.adjustments.reduce((sum: number, adj: any) => sum + (adj.type === 'fee' ? (adj.amount || 0) : -(adj.amount || 0)), 0)
                       : 0;
                     const fullSum = rawItemsSum + netAdj;
+                    const splitMatch = transaction.note?.match(/\[Đã tách cho ([^\]]+)\]/i);
+                    const isSplit = Boolean(splitMatch || (parsedBill?.members && parsedBill.members.length > 1));
+                    const splitTargetName = splitMatch
+                      ? splitMatch[1]
+                      : (parsedBill?.members
+                          ?.filter((m: any) => m.id !== 'me')
+                          ?.map((m: any) => m.name)
+                          ?.join(', ') || 'bạn bè');
                     const diff = Math.abs(fullSum - transaction.amount);
+                    const splitAmount = Math.max(0, fullSum - transaction.amount);
+
+                    if (isSplit) {
+                      return (
+                        <View style={styles.splitBillInfoBox}>
+                          <View style={styles.splitBillInfoHeader}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                              <Ionicons name="git-branch-outline" size={16} color="#000000" />
+                              <Text style={styles.splitBillInfoTitle}>Hóa đơn đã được tách tiền</Text>
+                            </View>
+                            <View style={styles.splitBadge}>
+                              <Text style={styles.splitBadgeText}>ĐÃ TÁCH</Text>
+                            </View>
+                          </View>
+
+                          <View style={styles.splitBillDivider} />
+
+                          <View style={styles.splitBillRow}>
+                            <Text style={styles.splitBillLabel}>Tổng hóa đơn gốc:</Text>
+                            <Text style={styles.splitBillVal}>{formatVND(fullSum)}</Text>
+                          </View>
+
+                          <View style={styles.splitBillRow}>
+                            <Text style={styles.splitBillLabel}>Đã tách cho {splitTargetName}:</Text>
+                            <Text style={[styles.splitBillVal, { color: '#DC2626' }]}>
+                              -{formatVND(splitAmount)}
+                            </Text>
+                          </View>
+
+                          <View style={[styles.splitBillRow, { paddingTop: 6, marginTop: 4, borderTopWidth: 1.5, borderTopColor: '#E5E7EB' }]}>
+                            <Text style={[styles.splitBillLabel, { fontWeight: '800', color: '#000000' }]}>
+                              Phần bạn chi trả:
+                            </Text>
+                            <Text style={[styles.splitBillVal, { fontWeight: '900', color: '#000000', fontSize: 13.5 }]}>
+                              {formatVND(transaction.amount)}
+                            </Text>
+                          </View>
+
+                          <Text style={styles.splitBillHelpText}>
+                            Khoản chia đã được tự động ghi nhận vào Sổ Nợ. Số tiền của giao dịch này được giữ đúng theo phần bạn thực chi.
+                          </Text>
+
+                          <Pressable
+                            style={styles.splitBillPrintBtn}
+                            onPress={() => {
+                              hapticLight();
+                              setShowPrintModal(true);
+                            }}
+                          >
+                            <Ionicons name="print-outline" size={15} color="#000000" />
+                            <Text style={styles.splitBillPrintBtnText}>
+                              In / Xuất hóa đơn
+                            </Text>
+                          </Pressable>
+                        </View>
+                      );
+                    }
+
                     return (
                       <View>
                         <View style={styles.billItemsSummaryRow}>
@@ -1665,26 +1787,44 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
 
             {/* Actions: Split Bill & Delete */}
             <View style={styles.actionsSection}>
-              {transaction.type === 'expense' && onSplit && (
-                <Pressable
-                  style={styles.splitActionBtn}
-                  onPress={() => {
-                    hapticLight();
-                    onSplit(transaction);
-                  }}
-                >
-                  <View style={styles.splitActionInner}>
-                    <Ionicons name="people-outline" size={20} color="#000000" />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.splitActionTitle}>Tách tiền (Chia hóa đơn)</Text>
-                      <Text style={styles.splitActionSub}>
-                        Chuyển một phần chi tiêu này thành khoản người khác nợ
-                      </Text>
+              {transaction.type === 'expense' && onSplit && (() => {
+                const splitMatch = transaction.note?.match(/\[Đã tách cho ([^\]]+)\]/i);
+                return (
+                  <Pressable
+                    style={styles.splitActionBtn}
+                    onPress={() => {
+                      hapticLight();
+                      onSplit(transaction);
+                    }}
+                  >
+                    <View style={styles.cardShadowBlockSm} />
+                    <View style={styles.splitActionInner}>
+                      <View style={styles.splitActionIconBox}>
+                        <Ionicons
+                          name={splitMatch ? "git-branch" : "people-outline"}
+                          size={18}
+                          color="#000000"
+                        />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.splitActionTitle}>
+                          {splitMatch ? 'Tách thêm / Chia lại hóa đơn' : 'Chia hóa đơn'}
+                        </Text>
+                        <Text style={styles.splitActionSub}>
+                          {splitMatch
+                            ? `Đã chia cho ${splitMatch[1]} • Chạm nếu muốn điều chỉnh lại`
+                            : 'Chuyển một phần chi tiêu này thành khoản người khác nợ'}
+                        </Text>
+                      </View>
+                      <Ionicons
+                        name="chevron-forward"
+                        size={18}
+                        color="#000000"
+                      />
                     </View>
-                    <Ionicons name="chevron-forward" size={18} color="#000000" />
-                  </View>
-                </Pressable>
-              )}
+                  </Pressable>
+                );
+              })()}
 
               {/* Custom Delete Trigger */}
               <Pressable
@@ -1721,6 +1861,14 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
           onClose();
           onRecreate(tx);
         } : undefined}
+      />
+      {/* Invoice Print & Share Modal */}
+      <InvoicePrintModal
+        visible={showPrintModal}
+        onClose={() => setShowPrintModal(false)}
+        transaction={transaction}
+        parsedBill={parsedBill}
+        wallets={wallets}
       />
       {AlertModalComponent}
 
@@ -2343,31 +2491,37 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   splitActionBtn: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: '#000000',
-    shadowColor: '#000000',
-    shadowOffset: { width: 3, height: 3 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 3,
+    position: 'relative',
+    marginRight: 3,
+    marginBottom: 3,
   },
   splitActionInner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    padding: 14,
-    backgroundColor: '#FEF08A',
+    padding: 12,
+    backgroundColor: '#FFFFFF',
     borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#000000',
+  },
+  splitActionIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#FEF08A',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   splitActionTitle: {
-    fontSize: 14.5,
+    fontSize: 14,
     fontWeight: '900',
     color: '#000000',
   },
   splitActionSub: {
-    fontSize: 11,
+    fontSize: 11.5,
     fontWeight: '600',
     color: '#4B5563',
     marginTop: 2,
@@ -2597,10 +2751,28 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
   },
-  amortizeCardShadow: {
+  cardShadowBlock: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    right: -4,
+    bottom: -4,
     backgroundColor: '#000000',
     borderRadius: 16,
+  },
+  cardShadowBlockSm: {
+    position: 'absolute',
+    top: 3,
+    left: 3,
+    right: -3,
+    bottom: -3,
+    backgroundColor: '#000000',
+    borderRadius: 14,
+  },
+  amortizeCardShadow: {
+    position: 'relative',
     marginBottom: 16,
+    marginRight: 4,
   },
   amortizeCardInner: {
     backgroundColor: '#FFFFFF',
@@ -2608,7 +2780,6 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#000000',
     padding: 14,
-    transform: [{ translateX: -3 }, { translateY: -3 }],
   },
   amortizeHeaderRow: {
     flexDirection: 'row',
@@ -2838,9 +3009,9 @@ const styles = StyleSheet.create({
     height: '80%',
   },
   billItemsCardShadow: {
-    backgroundColor: '#000000',
-    borderRadius: 16,
+    position: 'relative',
     marginBottom: 16,
+    marginRight: 4,
   },
   billItemsCardInner: {
     backgroundColor: '#FFFFFF',
@@ -2848,7 +3019,6 @@ const styles = StyleSheet.create({
     borderWidth: 2.5,
     borderColor: '#000000',
     padding: 14,
-    transform: [{ translateX: -3 }, { translateY: -3 }],
   },
   billItemsHeader: {
     flexDirection: 'row',
@@ -2868,7 +3038,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 4,
+    paddingVertical: 2,
   },
   billItemName: {
     fontSize: 12.5,
@@ -2880,4 +3050,121 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#000000',
   },
+  billItemRowContainer: {
+    paddingVertical: 5,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#F3F4F6',
+  },
+  billItemAssignedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+    paddingLeft: 2,
+  },
+  billItemAssignedBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#4B5563',
+  },
+  splitBillInfoBox: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    borderRadius: 12,
+    gap: 6,
+  },
+  splitBillInfoHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  splitBillInfoTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  splitBadge: {
+    backgroundColor: '#FFE600',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  splitBadgeText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#000000',
+    letterSpacing: 0.5,
+  },
+  splitBillDivider: {
+    height: 1.5,
+    backgroundColor: '#E5E7EB',
+    marginVertical: 3,
+  },
+  splitBillRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  splitBillLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  splitBillVal: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  splitBillHelpText: {
+    fontSize: 11,
+    lineHeight: 15,
+    color: '#4B5563',
+    fontStyle: 'italic',
+    marginTop: 4,
+  },
+  printBillHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  printBillHeaderBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  splitBillPrintBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginTop: 6,
+    shadowColor: '#000000',
+    shadowOffset: { width: 1.5, height: 1.5 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 2,
+  },
+  splitBillPrintBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#000000',
+  },
 });
+

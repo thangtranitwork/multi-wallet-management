@@ -20,8 +20,10 @@ import { getCloudinaryConfig, uploadToCloudinary } from '../services/cloudinaryS
 import { useSecurity } from '../context/SecurityContext';
 import { Wallet } from '../types';
 import { THEME, formatVND } from '../constants';
+import { findBankByBin } from '../constants/banks';
 import { hapticLight, hapticSuccess, hapticError } from '../utils/haptics';
 import { useCustomAlert } from './CustomAlertModal';
+import { hasWalletQR } from '../utils/debtUtils';
 
 interface WalletQRModalProps {
   visible: boolean;
@@ -30,6 +32,7 @@ interface WalletQRModalProps {
   amount?: number;
   purpose?: string;
   title?: string;
+  onConfigureWallet?: (walletId: string) => void;
 }
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -42,14 +45,41 @@ export const WalletQRModal: React.FC<WalletQRModalProps> = ({
   amount = 0,
   purpose = '',
   title,
+  onConfigureWallet,
 }) => {
   const { wallets, editWallet } = useWallet();
   const { temporarilyBypassLock } = useSecurity();
   const { showAlert, showConfirm, AlertModalComponent } = useCustomAlert(false);
   const db = useSQLiteContext();
 
+  const [selectedWalletId, setSelectedWalletId] = React.useState<string>(wallet?.id || '');
+
+  React.useEffect(() => {
+    if (wallet?.id) {
+      setSelectedWalletId(wallet.id);
+    }
+  }, [wallet?.id]);
+
   if (!wallet) return null;
-  const currentWallet = wallets.find(w => w.id === wallet.id) || wallet;
+  const currentWallet = wallets.find(w => w.id === selectedWalletId) || wallet;
+
+  const transferNote = purpose ? `Tra tien ${purpose}`.trim() : '';
+  const vietQrUrl = (currentWallet.bank_bin && currentWallet.bank_account)
+    ? `https://img.vietqr.io/image/${currentWallet.bank_bin}-${currentWallet.bank_account}-compact2.png?amount=${Math.round(amount || 0)}${transferNote ? `&addInfo=${encodeURIComponent(transferNote.slice(0, 25))}` : ''}`
+    : null;
+  const bankInfo = findBankByBin(currentWallet.bank_bin);
+
+  const hasVietQr = !!vietQrUrl;
+  const hasCustomImage = !!currentWallet.qr_image_uri;
+  const [activeTab, setActiveTab] = React.useState<'vietqr' | 'custom'>(hasVietQr ? 'vietqr' : 'custom');
+
+  React.useEffect(() => {
+    if (hasVietQr) {
+      setActiveTab('vietqr');
+    } else if (hasCustomImage) {
+      setActiveTab('custom');
+    }
+  }, [hasVietQr, hasCustomImage, selectedWalletId]);
 
   const handlePickQRImage = async () => {
     try {
@@ -112,7 +142,7 @@ export const WalletQRModal: React.FC<WalletQRModalProps> = ({
   const handleRemoveQRImage = () => {
     showConfirm(
       'Xóa ảnh mã QR',
-      `Ngài có chắc muốn xóa ảnh mã QR của ví "${currentWallet.name}"?`,
+      `Bạn có chắc muốn xóa ảnh mã QR của ví "${currentWallet.name}"?`,
       async () => {
         try {
           if (currentWallet.qr_image_uri) {
@@ -134,7 +164,6 @@ export const WalletQRModal: React.FC<WalletQRModalProps> = ({
   };
 
   const handleShareImage = async () => {
-    if (!currentWallet.qr_image_uri) return;
     try {
       temporarilyBypassLock(120000);
       hapticLight();
@@ -143,10 +172,23 @@ export const WalletQRModal: React.FC<WalletQRModalProps> = ({
         showAlert('Không hỗ trợ', 'Tính năng chia sẻ không khả dụng trên thiết bị này.');
         return;
       }
-      await Sharing.shareAsync(currentWallet.qr_image_uri, {
-        dialogTitle: `Mã QR ${currentWallet.name}`,
-        mimeType: 'image/jpeg',
-      });
+
+      if (activeTab === 'vietqr' && vietQrUrl) {
+        const dest = `${FileSystem.cacheDirectory}vietqr_${currentWallet.id}_${Date.now()}.png`;
+        const downloadRes = await FileSystem.downloadAsync(vietQrUrl, dest);
+        await Sharing.shareAsync(downloadRes.uri, {
+          dialogTitle: `Mã VietQR ${currentWallet.name}`,
+          mimeType: 'image/png',
+        });
+        return;
+      }
+
+      if (currentWallet.qr_image_uri) {
+        await Sharing.shareAsync(currentWallet.qr_image_uri, {
+          dialogTitle: `Mã QR ${currentWallet.name}`,
+          mimeType: 'image/jpeg',
+        });
+      }
     } catch (err: any) {
       // User cancelled
     }
@@ -176,8 +218,139 @@ export const WalletQRModal: React.FC<WalletQRModalProps> = ({
           </View>
 
           <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false}>
-            {/* QR Image Container */}
-            {currentWallet.qr_image_uri ? (
+            {/* Wallet Picker if multiple wallets */}
+            {wallets.length > 1 && (
+              <View style={styles.walletPickerSection}>
+                <View style={styles.walletPickerHeader}>
+                  <Ionicons name="wallet-outline" size={13} color="#000000" />
+                  <Text style={styles.walletPickerLabel}>Ví nhận thanh toán</Text>
+                </View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.walletChipsRow}
+                >
+                  {wallets.map(w => {
+                    const isSelected = w.id === currentWallet.id;
+                    const wHasQR = hasWalletQR(w);
+                    return (
+                      <Pressable
+                        key={w.id}
+                        style={[
+                          styles.walletChip,
+                          isSelected && styles.walletChipSelected,
+                        ]}
+                        onPress={() => {
+                          hapticLight();
+                          setSelectedWalletId(w.id);
+                        }}
+                      >
+                        <Text
+                          style={[
+                            styles.walletChipText,
+                            isSelected && styles.walletChipTextSelected,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {w.name}
+                        </Text>
+                        {wHasQR ? (
+                          <View style={[styles.qrDot, isSelected && styles.qrDotSelected]}>
+                            <Ionicons name="qr-code" size={10} color={isSelected ? '#000000' : '#15803D'} />
+                          </View>
+                        ) : (
+                          <Text style={styles.noQrText}>(k có QR)</Text>
+                        )}
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            )}
+
+            {/* Tab switcher if wallet has both dynamic VietQR and custom uploaded image */}
+            {hasVietQr && hasCustomImage && (
+              <View style={styles.tabContainer}>
+                <Pressable
+                  style={[styles.tabBtn, activeTab === 'vietqr' && styles.tabBtnActive]}
+                  onPress={() => {
+                    hapticLight();
+                    setActiveTab('vietqr');
+                  }}
+                >
+                  <Ionicons
+                    name="qr-code-outline"
+                    size={14}
+                    color={activeTab === 'vietqr' ? '#000000' : '#6B7280'}
+                  />
+                  <Text style={[styles.tabBtnText, activeTab === 'vietqr' && styles.tabBtnTextActive]}>
+                    Mã VietQR động
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={[styles.tabBtn, activeTab === 'custom' && styles.tabBtnActive]}
+                  onPress={() => {
+                    hapticLight();
+                    setActiveTab('custom');
+                  }}
+                >
+                  <Ionicons
+                    name="image-outline"
+                    size={14}
+                    color={activeTab === 'custom' ? '#000000' : '#6B7280'}
+                  />
+                  <Text style={[styles.tabBtnText, activeTab === 'custom' && styles.tabBtnTextActive]}>
+                    Ảnh QR đã lưu
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+
+            {/* 1. Dynamic VietQR Preview */}
+            {activeTab === 'vietqr' && vietQrUrl && (
+              <View style={styles.imageWrapper}>
+                <View style={styles.imageCardShadow}>
+                  <View style={styles.imageCardInner}>
+                    <Image
+                      source={{ uri: vietQrUrl }}
+                      style={{ width: QR_BOX_SIZE, height: QR_BOX_SIZE }}
+                      resizeMode="contain"
+                    />
+                  </View>
+                </View>
+
+                {/* Bank Account Details Card */}
+                <View style={styles.bankDetailCard}>
+                  <View style={styles.bankDetailRow}>
+                    <Text style={styles.bankDetailLabel}>Ngân hàng:</Text>
+                    <Pressable
+                      style={styles.copyPill}
+                      onPress={() => handleCopyText(bankInfo?.shortName || currentWallet.name, 'Tên ngân hàng')}
+                    >
+                      <Text style={styles.bankDetailVal}>{bankInfo?.shortName || currentWallet.name}</Text>
+                      <Ionicons name="copy-outline" size={12} color="#000000" />
+                    </Pressable>
+                  </View>
+
+                  <View style={[styles.bankDetailRow, { marginTop: 6 }]}>
+                    <Text style={styles.bankDetailLabel}>Số tài khoản:</Text>
+                    <Pressable
+                      style={styles.copyPill}
+                      onPress={() => handleCopyText(currentWallet.bank_account || '', 'Số tài khoản')}
+                    >
+                      <Text style={[styles.bankDetailVal, { color: '#047857' }]}>
+                        {currentWallet.bank_account}
+                      </Text>
+                      <Ionicons name="copy-outline" size={12} color="#047857" />
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            )}
+
+            {/* 2. Custom Uploaded Image QR Preview */}
+            {activeTab === 'custom' && currentWallet.qr_image_uri && (
               <View style={styles.imageWrapper}>
                 <View style={styles.imageCardShadow}>
                   <View style={styles.imageCardInner}>
@@ -205,20 +378,41 @@ export const WalletQRModal: React.FC<WalletQRModalProps> = ({
                   </Pressable>
                 </View>
               </View>
-            ) : (
+            )}
+
+            {/* 3. Empty state: Neither VietQR nor Custom Image */}
+            {!hasVietQr && !hasCustomImage && (
               <View style={styles.emptyBox}>
                 <View style={styles.emptyIconCircle}>
                   <Ionicons name="qr-code-outline" size={36} color="#000000" />
                 </View>
-                <Text style={styles.emptyTitle}>Chưa có ảnh mã QR</Text>
+                <Text style={styles.emptyTitle}>Chưa có mã QR thanh toán</Text>
                 <Text style={styles.emptyDesc}>
-                  Tải lên ảnh chụp màn hình mã QR nhận tiền (từ app ngân hàng, MoMo, ZaloPay, Cake...) để hiển thị nhanh khi cần bạn bè quét tiền.
+                  Bạn có thể cấu hình số tài khoản ngân hàng để tự tạo mã VietQR chuẩn NAPAS 24/7, hoặc tải lên ảnh chụp mã QR từ thiết bị.
                 </Text>
 
-                <Pressable style={styles.uploadBtn} onPress={handlePickQRImage}>
-                  <Ionicons name="cloud-upload-outline" size={18} color="#000000" />
-                  <Text style={styles.uploadBtnText}>TẢI LÊN ẢNH MÃ QR</Text>
-                </Pressable>
+                <View style={{ width: '100%', gap: 10 }}>
+                  {onConfigureWallet && (
+                    <Pressable
+                      style={styles.uploadBtn}
+                      onPress={() => {
+                        onClose();
+                        onConfigureWallet(currentWallet.id);  
+                      }}
+                    >
+                      <Ionicons name="business-outline" size={18} color="#000000" />
+                      <Text style={styles.uploadBtnText}>CẤU HÌNH NGÂN HÀNG & STK</Text>
+                    </Pressable>
+                  )}
+
+                  <Pressable
+                    style={[styles.uploadBtn, { backgroundColor: '#FFFFFF' }]}
+                    onPress={handlePickQRImage}
+                  >
+                    <Ionicons name="cloud-upload-outline" size={18} color="#000000" />
+                    <Text style={styles.uploadBtnText}>TẢI LÊN ẢNH MÃ QR TỪ MÁY</Text>
+                  </Pressable>
+                </View>
               </View>
             )}
 
@@ -261,7 +455,7 @@ export const WalletQRModal: React.FC<WalletQRModalProps> = ({
           </ScrollView>
 
           {/* Footer */}
-          {currentWallet.qr_image_uri ? (
+          {(hasVietQr || hasCustomImage) ? (
             <View style={styles.footer}>
               <Pressable style={styles.shareBtn} onPress={handleShareImage}>
                 <Ionicons name="share-social-outline" size={18} color="#000000" />
@@ -331,6 +525,78 @@ const styles = StyleSheet.create({
   scrollArea: {
     paddingHorizontal: 20,
     paddingTop: 16,
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    padding: 3,
+    marginBottom: 16,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+  },
+  tabBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  tabBtnActive: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    shadowColor: '#000000',
+    shadowOffset: { width: 1, height: 1 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 2,
+  },
+  tabBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  tabBtnTextActive: {
+    color: '#000000',
+    fontWeight: '900',
+  },
+  bankDetailCard: {
+    width: '100%',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    padding: 10,
+    marginTop: 8,
+  },
+  bankDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  bankDetailLabel: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  bankDetailVal: {
+    fontSize: 12.5,
+    fontWeight: '900',
+    color: '#111827',
+  },
+  copyPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#000000',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
   imageWrapper: {
     alignItems: 'center',
@@ -513,5 +779,76 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#000000',
     letterSpacing: 0.5,
+  },
+  walletPickerSection: {
+    marginBottom: 14,
+    paddingBottom: 10,
+    borderBottomWidth: 1.5,
+    borderBottomColor: '#F3F4F6',
+  },
+  walletPickerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  walletPickerLabel: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#374151',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  walletChipsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 2,
+    paddingRight: 10,
+  },
+  walletChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    backgroundColor: '#FFFFFF',
+  },
+  walletChipSelected: {
+    backgroundColor: THEME.popYellow,
+    shadowColor: '#000000',
+    shadowOffset: { width: 1.5, height: 1.5 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 2,
+  },
+  walletChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#4B5563',
+  },
+  walletChipTextSelected: {
+    color: '#000000',
+    fontWeight: '900',
+  },
+  qrDot: {
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 4,
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#15803D',
+  },
+  qrDotSelected: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#000000',
+  },
+  noQrText: {
+    fontSize: 10,
+    color: '#9CA3AF',
+    fontStyle: 'italic',
   },
 });

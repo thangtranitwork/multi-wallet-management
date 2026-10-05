@@ -91,7 +91,7 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
 
           <Text style={styles.confirmTitle}>Xác nhận xóa giao dịch</Text>
           <Text style={styles.confirmDesc}>
-            Số dư ví sẽ được tự động hoàn tác. Ngài có thể chọn xóa vĩnh viễn hoặc chuyển sang bộ tạo để điền nhanh lại.
+            Số dư ví sẽ được tự động hoàn tác. Bạn có thể chọn xóa vĩnh viễn hoặc chuyển sang bộ tạo để điền lại nhanh.
           </Text>
 
           {/* Transaction Preview Card */}
@@ -157,7 +157,7 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
               >
                 <Ionicons name="refresh-outline" size={20} color="#000000" />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.confirmRecreateText}>Xóa & Tạo lại (Điền nhanh)</Text>
+                  <Text style={styles.confirmRecreateText}>Xóa & Tạo lại</Text>
                   <Text style={styles.confirmRecreateSub}>
                     Xóa GD này và mở lại bộ tạo với thông tin điền sẵn
                   </Text>

@@ -544,6 +544,7 @@ export interface SplitItem {
   amount: number;
   note?: string;
   itemsSummary?: string;
+  items?: string | null;
 }
 
 export async function splitTransactionIntoDebts(
@@ -575,11 +576,18 @@ export async function splitTransactionIntoDebts(
       if (item.amount <= 0 || !item.personName.trim()) continue;
 
       const debtId = `debt_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 6)}`;
+      const cleanTxNote = (tx.note || '')
+        .replace(/\s*\[Đã tách cho [^\]]+\]/g, '')
+        .trim();
+      const baseNote = cleanTxNote || 'Chi tiêu';
+
       const debtNote = item.note?.trim()
         ? item.note.trim()
+        : item.items
+        ? `Tách từ: ${baseNote}`
         : item.itemsSummary?.trim()
-        ? `${item.itemsSummary.trim()} (Tách từ: ${tx.note || 'Chi tiêu'})`
-        : `Tách từ GD: ${tx.note || 'Chi tiêu'}`;
+        ? `${item.itemsSummary.trim()} (Tách từ: ${baseNote})`
+        : `Tách từ: ${baseNote}`;
 
       // Thêm vào bảng debts
       await db.runAsync(
@@ -600,15 +608,22 @@ export async function splitTransactionIntoDebts(
       // Thêm vào bảng transactions bản ghi loại 'debt_lend' tương ứng
       // Không trừ thêm tiền vào ví vì số tiền này đã nằm trong khoản chi ban đầu của tx gốc
       const splitTxId = `tx_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 6)}`;
+      const txNote = item.note?.trim()
+        ? item.note.trim()
+        : item.items
+        ? `Cho ${item.personName.trim()} mượn (Tách từ: ${baseNote})`
+        : `Cho ${item.personName.trim()} mượn: ${debtNote}`.trim();
+
       await db.runAsync(
-        `INSERT INTO transactions (id, type, amount, wallet_id, debt_id, note, transacted_at, created_at)
-         VALUES (?, 'debt_lend', ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO transactions (id, type, amount, wallet_id, debt_id, note, items, transacted_at, created_at)
+         VALUES (?, 'debt_lend', ?, ?, ?, ?, ?, ?, ?)`,
         [
           splitTxId,
           item.amount,
           tx.wallet_id,
           debtId,
-          `Cho ${item.personName.trim()} mượn: ${debtNote}`.trim(),
+          txNote,
+          item.items || null,
           normalizeToIsoString(tx.transacted_at),
           now,
         ]

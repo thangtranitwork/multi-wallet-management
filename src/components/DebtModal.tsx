@@ -257,7 +257,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({
                 </View>
 
                 <View style={styles.sectionContainer}>
-                  <Text style={styles.sectionLabel}>Hạn thanh toán (sau bao nhiêu ngày)</Text>
+                  <Text style={styles.sectionLabel}>Hạn thanh toán</Text>
                   <View style={styles.dueDaysRow}>
                     {['3', '7', '15', '30', '60'].map(d => (
                       <Pressable

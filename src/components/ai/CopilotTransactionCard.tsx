@@ -427,7 +427,7 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
               color={amountColor}
             />
             <Text style={[styles.cardHeaderTagText, { color: amountColor }]}>
-              {isReceive ? 'THU NỢ (TẤT TOÁN KHOẢN CHO VAY)' : 'TRẢ NỢ (TẤT TOÁN KHOẢN VAY)'}
+              {isReceive ? 'THU NỢ' : 'TRẢ NỢ'}
             </Text>
           </View>
 
@@ -854,7 +854,7 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
               color={amountColor}
             />
             <Text style={[styles.cardHeaderTagText, { color: amountColor }]}>
-              {isLend ? 'CHO VAY (SỔ NỢ)' : 'ĐI VAY (SỔ NỢ)'}
+              {isLend ? 'CHO VAY' : 'ĐI VAY'}
             </Text>
           </View>
 

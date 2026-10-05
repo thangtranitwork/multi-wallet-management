@@ -261,7 +261,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
 
     showConfirm(
       'Xác nhận dọn dẹp ảnh',
-      `Hành động này sẽ xóa vĩnh viễn ${storageStats.imageCount} ảnh hóa đơn (${storageStats.totalFormatted}) của ${storageStats.transactionCount} giao dịch trước ngày ${storageStats.cutoffDateStr} để giải phóng bộ nhớ máy.\n\nThông tin giao dịch (số tiền, danh mục, ghi chú) vẫn được lưu giữ nguyên vẹn. Ngài có chắc chắn muốn dọn dẹp không?`,
+      `Hành động này sẽ xóa vĩnh viễn ${storageStats.imageCount} ảnh hóa đơn (${storageStats.totalFormatted}) của ${storageStats.transactionCount} giao dịch trước ngày ${storageStats.cutoffDateStr} để giải phóng bộ nhớ máy.\n\nThông tin giao dịch (số tiền, danh mục, ghi chú) vẫn được lưu giữ nguyên vẹn. Bạn có chắc chắn muốn dọn dẹp không?`,
       async () => {
         try {
           hapticMedium();
@@ -627,8 +627,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
         'Xác nhận khôi phục',
         `Phát hiện dữ liệu gồm:\n• ${wCount} ví tiền\n• ${tCount} giao dịch\n• ${dCount} khoản nợ${cCount ? `\n• ${cCount} người liên hệ` : ''}\n\nChế độ: ${
           importMode === 'replace'
-            ? 'GHI ĐÈ TOÀN BỘ (xóa dữ liệu hiện tại)'
-            : 'HỢP NHẤT (bổ sung dữ liệu)'
+            ? 'GHI ĐÈ TOÀN BỘ • Xóa dữ liệu hiện tại'
+            : 'HỢP NHẤT • Bổ sung dữ liệu'
         }\n\nBạn có muốn tiếp tục?`,
         async () => {
           try {
@@ -1204,7 +1204,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                   <Ionicons name="sparkles" size={17} color="#000000" />
                 </View>
                 <View style={styles.accordionTitleCol}>
-                  <Text style={styles.accordionTitleText}>TRÍ TUỆ NHÂN TẠO (GEMINI AI)</Text>
+                  <Text style={styles.accordionTitleText}>TRÍ TUỆ NHÂN TẠO GEMINI</Text>
                   <Text style={styles.accordionSubtitleText} numberOfLines={1}>
                     Quét hóa đơn & trợ lý Copilot
                   </Text>
@@ -1758,7 +1758,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                   <Ionicons name="cloud-upload" size={17} color="#000000" />
                 </View>
                 <View style={styles.accordionTitleCol}>
-                  <Text style={styles.accordionTitleText}>LƯU TRỮ ĐÁM MÂY (CLOUDINARY)</Text>
+                  <Text style={styles.accordionTitleText}>LƯU TRỮ ĐÁM MÂY CLOUDINARY</Text>
                   <Text style={styles.accordionSubtitleText} numberOfLines={1}>
                     Đồng bộ & sao lưu ảnh hóa đơn
                   </Text>
@@ -1848,7 +1848,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                   <Ionicons name="share-social" size={17} color="#000000" />
                 </View>
                 <View style={styles.accordionTitleCol}>
-                  <Text style={styles.accordionTitleText}>XUẤT DỮ LIỆU (EXPORT)</Text>
+                  <Text style={styles.accordionTitleText}>XUẤT DỮ LIỆU</Text>
                   <Text style={styles.accordionSubtitleText} numberOfLines={1}>
                     Xuất file sao lưu .json & chia sẻ
                   </Text>
@@ -1877,7 +1877,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                     disabled={isProcessing}
                   >
                     <Ionicons name="share-social-outline" size={18} color="#000000" />
-                    <Text style={styles.actionBtnText}>Xuất file sao lưu (.json) & Chia sẻ</Text>
+                    <Text style={styles.actionBtnText}>Xuất file sao lưu & chia sẻ</Text>
                   </Pressable>
 
                   <Pressable
@@ -1910,7 +1910,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                   <Ionicons name="cloud-download" size={17} color="#000000" />
                 </View>
                 <View style={styles.accordionTitleCol}>
-                  <Text style={styles.accordionTitleText}>NHẬP DỮ LIỆU (IMPORT)</Text>
+                  <Text style={styles.accordionTitleText}>NHẬP DỮ LIỆU</Text>
                   <Text style={styles.accordionSubtitleText} numberOfLines={1}>
                     Khôi phục từ file hoặc mã JSON
                   </Text>
@@ -1994,7 +1994,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                   disabled={isProcessing}
                 >
                   <Ionicons name="document-attach-outline" size={18} color="#000000" />
-                  <Text style={styles.actionBtnText}>Chọn file sao lưu (.json) từ máy</Text>
+                  <Text style={styles.actionBtnText}>Chọn file sao lưu từ máy</Text>
                 </Pressable>
 
                 <Pressable
@@ -2056,7 +2056,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                     <Ionicons name="hardware-chip-outline" size={18} color="#000000" />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.settingRowTitle}>Rung phản hồi (Haptic)</Text>
+                    <Text style={styles.settingRowTitle}>Rung phản hồi</Text>
                     <Text style={styles.settingRowDesc}>
                       {hapticsEnabled
                         ? 'Đang bật • Rung nhẹ khi bấm phím & thao tác'
@@ -2121,7 +2121,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                     <Ionicons name="apps-outline" size={18} color="#000000" />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.settingRowTitle}>Tiện ích màn hình chính (Widget 4x2)</Text>
+                    <Text style={styles.settingRowTitle}>Tiện ích màn hình chính</Text>
                     <Text style={styles.settingRowDesc}>
                       Xem nhanh số dư, thu/chi tháng, bấm mắt ẩn/hiện và tạo nhanh giao dịch (+/-).
                     </Text>
@@ -2160,7 +2160,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                     <Ionicons name="terminal-outline" size={18} color="#000000" />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.settingRowTitle}>Nhật ký hoạt động (Logs)</Text>
+                    <Text style={styles.settingRowTitle}>Nhật ký hoạt động</Text>
                     <Text style={styles.settingRowDesc}>
                       Xem lịch sử database, gọi Gemini AI, đồng bộ Cloud & lỗi hệ thống.
                     </Text>
@@ -2187,7 +2187,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                 disabled={isProcessing}
               >
                 <Ionicons name="trash-outline" size={18} color="#E11D48" />
-                <Text style={styles.dangerResetText}>Đặt lại ứng dụng ban đầu (Xóa tất cả)</Text>
+                <Text style={styles.dangerResetText}>Đặt lại ứng dụng ban đầu</Text>
               </Pressable>
             </View>
             )}
@@ -2341,7 +2341,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                     onPress={handleTestNotification}
                   >
                     <Ionicons name="paper-plane-outline" size={18} color="#000000" />
-                    <Text style={styles.actionBtnText}>Gửi thông báo thử nghiệm ngay (2s)</Text>
+                    <Text style={styles.actionBtnText}>Gửi thông báo thử nghiệm ngay</Text>
                   </Pressable>
                 </>
               )}

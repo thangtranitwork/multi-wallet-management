@@ -367,7 +367,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
 
                   {showAdvanced && (
                     <View style={styles.advancedBox}>
-                      <Text style={styles.advancedLabel}>Google OAuth Client ID (Android):</Text>
+                      <Text style={styles.advancedLabel}>Google OAuth Client ID:</Text>
                       <View style={styles.clientIdInputRow}>
                         <TextInput
                           style={[styles.advancedInput, { flex: 1 }]}

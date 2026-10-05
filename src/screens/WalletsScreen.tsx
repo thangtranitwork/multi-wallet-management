@@ -249,7 +249,7 @@ export const WalletsScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
               </View>
               <Text style={styles.emptyTitle}>Chưa có ví nào!</Text>
               <Text style={styles.emptySub}>
-                Tạo một nguồn tiền để bắt đầu ghi chép dòng tiền của Ngài
+                Tạo một nguồn tiền để bắt đầu ghi chép dòng tiền của bạn
               </Text>
 
               <View style={styles.presetsGrid}>
@@ -319,6 +319,11 @@ export const WalletsScreen: React.FC<{ navigation: any }> = ({ navigation }) => 
           visible={true}
           onClose={() => setQrWallet(null)}
           wallet={qrWallet}
+          onConfigureWallet={wId => {
+            setQrWallet(null);
+            const target = wallets.find(w => w.id === wId);
+            if (target) setEditingWallet(target);
+          }}
         />
       )}
     </SafeAreaView>

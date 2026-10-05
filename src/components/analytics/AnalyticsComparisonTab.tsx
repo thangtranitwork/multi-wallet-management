@@ -250,7 +250,7 @@ export const AnalyticsComparisonTab: React.FC<AnalyticsComparisonTabProps> = ({
             {/* Metric 3: Net Savings */}
             <View style={[styles.compMetricCard, { marginTop: 10 }]}>
               <View style={styles.compMetricHeader}>
-                <Text style={styles.compMetricLabel}>THẶNG DƯ (TIẾT KIỆM)</Text>
+                <Text style={styles.compMetricLabel}>THẶNG DƯ TIẾT KIỆM</Text>
                 <Text
                   style={[
                     styles.compDeltaNetText,
