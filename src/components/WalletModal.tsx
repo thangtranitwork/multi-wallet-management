@@ -538,6 +538,13 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                         setIsBankPickerOpen(true);
                       }}
                     >
+                      {findBankByBin(bankBin)?.logo ? (
+                        <Image
+                          source={{ uri: findBankByBin(bankBin)!.logo }}
+                          style={styles.bankSelectedLogo}
+                          resizeMode="contain"
+                        />
+                      ) : null}
                       <View style={{ flex: 1 }}>
                         <Text style={styles.bankSelectName}>
                           {findBankByBin(bankBin)?.shortName || (bankBin.trim() ? `Mã BIN: ${bankBin.trim()}` : (type === 'e_wallet' ? 'Chọn ví / đơn vị...' : 'Chọn ngân hàng...'))}
@@ -839,7 +846,15 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                       }}
                     >
                       <View style={styles.bankListCodeBadge}>
-                        <Text style={styles.bankListCodeText}>{b.code}</Text>
+                        {b.logo ? (
+                          <Image
+                            source={{ uri: b.logo }}
+                            style={styles.bankListLogoImg}
+                            resizeMode="contain"
+                          />
+                        ) : (
+                          <Text style={styles.bankListCodeText}>{b.code}</Text>
+                        )}
                       </View>
                       <View style={styles.bankListTextCol}>
                         <Text style={styles.bankListShortName}>{b.shortName}</Text>
@@ -1310,6 +1325,16 @@ const styles = StyleSheet.create({
     marginRight: 10,
     minWidth: 50,
     alignItems: 'center',
+  },
+  bankSelectedLogo: {
+    width: 36,
+    height: 24,
+    marginRight: 10,
+    borderRadius: 4,
+  },
+  bankListLogoImg: {
+    width: 44,
+    height: 22,
   },
   bankListCodeText: {
     fontSize: 10.5,

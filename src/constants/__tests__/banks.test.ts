@@ -1,14 +1,43 @@
 import { describe, it, expect } from '@jest/globals';
-import { VIETNAMESE_BANKS, findBankByBin, findBankByName } from '../banks';
+import {
+  VIETNAMESE_BANKS,
+  findBankByBin,
+  findBankByName,
+  getBankDeeplinkUrl,
+} from '../banks';
 
 describe('banks constant', () => {
-  it('includes MoMo with BIN 971025', () => {
+  it('includes MoMo with BIN 971025 and correct logo and appId', () => {
     const momo = findBankByBin('971025');
     expect(momo).toBeDefined();
     expect(momo?.bin).toBe('971025');
     expect(momo?.shortName).toBe('MoMo');
     expect(momo?.code).toBe('MOMO');
+    expect(momo?.logo).toBe('https://cdn.vietqr.io/img/momo.png');
+    expect(momo?.appId).toBe('momo');
     expect(momo?.name).toContain('MoMo');
+  });
+
+  it('provides logo URLs and appIds for major banks', () => {
+    const mb = findBankByBin('970422');
+    expect(mb?.logo).toBe('https://cdn.vietqr.io/img/MB.png');
+    expect(mb?.appId).toBe('mb');
+
+    const vcb = findBankByBin('970436');
+    expect(vcb?.logo).toBe('https://cdn.vietqr.io/img/VCB.png');
+    expect(vcb?.appId).toBe('vcb');
+
+    const tcb = findBankByBin('970407');
+    expect(tcb?.logo).toBe('https://cdn.vietqr.io/img/TCB.png');
+    expect(tcb?.appId).toBe('tcb');
+
+    const bidv = findBankByBin('970418');
+    expect(bidv?.logo).toBe('https://cdn.vietqr.io/img/BIDV.png');
+    expect(bidv?.appId).toBe('bidv');
+
+    const icb = findBankByBin('970415');
+    expect(icb?.logo).toBe('https://cdn.vietqr.io/img/ICB.png');
+    expect(icb?.appId).toBe('icb');
   });
 
   it('finds bank by BIN correctly', () => {
@@ -35,6 +64,37 @@ describe('banks constant', () => {
     );
     expect(matches.length).toBeGreaterThanOrEqual(1);
     expect(matches.some(b => b.bin === '971025')).toBe(true);
+  });
+
+  describe('getBankDeeplinkUrl', () => {
+    it('generates base deeplink url for standard bank', () => {
+      const mb = findBankByBin('970422');
+      expect(getBankDeeplinkUrl(mb)).toBe('https://dl.vietqr.io/pay?app=mb');
+    });
+
+    it('generates custom scheme for MoMo', () => {
+      const momo = findBankByBin('971025');
+      expect(getBankDeeplinkUrl(momo)).toBe('momo://');
+    });
+
+    it('generates parameterized deeplink url with account, bankCode, amount, and note', () => {
+      const mb = findBankByBin('970422');
+      const url = getBankDeeplinkUrl(mb, {
+        account: '1234567890',
+        bankCode: 'VCB',
+        amount: 500000,
+        note: 'Tra no anh Nam',
+      });
+      expect(url).toBe(
+        'https://dl.vietqr.io/pay?app=mb&ba=1234567890@vcb&am=500000&tn=Tra%20no%20anh%20Nam'
+      );
+    });
+
+    it('returns undefined if bank has no appId or is null', () => {
+      expect(getBankDeeplinkUrl(null)).toBeUndefined();
+      const sacombank = findBankByBin('970403');
+      expect(getBankDeeplinkUrl(sacombank)).toBeUndefined();
+    });
   });
 
   describe('findBankByName - auto detect BIN from wallet name', () => {
