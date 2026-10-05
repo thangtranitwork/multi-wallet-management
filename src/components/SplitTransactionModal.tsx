@@ -259,7 +259,66 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
         const nextIds = exists
           ? currentAssigned.filter(id => id !== memberId)
           : [...currentAssigned, memberId];
-        return { ...it, assignedMemberIds: nextIds };
+        
+        let nextQuantities = it.memberQuantities ? { ...it.memberQuantities } : undefined;
+        if (nextQuantities) {
+          if (exists) {
+            delete nextQuantities[memberId];
+          } else {
+            nextQuantities[memberId] = 1;
+          }
+        }
+        return { ...it, assignedMemberIds: nextIds, memberQuantities: nextQuantities };
+      })
+    );
+  };
+
+  const handleUpdateMemberQuantity = (itemId: string, memberId: string, delta: number) => {
+    hapticLight();
+    setBillItems(prev =>
+      prev.map(it => {
+        if (it.id !== itemId) return it;
+        const currentAssigned = it.assignedMemberIds || [];
+        const customMap = { ...(it.memberQuantities || {}) };
+
+        // Nếu trước đó chưa gán số lượng riêng, khởi tạo mặc định cho tất cả người được chọn
+        if (!it.memberQuantities) {
+          const basePerMember = Math.max(0, Math.floor(it.quantity / (currentAssigned.length || 1)));
+          let remainder = it.quantity - (basePerMember * currentAssigned.length);
+          currentAssigned.forEach(id => {
+            const extra = remainder > 0 ? 1 : 0;
+            customMap[id] = basePerMember + extra;
+            remainder = Math.max(0, remainder - 1);
+          });
+        }
+
+        const currentVal = customMap[memberId] ?? 0;
+        const nextVal = Math.max(0, currentVal + delta);
+        customMap[memberId] = nextVal;
+
+        // Nếu số lượng > 0 mà chưa nằm trong assignedMemberIds thì tự thêm vào
+        let nextAssigned = [...currentAssigned];
+        if (nextVal > 0 && !nextAssigned.includes(memberId)) {
+          nextAssigned.push(memberId);
+        }
+
+        return {
+          ...it,
+          assignedMemberIds: nextAssigned,
+          memberQuantities: customMap,
+        };
+      })
+    );
+  };
+
+  const handleResetEqualQuantities = (itemId: string) => {
+    hapticLight();
+    setBillItems(prev =>
+      prev.map(it => {
+        if (it.id !== itemId) return it;
+        const next = { ...it };
+        delete next.memberQuantities;
+        return next;
       })
     );
   };
@@ -272,10 +331,12 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
         const allIds = billMembers.map(m => m.id);
         const currentAssigned = it.assignedMemberIds || [];
         const isAllSelected = allIds.length > 0 && allIds.every(id => currentAssigned.includes(id));
-        return {
+        const next = {
           ...it,
           assignedMemberIds: isAllSelected ? ['me'] : allIds,
         };
+        delete next.memberQuantities;
+        return next;
       })
     );
   };
@@ -874,6 +935,76 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
                           );
                         })}
                       </View>
+
+                      {/* Tùy chỉnh số lượng theo người */}
+                      {currentAssigned.length > 0 && (
+                        item.memberQuantities ? (
+                          <View style={styles.qtyAllocBox}>
+                            <View style={styles.qtyAllocHeader}>
+                              <View style={styles.qtyAllocTitleRow}>
+                                <Ionicons name="calculator-outline" size={13} color="#1E293B" />
+                                <Text style={styles.qtyAllocTitle}>
+                                  Chia theo SL ({Object.values(item.memberQuantities).reduce((a, b) => a + (b || 0), 0)}/{item.quantity} cái):
+                                </Text>
+                              </View>
+                              <Pressable
+                                style={styles.qtyResetBtn}
+                                onPress={() => handleResetEqualQuantities(item.id)}
+                              >
+                                <Ionicons name="refresh-outline" size={11} color="#4B5563" />
+                                <Text style={styles.qtyResetText}>Chia đều</Text>
+                              </Pressable>
+                            </View>
+
+                            {billMembers
+                              .filter(m => currentAssigned.includes(m.id))
+                              .map(m => {
+                                const qty = item.memberQuantities?.[m.id] ?? 0;
+                                const totalAlloc = Object.values(item.memberQuantities || {}).reduce((a, b) => a + (b || 0), 0);
+                                const memberShareAmt = totalAlloc > 0
+                                  ? Math.round((qty / totalAlloc) * (item.price * item.quantity))
+                                  : 0;
+
+                                return (
+                                  <View key={m.id} style={styles.qtyAllocRow}>
+                                    <View style={styles.qtyAllocMemberInfo}>
+                                      <Text style={styles.qtyAllocMemberName} numberOfLines={1}>{m.name}</Text>
+                                      <Text style={styles.qtyAllocShareAmt}>{formatVND(memberShareAmt)}</Text>
+                                    </View>
+                                    <View style={styles.qtyStepper}>
+                                      <Pressable
+                                        style={[styles.qtyStepBtn, qty <= 0 && styles.qtyStepBtnDisabled]}
+                                        onPress={() => handleUpdateMemberQuantity(item.id, m.id, -1)}
+                                        disabled={qty <= 0}
+                                      >
+                                        <Ionicons name="remove" size={13} color={qty <= 0 ? '#9CA3AF' : '#000'} />
+                                      </Pressable>
+                                      <Text style={styles.qtyStepVal}>{qty}</Text>
+                                      <Pressable
+                                        style={styles.qtyStepBtn}
+                                        onPress={() => handleUpdateMemberQuantity(item.id, m.id, 1)}
+                                      >
+                                        <Ionicons name="add" size={13} color="#000" />
+                                      </Pressable>
+                                    </View>
+                                  </View>
+                                );
+                              })}
+                          </View>
+                        ) : (
+                          item.quantity > 1 ? (
+                            <Pressable
+                              style={styles.enableCustomQtyBtn}
+                              onPress={() => handleUpdateMemberQuantity(item.id, currentAssigned[0], 0)}
+                            >
+                              <Ionicons name="options-outline" size={12} color="#2563EB" />
+                              <Text style={styles.enableCustomQtyText}>
+                                Chia chi tiết số lượng (Món có {item.quantity} cái)
+                              </Text>
+                            </Pressable>
+                          ) : null
+                        )
+                      )}
                     </View>
                   );
                 })}
@@ -1726,6 +1857,116 @@ const styles = StyleSheet.create({
   memberTagTextActive: {
     color: '#000000',
     fontWeight: '900',
+  },
+  enableCustomQtyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 6,
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#93C5FD',
+    alignSelf: 'flex-start',
+  },
+  enableCustomQtyText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1D4ED8',
+  },
+  qtyAllocBox: {
+    marginTop: 8,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    padding: 8,
+    gap: 6,
+  },
+  qtyAllocHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  qtyAllocTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flex: 1,
+  },
+  qtyAllocTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  qtyResetBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    backgroundColor: '#E2E8F0',
+    borderRadius: 4,
+  },
+  qtyResetText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  qtyAllocRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 3,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  qtyAllocMemberInfo: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  qtyAllocMemberName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0F172A',
+    maxWidth: '55%',
+  },
+  qtyAllocShareAmt: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#059669',
+  },
+  qtyStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  qtyStepBtn: {
+    width: 26,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+  },
+  qtyStepBtnDisabled: {
+    opacity: 0.4,
+  },
+  qtyStepVal: {
+    minWidth: 26,
+    textAlign: 'center',
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#000000',
+    paddingHorizontal: 2,
   },
   addDishBox: {
     backgroundColor: THEME.surface,

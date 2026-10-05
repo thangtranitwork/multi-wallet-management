@@ -10,6 +10,7 @@ import {
   getModelFallbackList,
   formatGeminiErrorMessage,
   isNetworkError,
+  sanitizeReceiptItems,
 } from './geminiService';
 import * as queries from '../database/queries';
 
@@ -441,25 +442,17 @@ function cleanAndParseJSON(raw: string): any {
     }
   }
 
-  // Chuẩn hóa cấu trúc từng item trong items
-  const normalizeItems = (items: any[]): ReceiptItem[] => {
-    if (!Array.isArray(items)) return [];
-    return items
-      .filter(it => it && typeof it === 'object' && it.name)
-      .map(it => ({
-        name: String(it.name).trim(),
-        quantity: typeof it.quantity === 'number' && it.quantity > 0 ? it.quantity : 1,
-        price: typeof it.price === 'number' && it.price >= 0 ? it.price : 0,
-      }));
-  };
-
+  // Chuẩn hóa và làm sạch cấu trúc từng item trong items
   if (parsed.transaction?.items) {
-    parsed.transaction.items = normalizeItems(parsed.transaction.items);
+    parsed.transaction.items = sanitizeReceiptItems(
+      parsed.transaction.items,
+      Number(parsed.transaction.amount) || undefined
+    );
   }
   if (Array.isArray(parsed.transactions)) {
     parsed.transactions.forEach((tx: any) => {
       if (tx?.items) {
-        tx.items = normalizeItems(tx.items);
+        tx.items = sanitizeReceiptItems(tx.items, Number(tx.amount) || undefined);
       }
     });
   }
@@ -523,6 +516,21 @@ function cleanAndParseJSON(raw: string): any {
     (!parsed.transactions || parsed.transactions.length === 0)
   ) {
     parsed.transactions = [parsed.transaction];
+  }
+
+  // Cảnh báo nếu tổng items lệch so với amount của transaction
+  if (parsed.transaction && Array.isArray(parsed.transaction.items) && parsed.transaction.items.length > 0) {
+    const itemsSum = parsed.transaction.items.reduce((s: number, it: any) => s + ((it.price || 0) * (it.quantity || 1)), 0);
+    const txAmount = Number(parsed.transaction.amount) || 0;
+    const diff = Math.abs(itemsSum - txAmount);
+
+    if (itemsSum > 0 && txAmount > 0 && diff > 100) {
+      const reasonHint = itemsSum > txAmount ? 'do chiết khấu/giảm giá' : 'do phụ thu/thuế VAT';
+      const warningText = `\n\n⚠️ Lưu ý: Tổng tiền ${parsed.transaction.items.length} món là ${itemsSum.toLocaleString('vi-VN')} đ (lệch ${diff.toLocaleString('vi-VN')} đ so với số tiền thanh toán ${txAmount.toLocaleString('vi-VN')} đ, có thể ${reasonHint}). Bạn xem kỹ thẻ bên dưới trước khi bấm lưu nhé!`;
+      if (typeof parsed.message === 'string' && !parsed.message.includes('Lưu ý: Tổng tiền')) {
+        parsed.message += warningText;
+      }
+    }
   }
 
   // Lọc các hành động tài chính khác nếu amount <= 0 hoặc thiếu thông tin cốt lõi
@@ -796,7 +804,16 @@ QUY TẮC NHẬN DIỆN HÌNH ẢNH & ĐA PHƯƠNG THỨC (MULTIMODAL - ẢNH / 
    - Trường hợp A - Hóa đơn / Biên lai / Bill thanh toán / Phiếu thu / Vé / Màn hình chuyển khoản:
      + Bóc tách số tiền tổng thực tế thanh toán (amount), thời gian (transacted_at), phân loại danh mục (category_id, category_name) và tạo giao dịch ("create_transaction").
      + BÓC TÁCH CHI TIẾT TỪNG MÓN (ITEMS) TRONG HÓA ĐƠN VÀO TRƯỜNG "items":
-       Mỗi món gồm { "name": string (tên món hàng/món ăn), "quantity": number (số lượng, mặc định 1), "price": number (đơn giá hoặc thành tiền bằng VND, nếu không có để 0) }.
+       Mỗi món gồm { "name": string, "quantity": number, "price": number }.
+       ⚠️ QUY TẮC CỐT LÕI VỀ "price" VÀ "quantity":
+       * "price" BẮT BUỘC LÀ ĐƠN GIÁ CỦA 1 SẢN PHẨM (UNIT PRICE), KHÔNG ĐƯỢC LẤY CỘT THÀNH TIỀN KHI SỐ LƯỢNG > 1.
+       * Trên hóa đơn thông thường có 4 cột: [Tên hàng] [Số lượng] [Đơn giá] [Thành tiền].
+         Ví dụ trên hóa đơn: "Hảo Hảo Big 100 | SL: 4 | Đơn giá: 6,500 | Thành tiền: 26,000"
+         -> ĐIỀN: { "name": "Hảo Hảo Big 100", "quantity": 4, "price": 6500 }
+         -> TUYỆT ĐỐI CẤM: Không được điền { "quantity": 4, "price": 26000 } vì khi đó hệ thống tính 4 x 26.000 = 104.000 là SAI HOÀN TOÀN!
+         -> Luôn kiểm tra: (quantity * price) PHẢI bằng đúng cột Thành tiền của dòng đó!
+       * Nếu hóa đơn chỉ in Thành tiền mà không in đơn giá: price = Math.round(Thành_tiền / quantity).
+       * Đối chiếu tổng tiền: sum(quantity * price) của tất cả món phải khớp hoặc chênh lệch đúng bằng voucher giảm giá/chiết khấu/thuế so với amount.
        Ví dụ: "items": [
          { "name": "Cà phê sữa đá", "quantity": 2, "price": 30000 },
          { "name": "Bánh mì que", "quantity": 1, "price": 15000 }

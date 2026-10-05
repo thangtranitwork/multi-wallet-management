@@ -279,6 +279,17 @@ export async function updateTransactionImages(
   );
 }
 
+export async function updateTransactionItems(
+  db: SQLite.SQLiteDatabase,
+  transactionId: string,
+  items: string | null
+): Promise<void> {
+  await db.runAsync(
+    'UPDATE transactions SET items = ? WHERE id = ?',
+    [items, transactionId]
+  );
+}
+
 export async function deleteTransaction(
   db: SQLite.SQLiteDatabase,
   id: string

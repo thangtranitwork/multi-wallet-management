@@ -247,7 +247,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
           hapticSuccess();
           showAlert(
             'Khôi phục thành công',
-            `Đã nạp lại:\n• ${res.walletsCount} ví tiền\n• ${res.transactionsCount} giao dịch\n• ${res.debtsCount} khoản nợ${res.contactsCount ? `\n• ${res.contactsCount} người liên hệ` : ''}`
+            `Đã nạp lại:\n• ${res.walletsCount} ví tiền\n• ${res.transactionsCount} giao dịch\n• ${res.debtsCount} khoản nợ`
           );
         } catch (err: any) {
           hapticError();

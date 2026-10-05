@@ -1,7 +1,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import * as SQLite from 'expo-sqlite';
 import dayjs from 'dayjs';
-import { Category, ReceiptScanResult, Wallet } from '../types';
+import { Category, ReceiptScanResult, Wallet, ReceiptItem } from '../types';
 import { getAppSetting, setAppSetting } from '../database/queries';
 import {
   getCloudinaryConfig,
@@ -423,6 +423,73 @@ export async function testGeminiConnection(
   };
 }
 
+export function sanitizeReceiptItems(
+  items: any[],
+  targetAmount?: number
+): ReceiptItem[] {
+  if (!Array.isArray(items)) return [];
+  let list: ReceiptItem[] = items
+    .filter(it => it && typeof it === 'object' && it.name)
+    .map(it => ({
+      name: String(it.name).trim(),
+      quantity: typeof it.quantity === 'number' && it.quantity > 0 ? Math.round(it.quantity) : 1,
+      price: typeof it.price === 'number' && it.price >= 0 ? Math.round(it.price) : 0,
+    }))
+    .filter(it => it.name.length > 0);
+
+  if (list.length === 0) return [];
+
+  const finalAmount = targetAmount && targetAmount > 0 ? targetAmount : 0;
+  if (finalAmount > 0) {
+    const sumAssumingUnitPrice = list.reduce(
+      (acc, it) => acc + (it.price || 0) * (it.quantity || 1),
+      0
+    );
+    const sumAssumingLineTotal = list.reduce((acc, it) => acc + (it.price || 0), 0);
+
+    const hasMultiQty = list.some(it => (it.quantity || 1) > 1);
+
+    // Kịch bản A: Tổng nhân (sumAssumingUnitPrice) vượt quá tổng hóa đơn đáng kể (> 8%),
+    // trong khi tổng đơn thuần (sumAssumingLineTotal) lại gần với hóa đơn hơn nhiều:
+    // Chứng tỏ LLM đã lấy cột Thành tiền làm "price" cho các món có quantity > 1.
+    if (
+      hasMultiQty &&
+      sumAssumingUnitPrice > finalAmount * 1.08 &&
+      Math.abs(sumAssumingLineTotal - finalAmount) < Math.abs(sumAssumingUnitPrice - finalAmount)
+    ) {
+      list = list.map(it => {
+        const q = it.quantity || 1;
+        const p = it.price || 0;
+        if (q > 1 && p > 0) {
+          return {
+            ...it,
+            price: Math.max(1, Math.round(p / q)),
+          };
+        }
+        return it;
+      });
+    } else {
+      // Kịch bản B: Kiểm tra từng món: nếu riêng 1 món đã có (price * quantity) > finalAmount * 0.9
+      // nhưng price <= finalAmount (tức price thực chất là thành tiền của món đó):
+      list = list.map(it => {
+        const q = it.quantity || 1;
+        const p = it.price || 0;
+        if (q > 1 && p > 0) {
+          if (p * q > finalAmount * 0.9 && p <= finalAmount) {
+            return {
+              ...it,
+              price: Math.max(1, Math.round(p / q)),
+            };
+          }
+        }
+        return it;
+      });
+    }
+  }
+
+  return list;
+}
+
 /**
  * Đọc và phân tích một hoặc nhiều ảnh (hóa đơn, đồ ăn, món hàng, màn hình chuyển khoản) bằng Gemini Vision API
  */
@@ -543,6 +610,21 @@ HÌNH ẢNH ĐƯỢC TẢI LÊN CÓ THỂ THUỘC CÁC TRƯỜNG HỢP SAU:
    - "detected_payment_method": Tên phương thức / app / ngân hàng nhận diện được (ví dụ: "MoMo", "Vietcombank", "MB Bank", "Tiền mặt", "Thẻ tín dụng Visa"...), nếu không có để null.
    - "wallet_id": Đối chiếu với danh sách ví của người dùng bên dưới. Nếu tìm thấy ví phù hợp nhất thì điền ID của ví đó, nếu không trùng hoặc không rõ thì để null.
 
+5. ĐỐI CHIẾU & TÍNH TOÁN GIÁ CÁC MÓN VỚI TỔNG TIỀN (RECONCILE ITEMS & TOTAL AMOUNT):
+   - ⚠️ PHÂN BIỆT RÕ CỘT [ĐƠN GIÁ] VÀ [THÀNH TIỀN]:
+     + Hóa đơn thường in: [Tên hàng] [Số lượng] [Đơn giá] [Thành tiền].
+     + Trường "price" trong items BẮT BUỘC là ĐƠN GIÁ của 1 sản phẩm (UNIT PRICE).
+     + Ví dụ: "Hảo Hảo Big 100 | SL: 4 | Đơn giá: 6,500 | Thành tiền: 26,000"
+       -> ĐIỀN: { "name": "Hảo Hảo Big 100", "quantity": 4, "price": 6500 }
+       -> TUYỆT ĐỐI KHÔNG ĐIỀN { "quantity": 4, "price": 26000 } vì khi đó 4 * 26.000 = 104.000 là SAI HOÀN TOÀN!
+     + Nếu hóa đơn chỉ in Thành tiền mà không in Đơn giá: tính price = Math.round(Thành_tiền / quantity).
+   - Hãy tính tổng thành tiền của danh sách món: sum_items = sum(quantity * price).
+   - So sánh sum_items với tổng số tiền thanh toán thực tế (amount):
+     + sum_items phải khớp hoặc chỉ lệch do thuế VAT / chiết khấu giảm giá.
+     + Nếu sum_items lớn hơn bất thường so với amount, hãy kiểm tra lại ngay xem có dòng nào bị nhầm cột Thành tiền thành Đơn giá không!
+     + Nếu hóa đơn có thuế VAT, phí dịch vụ hoặc giảm giá voucher: amount phải là số tiền thanh toán thực tế cuối cùng sau thuế và giảm giá.
+     + Nếu trường 'amount' bị thiếu, bị mờ hoặc = 0 nhưng danh sách món (items) có đơn giá rõ ràng: hãy lấy tổng các món (sum_items) làm giá trị cho 'amount'.
+
 DANH SÁCH DANH MỤC CHI TIÊU CỦA NGƯỜI DÙNG:
 ${catPromptList}
 
@@ -561,7 +643,7 @@ HÃY TRẢ VỀ ĐÚNG ĐỊNH DẠNG JSON SAU (TUYỆT ĐỐI KHÔNG KÈM TEXT 
     {
       "name": string (tên món hàng/món ăn),
       "quantity": number (số lượng, mặc định 1),
-      "price": number (đơn giá hoặc thành tiền bằng VND, nếu không có để 0)
+      "price": number (BẮT BUỘC LÀ ĐƠN GIÁ CỦA 1 SẢN PHẨM bằng VND. TUYỆT ĐỐI KHÔNG điền cột thành tiền vào price khi số lượng > 1, ví dụ mua 4 gói mì hết 26.000đ thì quantity: 4, price: 6500)
     }
   ],
   "confidence": number (độ tin cậy từ 0.0 đến 1.0)
@@ -624,8 +706,19 @@ LƯU Ý QUAN TRỌNG:
 
         const parsed = JSON.parse(rawText);
         const isFallback = model !== originalPreferredModel;
+        let finalAmount = typeof parsed.amount === 'number' ? Math.round(parsed.amount) : 0;
+        const sanitizedItems = sanitizeReceiptItems(parsed.items, finalAmount);
+        const itemsSum = sanitizedItems.reduce((acc: number, it: any) => acc + (it.price * (it.quantity || 1)), 0);
+
+        // Nếu amount = 0 mà items có giá tiền, tự động lấy tổng các items làm amount
+        if (finalAmount <= 0 && itemsSum > 0) {
+          finalAmount = itemsSum;
+        }
+
+        const hasDiscrepancy = sanitizedItems.length > 0 && itemsSum > 0 && finalAmount > 0 && Math.abs(itemsSum - finalAmount) > 100;
+
         return {
-          amount: typeof parsed.amount === 'number' ? Math.round(parsed.amount) : 0,
+          amount: finalAmount,
           note: typeof parsed.note === 'string' ? parsed.note.trim() : '',
           category_id: typeof parsed.category_id === 'string' ? parsed.category_id : null,
           category_name: typeof parsed.category_name === 'string' ? parsed.category_name : null,
@@ -635,13 +728,9 @@ LƯU Ý QUAN TRỌNG:
               ? parsed.detected_payment_method.trim()
               : null,
           transacted_at: typeof parsed.transacted_at === 'string' ? normalizeToIsoString(parsed.transacted_at) : null,
-          items: Array.isArray(parsed.items)
-            ? parsed.items.map((it: any) => ({
-                name: String(it.name || ''),
-                quantity: typeof it.quantity === 'number' ? it.quantity : 1,
-                price: typeof it.price === 'number' ? it.price : 0,
-              }))
-            : [],
+          items: sanitizedItems,
+          items_sum: itemsSum,
+          has_discrepancy: hasDiscrepancy,
           confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.9,
           used_model: model,
           is_fallback: isFallback,

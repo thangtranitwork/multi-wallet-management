@@ -69,12 +69,45 @@ export function calculateItemizedBillShares(
     if (assignedIds.length === 0) {
       unassignedCount++;
     } else {
-      const sharePerAssignedMember = itemTotal / assignedIds.length;
-      assignedIds.forEach(id => {
-        if (memberItemTotals[id] !== undefined) {
-          memberItemTotals[id] += sharePerAssignedMember;
+      // Kiểm tra xem món này có chia theo số lượng riêng cho từng người (memberQuantities) không
+      const customQtyMap = item.memberQuantities;
+      const hasCustomQuantities =
+        customQtyMap &&
+        assignedIds.some(id => typeof customQtyMap[id] === 'number' && customQtyMap[id] > 0);
+
+      if (hasCustomQuantities) {
+        const totalAssignedQty = assignedIds.reduce(
+          (sum, id) => sum + Math.max(0, customQtyMap[id] || 0),
+          0
+        );
+
+        if (totalAssignedQty > 0) {
+          // Chia tiền món theo tỷ lệ số lượng từng người sử dụng
+          assignedIds.forEach(id => {
+            const memberQty = Math.max(0, customQtyMap[id] || 0);
+            const memberShare = (memberQty / totalAssignedQty) * itemTotal;
+            if (memberItemTotals[id] !== undefined) {
+              memberItemTotals[id] += memberShare;
+            }
+          });
+        } else {
+          // Dự phòng chia đều nếu các số lượng nhập đều là 0
+          const sharePerAssignedMember = itemTotal / assignedIds.length;
+          assignedIds.forEach(id => {
+            if (memberItemTotals[id] !== undefined) {
+              memberItemTotals[id] += sharePerAssignedMember;
+            }
+          });
         }
-      });
+      } else {
+        // Mặc định chia đều theo số người dùng
+        const sharePerAssignedMember = itemTotal / assignedIds.length;
+        assignedIds.forEach(id => {
+          if (memberItemTotals[id] !== undefined) {
+            memberItemTotals[id] += sharePerAssignedMember;
+          }
+        });
+      }
     }
   });
 

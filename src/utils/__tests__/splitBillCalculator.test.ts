@@ -60,4 +60,32 @@ describe('splitBillCalculator', () => {
     const shareA = result.shares.find(s => s.memberId === 'user_1');
     expect(shareA?.finalAmount).toBe(90000);
   });
+
+  it('calculates custom quantity shares correctly (e.g. 4 beers: me 1, user_1 3)', () => {
+    const items: BillItem[] = [
+      {
+        id: 'i_beer',
+        name: 'Bia Tiger',
+        price: 25000,
+        quantity: 4,
+        assignedMemberIds: ['me', 'user_1'],
+        memberQuantities: {
+          me: 1,
+          user_1: 3,
+        },
+      },
+    ];
+    const adjustments: BillAdjustment[] = [];
+
+    const result = calculateItemizedBillShares(100000, members, items, adjustments);
+    expect(result.calculatedTotal).toBe(100000);
+
+    const shareMe = result.shares.find(s => s.memberId === 'me');
+    const shareA = result.shares.find(s => s.memberId === 'user_1');
+    const shareB = result.shares.find(s => s.memberId === 'user_2');
+
+    expect(shareMe?.finalAmount).toBe(25000); // 1 * 25k
+    expect(shareA?.finalAmount).toBe(75000);  // 3 * 25k
+    expect(shareB?.finalAmount).toBe(0);      // not assigned
+  });
 });

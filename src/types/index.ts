@@ -77,6 +77,8 @@ export interface ReceiptScanResult {
   wallet_id?: string | null;
   detected_payment_method?: string | null;
   items?: ReceiptItem[];
+  items_sum?: number;
+  has_discrepancy?: boolean;
   confidence?: number;
   used_model?: string;
   is_fallback?: boolean;
@@ -226,6 +228,7 @@ export interface BillItem {
   quantity: number;
   price: number;
   assignedMemberIds: string[]; // Danh sách memberId cùng chia món này
+  memberQuantities?: Record<string, number>; // Số lượng cụ thể gán cho từng memberId, ví dụ { 'me': 1, 'user_a': 3 }
 }
 
 export interface BillAdjustment {

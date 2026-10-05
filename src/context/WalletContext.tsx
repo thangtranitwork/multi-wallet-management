@@ -74,6 +74,7 @@ interface WalletContextType {
   ) => Promise<void>;
   updateTransactionAmortized: (transactionId: string, isAmortized: boolean) => Promise<void>;
   updateTransactionImages: (transactionId: string, imageUris: string[]) => Promise<void>;
+  updateTransactionItems: (transactionId: string, items: string | null) => Promise<void>;
   purgeReceiptImages: (olderThanDays: number) => Promise<{ cleanedTransactions: number; cleanedImages: number; freedFormatted: string; cutoffDateStr: string }>;
   splitTransaction: (transactionId: string, splits: queries.SplitItem[], updatedOriginalItems?: string | null) => Promise<void>;
   addWallet: (wallet: Omit<Wallet, 'id' | 'created_at'>) => Promise<void>;
@@ -380,6 +381,12 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const updateTransactionImages = async (transactionId: string, imageUris: string[]) => {
     await queries.updateTransactionImages(db, transactionId, imageUris);
+    await refreshData();
+    triggerAutoBackup();
+  };
+
+  const updateTransactionItems = async (transactionId: string, items: string | null) => {
+    await queries.updateTransactionItems(db, transactionId, items);
     await refreshData();
     triggerAutoBackup();
   };
@@ -695,6 +702,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         updateTransactionDetails,
         updateTransactionAmortized,
         updateTransactionImages,
+        updateTransactionItems,
         purgeReceiptImages,
         splitTransaction,
         addWallet,

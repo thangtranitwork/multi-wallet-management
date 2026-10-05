@@ -19,7 +19,7 @@ import { useWallet } from '../context/WalletContext';
 import { useSecurity } from '../context/SecurityContext';
 import { NeoDropdown } from './NeoDropdown';
 import { THEME, formatVND } from '../constants';
-import { Wallet, ReceiptScanResult } from '../types';
+import { Wallet, ReceiptScanResult, ReceiptItem } from '../types';
 import { hapticLight, hapticMedium, hapticSuccess, hapticError } from '../utils/haptics';
 import { predictCategory, PredictionResult } from '../services/predictionService';
 import {
@@ -102,6 +102,99 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
   const isSavingRef = useRef(false);
   const scanRequestIdRef = useRef<number>(0);
 
+  // Editable receipt items states
+  const [receiptItems, setReceiptItems] = useState<ReceiptItem[]>([]);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editItemName, setEditItemName] = useState<string>('');
+  const [editItemPrice, setEditItemPrice] = useState<string>('');
+  const [editItemQty, setEditItemQty] = useState<string>('1');
+
+  const [newItemName, setNewItemName] = useState<string>('');
+  const [newItemPrice, setNewItemPrice] = useState<string>('');
+  const [newItemQty, setNewItemQty] = useState<string>('1');
+  const [showAddItemBox, setShowAddItemBox] = useState<boolean>(false);
+
+  const itemsSum = useMemo(() => {
+    return receiptItems.reduce((acc, it) => {
+      const q = Math.max(1, it.quantity || 1);
+      const p = Math.max(0, it.price || 0);
+      return acc + (q * p);
+    }, 0);
+  }, [receiptItems]);
+
+  const handleAddItem = () => {
+    const name = newItemName.trim();
+    const price = parseInt(newItemPrice.replace(/\D/g, ''), 10) || 0;
+    const qty = parseInt(newItemQty.replace(/\D/g, ''), 10) || 1;
+
+    if (!name) {
+      hapticError();
+      showAlert('Thiếu tên món', 'Vui lòng nhập tên món.');
+      return;
+    }
+    if (price <= 0) {
+      hapticError();
+      showAlert('Thiếu giá', 'Vui lòng nhập đơn giá món lớn hơn 0.');
+      return;
+    }
+
+    hapticSuccess();
+    setReceiptItems(prev => [...prev, { name, price, quantity: qty }]);
+    setNewItemName('');
+    setNewItemPrice('');
+    setNewItemQty('1');
+    setShowAddItemBox(false);
+  };
+
+  const handleDeleteItem = (index: number) => {
+    hapticLight();
+    setReceiptItems(prev => prev.filter((_, idx) => idx !== index));
+    if (editingIndex === index) {
+      setEditingIndex(null);
+    }
+  };
+
+  const handleStartEdit = (index: number) => {
+    hapticLight();
+    const item = receiptItems[index];
+    if (!item) return;
+    setEditingIndex(index);
+    setEditItemName(item.name || '');
+    setEditItemPrice((item.price || 0).toString());
+    setEditItemQty((item.quantity || 1).toString());
+  };
+
+  const handleSaveEdit = () => {
+    if (editingIndex === null) return;
+    const name = editItemName.trim();
+    const price = parseInt(editItemPrice.replace(/\D/g, ''), 10) || 0;
+    const qty = parseInt(editItemQty.replace(/\D/g, ''), 10) || 1;
+
+    if (!name) {
+      hapticError();
+      showAlert('Thiếu tên món', 'Vui lòng nhập tên món.');
+      return;
+    }
+
+    hapticSuccess();
+    setReceiptItems(prev =>
+      prev.map((it, idx) => (idx === editingIndex ? { name, price, quantity: qty } : it))
+    );
+    setEditingIndex(null);
+  };
+
+  const handleCancelEdit = () => {
+    hapticLight();
+    setEditingIndex(null);
+  };
+
+  const handleSyncAmountFromItems = () => {
+    hapticSuccess();
+    if (itemsSum > 0) {
+      setAmountStr(itemsSum.toString());
+    }
+  };
+
   const triggerGeminiScan = async (imagesToScan: string[]) => {
     if (!imagesToScan || imagesToScan.length === 0) return;
     const currentRequestId = ++scanRequestIdRef.current;
@@ -122,6 +215,10 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
       const res = await analyzeReceiptImages(db, imagesToScan, categories, wallets);
       if (currentRequestId !== scanRequestIdRef.current) return;
       setScanResult(res);
+      if (res.items && res.items.length > 0) {
+        setReceiptItems(res.items);
+        setShowItemsBreakdown(true);
+      }
 
       if (res.amount && res.amount > 0) {
         setAmountStr(res.amount.toString());
@@ -303,12 +400,24 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
       if (initialReceiptImageUri) {
         setReceiptImages([initialReceiptImageUri]);
         setScanResult(null);
+        setReceiptItems([]);
+        setEditingIndex(null);
+        setShowAddItemBox(false);
+        setNewItemName('');
+        setNewItemPrice('');
+        setNewItemQty('1');
         setShowItemsBreakdown(false);
         setViewingImageUri(null);
         triggerGeminiScan([initialReceiptImageUri]);
       } else {
         setReceiptImages([]);
         setScanResult(null);
+        setReceiptItems([]);
+        setEditingIndex(null);
+        setShowAddItemBox(false);
+        setNewItemName('');
+        setNewItemPrice('');
+        setNewItemQty('1');
         setIsScanningReceipt(false);
         setShowItemsBreakdown(false);
         setViewingImageUri(null);
@@ -776,10 +885,10 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
         }
       }
 
-      // Chuẩn bị items nếu quét hóa đơn thành công
+      // Chuẩn bị items nếu quét hóa đơn thành công hoặc người dùng tự nhập
       const itemsJson =
-        scanResult?.items && scanResult.items.length > 0
-          ? JSON.stringify({ items: scanResult.items })
+        receiptItems.length > 0
+          ? JSON.stringify({ items: receiptItems })
           : null;
 
       // Xử lý riêng cho chi tiêu thẻ tín dụng có hẹn ngày thanh toán hoặc trả góp
@@ -2208,46 +2317,191 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                       </View>
                     ) : null}
                   </View>
+                </View>
+              )}
 
-                  {/* Items breakdown toggle */}
-                  {scanResult.items && scanResult.items.length > 0 && (
-                    <View style={styles.receiptItemsSection}>
+              {/* Items Management Section */}
+              {receiptItems.length > 0 || showAddItemBox ? (
+                <View style={styles.receiptItemsCard}>
+                  <View style={styles.receiptItemsHeader}>
+                    <Pressable
+                      style={styles.receiptItemsHeaderLeft}
+                      onPress={() => setShowItemsBreakdown(!showItemsBreakdown)}
+                    >
+                      <Ionicons name="receipt-outline" size={15} color="#000000" />
+                      <Text style={styles.receiptItemsTitle}>
+                        Danh sách món ({receiptItems.length})
+                      </Text>
+                      <Ionicons
+                        name={showItemsBreakdown ? 'chevron-up' : 'chevron-down'}
+                        size={14}
+                        color="#000000"
+                      />
+                    </Pressable>
+                    <View style={styles.receiptItemsHeaderRight}>
+                      <Text style={styles.receiptItemsSumText}>
+                        {formatVND(itemsSum)}
+                      </Text>
                       <Pressable
-                        style={styles.receiptItemsToggleBtn}
-                        onPress={() => setShowItemsBreakdown(!showItemsBreakdown)}
+                        style={styles.addDishSmallBtn}
+                        onPress={() => {
+                          setShowItemsBreakdown(true);
+                          setShowAddItemBox(!showAddItemBox);
+                        }}
                       >
-                        <Text style={styles.receiptItemsToggleText}>
-                          Bóc tách chi tiết ({scanResult.items.length} món)
-                        </Text>
-                        <Ionicons
-                          name={showItemsBreakdown ? 'chevron-up' : 'chevron-down'}
-                          size={14}
-                          color="#000000"
-                        />
+                        <Ionicons name={showAddItemBox ? 'close' : 'add'} size={14} color="#000000" />
                       </Pressable>
+                    </View>
+                  </View>
 
-                      {showItemsBreakdown && (
-                        <View style={styles.receiptItemsTable}>
-                          {scanResult.items.map((item, iIdx) => (
-                            <View key={iIdx} style={styles.receiptItemRow}>
-                              <Text style={styles.receiptItemName} numberOfLines={1}>
-                                {item.name}
-                              </Text>
-                              {item.quantity && item.quantity > 1 ? (
-                                <Text style={styles.receiptItemQty}>x{item.quantity}</Text>
-                              ) : null}
-                              {item.price ? (
-                                <Text style={styles.receiptItemPrice}>
-                                  {formatVND(item.price)}
-                                </Text>
-                              ) : null}
+                  {/* Discrepancy warning banner */}
+                  {itemsSum > 0 && Math.abs(itemsSum - amountNumber) > 100 && (
+                    <View style={styles.itemDiscrepancyBanner}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.itemDiscrepancyText}>
+                          ⚠️ Tổng món ({formatVND(itemsSum)}) khác với số tiền chi ({formatVND(amountNumber)})
+                        </Text>
+                      </View>
+                      <Pressable
+                        style={styles.syncAmountBtn}
+                        onPress={handleSyncAmountFromItems}
+                      >
+                        <Text style={styles.syncAmountBtnText}>Đồng bộ</Text>
+                      </Pressable>
+                    </View>
+                  )}
+
+                  {showItemsBreakdown && (
+                    <View style={styles.receiptItemsBody}>
+                      {/* Items list */}
+                      {receiptItems.map((item, idx) => {
+                        const isEditing = editingIndex === idx;
+                        if (isEditing) {
+                          return (
+                            <View key={idx} style={styles.itemEditRow}>
+                              <View style={styles.itemEditInputs}>
+                                <TextInput
+                                  style={[styles.itemEditInput, { flex: 2 }]}
+                                  placeholder="Tên món"
+                                  placeholderTextColor={THEME.textMuted}
+                                  value={editItemName}
+                                  onChangeText={setEditItemName}
+                                />
+                                <TextInput
+                                  style={[styles.itemEditInput, { flex: 1.5 }]}
+                                  placeholder="Đơn giá"
+                                  placeholderTextColor={THEME.textMuted}
+                                  keyboardType="numeric"
+                                  value={editItemPrice}
+                                  onChangeText={setEditItemPrice}
+                                />
+                                <TextInput
+                                  style={[styles.itemEditInput, { width: 44, textAlign: 'center' }]}
+                                  placeholder="SL"
+                                  placeholderTextColor={THEME.textMuted}
+                                  keyboardType="numeric"
+                                  value={editItemQty}
+                                  onChangeText={setEditItemQty}
+                                />
+                              </View>
+                              <View style={styles.itemEditActions}>
+                                <Pressable style={styles.itemSaveBtn} onPress={handleSaveEdit}>
+                                  <Text style={styles.itemSaveBtnText}>Lưu</Text>
+                                </Pressable>
+                                <Pressable style={styles.itemCancelBtn} onPress={handleCancelEdit}>
+                                  <Text style={styles.itemCancelBtnText}>Hủy</Text>
+                                </Pressable>
+                              </View>
                             </View>
-                          ))}
+                          );
+                        }
+
+                        const qty = item.quantity || 1;
+                        const price = item.price || 0;
+                        const total = qty * price;
+
+                        return (
+                          <View key={idx} style={styles.itemRow}>
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
+                              <Text style={styles.itemSubtext}>
+                                {qty > 1 ? `${qty} × ${formatVND(price)}` : formatVND(price)}
+                              </Text>
+                            </View>
+                            <Text style={styles.itemTotalText}>{formatVND(total)}</Text>
+                            <View style={styles.itemActionBtns}>
+                              <Pressable
+                                style={styles.itemIconBtn}
+                                onPress={() => handleStartEdit(idx)}
+                                hitSlop={6}
+                              >
+                                <Ionicons name="create-outline" size={15} color="#2563EB" />
+                              </Pressable>
+                              <Pressable
+                                style={styles.itemIconBtn}
+                                onPress={() => handleDeleteItem(idx)}
+                                hitSlop={6}
+                              >
+                                <Ionicons name="trash-outline" size={15} color="#EF4444" />
+                              </Pressable>
+                            </View>
+                          </View>
+                        );
+                      })}
+
+                      {/* Form thêm món */}
+                      {showAddItemBox && (
+                        <View style={styles.addItemFormBox}>
+                          <Text style={styles.addItemFormTitle}>+ Thêm món mới</Text>
+                          <View style={styles.itemEditInputs}>
+                            <TextInput
+                              style={[styles.itemEditInput, { flex: 2 }]}
+                              placeholder="Tên món (*)"
+                              placeholderTextColor={THEME.textMuted}
+                              value={newItemName}
+                              onChangeText={setNewItemName}
+                            />
+                            <TextInput
+                              style={[styles.itemEditInput, { flex: 1.5 }]}
+                              placeholder="Giá (*)"
+                              placeholderTextColor={THEME.textMuted}
+                              keyboardType="numeric"
+                              value={newItemPrice}
+                              onChangeText={setNewItemPrice}
+                            />
+                            <TextInput
+                              style={[styles.itemEditInput, { width: 44, textAlign: 'center' }]}
+                              placeholder="SL"
+                              placeholderTextColor={THEME.textMuted}
+                              keyboardType="numeric"
+                              value={newItemQty}
+                              onChangeText={setNewItemQty}
+                            />
+                          </View>
+                          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 6, marginTop: 4 }}>
+                            <Pressable style={styles.itemCancelBtn} onPress={() => setShowAddItemBox(false)}>
+                              <Text style={styles.itemCancelBtnText}>Đóng</Text>
+                            </Pressable>
+                            <Pressable style={styles.itemSaveBtn} onPress={handleAddItem}>
+                              <Text style={styles.itemSaveBtnText}>Thêm món</Text>
+                            </Pressable>
+                          </View>
                         </View>
                       )}
                     </View>
                   )}
                 </View>
+              ) : (
+                <Pressable
+                  style={styles.addItemsManualBtn}
+                  onPress={() => {
+                    setShowItemsBreakdown(true);
+                    setShowAddItemBox(true);
+                  }}
+                >
+                  <Ionicons name="list-outline" size={14} color="#1D4ED8" />
+                  <Text style={styles.addItemsManualBtnText}>+ Thêm danh sách món chi tiết</Text>
+                </Pressable>
               )}
             </View>
 
@@ -3864,59 +4118,205 @@ const styles = StyleSheet.create({
     color: '#15803D',
     maxWidth: '65%',
   },
-  receiptItemsSection: {
+  addItemsManualBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
     marginTop: 8,
-    paddingTop: 6,
-    borderTopWidth: 1,
-    borderTopColor: '#BBF7D0',
+    paddingVertical: 8,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#93C5FD',
   },
-  receiptItemsToggleBtn: {
+  addItemsManualBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#1D4ED8',
+  },
+  receiptItemsCard: {
+    marginTop: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#000000',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  receiptItemsHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: '#FAF8F5',
+    borderBottomWidth: 1.5,
+    borderBottomColor: '#000000',
+  },
+  receiptItemsHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+  },
+  receiptItemsTitle: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  receiptItemsHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  receiptItemsSumText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#059669',
+  },
+  addDishSmallBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    backgroundColor: THEME.popYellow,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  itemDiscrepancyBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FEF3C7',
+    borderBottomWidth: 1.5,
+    borderBottomColor: '#D97706',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    gap: 8,
+  },
+  itemDiscrepancyText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#92400E',
+    lineHeight: 15,
+  },
+  syncAmountBtn: {
+    backgroundColor: '#D97706',
+    borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 6,
-  },
-  receiptItemsToggleText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#166534',
-  },
-  receiptItemsTable: {
-    marginTop: 6,
-    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#DCFCE7',
-    borderRadius: 6,
-    padding: 6,
-    gap: 4,
+    borderColor: '#000000',
   },
-  receiptItemRow: {
+  syncAmountBtnText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
+  receiptItemsBody: {
+    padding: 8,
+    gap: 6,
+  },
+  itemRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 2,
-    borderBottomWidth: 0.5,
+    paddingVertical: 4,
+    borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
+    gap: 6,
   },
-  receiptItemName: {
-    flex: 1,
-    fontSize: 11,
-    color: '#1F2937',
+  itemName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  itemSubtext: {
+    fontSize: 10,
+    color: '#6B7280',
     fontWeight: '600',
   },
-  receiptItemQty: {
-    fontSize: 11,
-    color: '#6B7280',
-    fontWeight: '700',
-    marginHorizontal: 8,
+  itemTotalText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#000000',
   },
-  receiptItemPrice: {
+  itemActionBtns: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  itemIconBtn: {
+    padding: 3,
+  },
+  itemEditRow: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    padding: 8,
+    gap: 6,
+  },
+  itemEditInputs: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  itemEditInput: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    fontSize: 12,
+    color: '#000000',
+    fontWeight: '700',
+  },
+  itemEditActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 6,
+  },
+  itemSaveBtn: {
+    backgroundColor: THEME.primary,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  itemSaveBtnText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  itemCancelBtn: {
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  itemCancelBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#4B5563',
+  },
+  addItemFormBox: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1.5,
+    borderColor: '#059669',
+    borderRadius: 8,
+    padding: 8,
+    gap: 6,
+    marginTop: 4,
+  },
+  addItemFormTitle: {
     fontSize: 11,
     fontWeight: '800',
-    color: '#111827',
+    color: '#065F46',
   },
   fullscreenModalBackdrop: {
     flex: 1,

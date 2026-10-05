@@ -17,7 +17,7 @@ import { useWallet } from '../context/WalletContext';
 import { Transaction, Category, Wallet, PlannedExpense } from '../types';
 import * as queries from '../database/queries';
 import { THEME, formatVND } from '../constants';
-import { hapticLight, hapticSuccess, hapticError } from '../utils/haptics';
+import { hapticLight, hapticMedium, hapticSuccess, hapticError } from '../utils/haptics';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { useCustomAlert } from './CustomAlertModal';
 import { useSecurity } from '../context/SecurityContext';
@@ -25,6 +25,8 @@ import {
   parseImageUris,
   saveReceiptImages,
   deleteReceiptFiles,
+  analyzeReceiptImages,
+  getGeminiApiKey,
 } from '../services/geminiService';
 
 interface TransactionDetailModalProps {
@@ -51,9 +53,11 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
     updateTransactionCategory,
     updateTransactionWallet,
     updateTransactionTime,
+    updateTransactionDetails,
     updateTransactionAmortized,
     updateCreditTransactionDueDate,
     updateTransactionImages,
+    updateTransactionItems,
     removeTransaction,
     isBalanceHidden,
   } = useWallet();
@@ -92,6 +96,60 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   // Receipt image states
   const [viewingImageUri, setViewingImageUri] = useState<string | null>(null);
   const [isAttachingImages, setIsAttachingImages] = useState<boolean>(false);
+  const [isScanningReceipt, setIsScanningReceipt] = useState<boolean>(false);
+
+  const handleScanReceipt = async (imageUris: string[]) => {
+    if (!transaction || imageUris.length === 0) return;
+    try {
+      const apiKey = await getGeminiApiKey(db);
+      if (!apiKey) {
+        hapticLight();
+        showAlert(
+          'Chưa cài đặt Gemini API Key',
+          'Vui lòng vào Cài đặt để thêm Gemini API Key để AI có thể tự động bóc tách các món từ ảnh hóa đơn.'
+        );
+        return;
+      }
+
+      hapticMedium();
+      setIsScanningReceipt(true);
+      const res = await analyzeReceiptImages(db, imageUris, categories, wallets);
+
+      if (res.items && res.items.length > 0) {
+        await updateTransactionItems(transaction.id, JSON.stringify({ items: res.items }));
+        hapticSuccess();
+
+        const calculatedSum = res.items_sum || res.items.reduce((s, it) => s + ((it.price || 0) * (it.quantity || 1)), 0);
+
+        if (calculatedSum > 0 && Math.abs(calculatedSum - transaction.amount) > 100) {
+          showConfirm(
+            `Đã bóc tách ${res.items.length} món`,
+            `Gemini AI nhận diện được ${res.items.length} món với tổng tiền là ${formatVND(calculatedSum)}, khác với số tiền giao dịch hiện tại (${formatVND(transaction.amount)}).\n\nBạn có muốn cập nhật số tiền giao dịch thành ${formatVND(calculatedSum)} không?`,
+            async () => {
+              await updateTransactionDetails(transaction.id, { amount: calculatedSum });
+              hapticSuccess();
+            }
+          );
+        } else {
+          showAlert(
+            'Bóc tách thành công',
+            `Gemini AI đã bóc tách thành công ${res.items.length} món vào giao dịch!`
+          );
+        }
+      } else {
+        hapticLight();
+        showAlert(
+          'Không tìm thấy danh sách món',
+          'AI đã phân tích ảnh nhưng không tìm thấy danh sách các món cụ thể trên hóa đơn.'
+        );
+      }
+    } catch (err: any) {
+      hapticError();
+      showAlert('Lỗi phân tích hóa đơn', err?.message || 'Không thể phân tích ảnh hóa đơn');
+    } finally {
+      setIsScanningReceipt(false);
+    }
+  };
 
   const handleAddImagesFromLibrary = async () => {
     if (!transaction) return;
@@ -116,6 +174,15 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
         const updatedUris = [...currentUris, ...persistentUris];
         await updateTransactionImages(transaction.id, updatedUris);
         hapticSuccess();
+        setTimeout(() => {
+          showConfirm(
+            'Phân tích lại hóa đơn bằng AI?',
+            'Bạn vừa thêm ảnh hóa đơn mới. Bạn có muốn Gemini AI phân tích ảnh và bóc tách lại danh sách các món không?',
+            () => {
+              handleScanReceipt(updatedUris);
+            }
+          );
+        }, 300);
       }
     } catch (err: any) {
       hapticError();
@@ -146,6 +213,15 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
         const updatedUris = [...currentUris, ...persistentUris];
         await updateTransactionImages(transaction.id, updatedUris);
         hapticSuccess();
+        setTimeout(() => {
+          showConfirm(
+            'Phân tích lại hóa đơn bằng AI?',
+            'Bạn vừa chụp ảnh hóa đơn mới. Bạn có muốn Gemini AI phân tích ảnh và bóc tách lại danh sách các món không?',
+            () => {
+              handleScanReceipt(updatedUris);
+            }
+          );
+        }, 300);
       }
     } catch (err: any) {
       hapticError();
@@ -1122,6 +1198,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                     <Text style={{ fontSize: 12, fontWeight: '700', color: '#4B5563' }}>Đang lưu hình ảnh...</Text>
                   </View>
                 ) : parseImageUris(transaction.image_uris).length > 0 ? (
+                  <>
                   <ScrollView
                     horizontal
                     showsHorizontalScrollIndicator={false}
@@ -1141,6 +1218,23 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                       </View>
                     ))}
                   </ScrollView>
+                  <View style={styles.receiptActionsBar}>
+                    <Pressable
+                      style={styles.aiScanReceiptBtn}
+                      onPress={() => handleScanReceipt(parseImageUris(transaction.image_uris))}
+                      disabled={isScanningReceipt}
+                    >
+                      {isScanningReceipt ? (
+                        <ActivityIndicator size="small" color="#4338CA" />
+                      ) : (
+                        <Ionicons name="sparkles" size={13} color="#4338CA" />
+                      )}
+                      <Text style={styles.aiScanReceiptBtnText}>
+                        {isScanningReceipt ? 'AI đang bóc tách món...' : 'Bóc tách món bằng AI'}
+                      </Text>
+                    </Pressable>
+                  </View>
+                  </>
                 ) : (
                   <View style={styles.emptyReceiptBox}>
                     <Text style={styles.emptyReceiptText}>Chưa có hóa đơn hoặc chứng từ đính kèm cho giao dịch này.</Text>
@@ -1523,6 +1617,48 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                         </Text>
                       </View>
                     ))}
+
+                  {/* Summary of items & discrepancy with total */}
+                  {(() => {
+                    const rawItemsSum = parsedBill.items.reduce((s: number, it: any) => s + ((it.price || 0) * (it.quantity || 1)), 0);
+                    const netAdj = Array.isArray(parsedBill.adjustments)
+                      ? parsedBill.adjustments.reduce((sum: number, adj: any) => sum + (adj.type === 'fee' ? (adj.amount || 0) : -(adj.amount || 0)), 0)
+                      : 0;
+                    const fullSum = rawItemsSum + netAdj;
+                    const diff = Math.abs(fullSum - transaction.amount);
+                    return (
+                      <View>
+                        <View style={styles.billItemsSummaryRow}>
+                          <Text style={styles.billItemsSummaryLabel}>Tổng tiền các món:</Text>
+                          <Text style={styles.billItemsSummaryVal}>{formatVND(fullSum)}</Text>
+                        </View>
+                        {diff > 100 && (
+                          <View style={styles.itemsDiscrepancyBox}>
+                            <Text style={styles.itemsDiscrepancyTitle}>
+                              ⚠️ Tổng món ({formatVND(fullSum)}) chênh lệch với số tiền giao dịch ({formatVND(transaction.amount)}).
+                            </Text>
+                            <Pressable
+                              style={styles.itemsDiscrepancyBtn}
+                              onPress={() => {
+                                showConfirm(
+                                  'Cập nhật số tiền',
+                                  `Cập nhật số tiền giao dịch từ ${formatVND(transaction.amount)} thành ${formatVND(fullSum)} theo tổng món?`,
+                                  async () => {
+                                    await updateTransactionDetails(transaction.id, { amount: fullSum });
+                                    hapticSuccess();
+                                  }
+                                );
+                              }}
+                            >
+                              <Text style={styles.itemsDiscrepancyBtnText}>
+                                Áp dụng {formatVND(fullSum)} vào giao dịch
+                              </Text>
+                            </Pressable>
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })()}
                 </View>
               </View>
             )}
@@ -2568,6 +2704,74 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     paddingTop: 8,
+  },
+  receiptActionsBar: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  aiScanReceiptBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1.5,
+    borderColor: '#6366F1',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  aiScanReceiptBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#4338CA',
+  },
+  itemsDiscrepancyBox: {
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1.5,
+    borderColor: '#D97706',
+    borderRadius: 8,
+    gap: 6,
+  },
+  itemsDiscrepancyTitle: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#92400E',
+    lineHeight: 16,
+  },
+  itemsDiscrepancyBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#D97706',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  itemsDiscrepancyBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  billItemsSummaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 1.5,
+    borderTopColor: '#000000',
+    paddingTop: 8,
+    marginTop: 8,
+  },
+  billItemsSummaryLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  billItemsSummaryVal: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#000000',
   },
   receiptThumbWrapper: {
     position: 'relative',

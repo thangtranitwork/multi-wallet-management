@@ -109,6 +109,7 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(isSaved);
   const [showItems, setShowItems] = useState(true);
+  const [overrideAmount, setOverrideAmount] = useState<number | null>(null);
   const isSubmittingRef = React.useRef(false);
 
   const effectiveTransaction =
@@ -143,8 +144,15 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
     hapticLight();
     setLoading(true);
     try {
+      const finalTransaction = effectiveTransaction
+        ? {
+            ...effectiveTransaction,
+            amount: overrideAmount !== null ? overrideAmount : effectiveTransaction.amount,
+          }
+        : undefined;
+
       await onConfirm({
-        transaction: effectiveTransaction,
+        transaction: finalTransaction,
         transactions: effectiveTransactions,
         transfer,
         debt,
@@ -605,6 +613,11 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
   if (effectiveTransaction) {
     const isIncome = effectiveTransaction.type === 'income';
     const amountColor = isIncome ? '#15803D' : '#E11D48';
+    const currentAmount = overrideAmount !== null ? overrideAmount : effectiveTransaction.amount;
+    const itemsSum = (effectiveTransaction.items || []).reduce(
+      (s, it) => s + (it.price || 0) * (it.quantity || 1),
+      0
+    );
 
     return (
       <View style={styles.cardShadow}>
@@ -632,7 +645,7 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
               adjustsFontSizeToFit
             >
               {isIncome ? '+' : '-'}
-              {formatVND(effectiveTransaction.amount)}
+              {formatVND(currentAmount)}
             </Text>
 
             <View style={styles.detailRow}>
@@ -709,9 +722,16 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
                             styles.receiptItemDivider,
                         ]}
                       >
-                        <Text style={styles.receiptItemName} numberOfLines={1}>
-                          {it.name} {it.quantity && it.quantity > 1 ? `× ${it.quantity}` : ''}
-                        </Text>
+                        <View style={styles.receiptItemLeft}>
+                          {it.quantity && it.quantity > 1 ? (
+                            <View style={styles.receiptItemQtyChip}>
+                              <Text style={styles.receiptItemQtyChipText}>×{it.quantity}</Text>
+                            </View>
+                          ) : null}
+                          <Text style={styles.receiptItemName} numberOfLines={1}>
+                            {it.name}
+                          </Text>
+                        </View>
                         <Text style={styles.receiptItemPrice}>
                           {it.price && it.price > 0
                             ? formatVND(it.price * (it.quantity || 1))
@@ -719,6 +739,33 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
                         </Text>
                       </View>
                     ))}
+                    <View style={styles.receiptItemsSummaryRow}>
+                      <Text style={styles.receiptItemsSummaryLabel}>Tổng tiền các món:</Text>
+                      <Text style={styles.receiptItemsSummaryVal}>{formatVND(itemsSum)}</Text>
+                    </View>
+                  </View>
+                )}
+
+                {/* Discrepancy warning banner */}
+                {itemsSum > 0 && Math.abs(itemsSum - currentAmount) > 100 && (
+                  <View style={styles.discrepancyAlertBox}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.discrepancyAlertTitle}>
+                        ⚠️ Tổng món ({formatVND(itemsSum)}) lệch với số tiền thanh toán ({formatVND(currentAmount)})
+                      </Text>
+                      <Text style={styles.discrepancyAlertDesc}>
+                        Chênh {formatVND(Math.abs(itemsSum - currentAmount))} (có thể do voucher giảm giá hoặc thuế VAT).
+                      </Text>
+                    </View>
+                    <Pressable
+                      style={styles.discrepancySyncBtn}
+                      onPress={() => {
+                        hapticSuccess();
+                        setOverrideAmount(itemsSum);
+                      }}
+                    >
+                      <Text style={styles.discrepancySyncBtnText}>Khớp tổng món</Text>
+                    </Pressable>
                   </View>
                 )}
               </View>
@@ -774,7 +821,7 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
                         adjustsFontSizeToFit
                         minimumFontScale={0.8}
                       >
-                        Xác nhận ghi sổ • {formatVND(effectiveTransaction.amount)}
+                        Xác nhận ghi sổ • {formatVND(currentAmount)}
                       </Text>
                     </>
                   )}
@@ -1507,17 +1554,93 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
   },
+  receiptItemLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginRight: 8,
+  },
+  receiptItemQtyChip: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#D97706',
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+  },
+  receiptItemQtyChipText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#92400E',
+  },
   receiptItemName: {
     flex: 1,
     fontSize: 11.5,
     fontWeight: '600',
     color: '#1F2937',
-    marginRight: 8,
   },
   receiptItemPrice: {
     fontSize: 11.5,
     fontWeight: '800',
     color: '#000000',
+  },
+  receiptItemsSummaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    marginTop: 4,
+  },
+  receiptItemsSummaryLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#475569',
+  },
+  receiptItemsSummaryVal: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  discrepancyAlertBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FEF3C7',
+    borderTopWidth: 1.5,
+    borderTopColor: '#F59E0B',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  discrepancyAlertTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#92400E',
+    lineHeight: 15,
+  },
+  discrepancyAlertDesc: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#B45309',
+    marginTop: 2,
+  },
+  discrepancySyncBtn: {
+    backgroundColor: '#D97706',
+    borderWidth: 1,
+    borderColor: '#000000',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  discrepancySyncBtnText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#FFFFFF',
   },
   balanceCompareBox: {
     flexDirection: 'row',

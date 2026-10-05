@@ -623,7 +623,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
       setPastedJson('');
       showAlert(
         'Thành công',
-        `Đã khôi phục thành công:\n• ${res.walletsCount} ví tiền\n• ${res.transactionsCount} giao dịch\n• ${res.debtsCount} khoản nợ${res.contactsCount ? `\n• ${res.contactsCount} người liên hệ` : ''}`
+        `Đã khôi phục thành công:\n• ${res.walletsCount} ví tiền\n• ${res.transactionsCount} giao dịch\n• ${res.debtsCount} khoản nợ`
       );
     } catch (err: any) {
       showAlert('Lỗi nhập dữ liệu', err?.message || 'Nội dung JSON không hợp lệ');
