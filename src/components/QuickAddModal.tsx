@@ -100,11 +100,14 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
   const [viewingImageUri, setViewingImageUri] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const isSavingRef = useRef(false);
+  const scanRequestIdRef = useRef<number>(0);
 
   const triggerGeminiScan = async (imagesToScan: string[]) => {
     if (!imagesToScan || imagesToScan.length === 0) return;
+    const currentRequestId = ++scanRequestIdRef.current;
     try {
       const apiKey = await getGeminiApiKey(db);
+      if (currentRequestId !== scanRequestIdRef.current) return;
       if (!apiKey) {
         hapticLight();
         showAlert(
@@ -117,6 +120,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
       hapticMedium();
       setIsScanningReceipt(true);
       const res = await analyzeReceiptImages(db, imagesToScan, categories, wallets);
+      if (currentRequestId !== scanRequestIdRef.current) return;
       setScanResult(res);
 
       if (res.amount && res.amount > 0) {
@@ -183,10 +187,13 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
         }, 500);
       }
     } catch (err: any) {
+      if (currentRequestId !== scanRequestIdRef.current) return;
       hapticError();
       showAlert('Lỗi nhận diện ảnh', formatGeminiErrorMessage(err));
     } finally {
-      setIsScanningReceipt(false);
+      if (currentRequestId === scanRequestIdRef.current) {
+        setIsScanningReceipt(false);
+      }
     }
   };
 
@@ -247,6 +254,8 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
 
   const handleRemoveReceiptImage = (indexToRemove: number) => {
     hapticLight();
+    scanRequestIdRef.current++;
+    setIsScanningReceipt(false);
     const updated = receiptImages.filter((_, idx) => idx !== indexToRemove);
     setReceiptImages(updated);
     if (updated.length === 0) {
@@ -750,6 +759,8 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
       }
     }
 
+    scanRequestIdRef.current++;
+    setIsScanningReceipt(false);
     isSavingRef.current = true;
     setIsSaving(true);
 

@@ -34,6 +34,7 @@ export const LogViewerModal: React.FC<LogViewerModalProps> = ({ visible, onClose
 
   useEffect(() => {
     if (!visible) return;
+    logger.loadPersistedLogs().catch(() => {});
     const unsubscribe = logger.subscribe(currentLogs => {
       setLogs(currentLogs);
     });

@@ -8,21 +8,24 @@ import { WalletProvider } from './src/context/WalletContext';
 import { SecurityProvider } from './src/context/SecurityContext';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { LockScreenOverlay } from './src/components/LockScreenOverlay';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 
 export default function App() {
   return (
     <SafeAreaProvider>
-      <StatusBar style="dark" />
-      <SQLiteProvider databaseName={DB_NAME} onInit={initDatabase}>
-        <SecurityProvider>
-          <WalletProvider>
-            <NavigationContainer>
-              <RootNavigator />
-              <LockScreenOverlay />
-            </NavigationContainer>
-          </WalletProvider>
-        </SecurityProvider>
-      </SQLiteProvider>
+      <ErrorBoundary>
+        <StatusBar style="dark" />
+        <SQLiteProvider databaseName={DB_NAME} onInit={initDatabase}>
+          <SecurityProvider>
+            <WalletProvider>
+              <NavigationContainer>
+                <RootNavigator />
+                <LockScreenOverlay />
+              </NavigationContainer>
+            </WalletProvider>
+          </SecurityProvider>
+        </SQLiteProvider>
+      </ErrorBoundary>
     </SafeAreaProvider>
   );
 }

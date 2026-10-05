@@ -255,15 +255,15 @@ export async function saveReceiptImages(
         const uploadRes = await uploadToCloudinary(src, cloudinaryConfig);
         if (uploadRes.secureUrl) {
           savedUris.push(uploadRes.secureUrl);
-          // Dọn file tạm ban đầu nếu nằm trong cache
+          // Dọn file tạm ban đầu nếu nằm trong cache (trì hoãn 5s để tránh xung đột với tiến trình đọc Base64 / AI)
           if (
             src.includes('ImagePicker') ||
             src.includes('cache') ||
             src.includes('shared_bank_receipt')
           ) {
-            try {
-              await FileSystem.deleteAsync(src, { idempotent: true });
-            } catch {}
+            setTimeout(() => {
+              FileSystem.deleteAsync(src, { idempotent: true }).catch(() => {});
+            }, 5000);
           }
           continue;
         }
@@ -293,14 +293,15 @@ export async function saveReceiptImages(
       await FileSystem.copyAsync({ from: src, to: targetUri });
       savedUris.push(targetUri);
       // Dọn dẹp tệp tạm trong cache sau khi đã lưu vĩnh viễn vào documentDirectory
+      // (Trì hoãn 5 giây để tránh xung đột race condition nếu Gemini Vision API đang đọc song song)
       if (
         src.includes('cache') ||
         src.includes('shared_bank_receipt') ||
         src.includes('ImagePicker')
       ) {
-        try {
-          await FileSystem.deleteAsync(src, { idempotent: true });
-        } catch {}
+        setTimeout(() => {
+          FileSystem.deleteAsync(src, { idempotent: true }).catch(() => {});
+        }, 5000);
       }
     } catch (err) {
       console.warn('Lỗi copy ảnh hóa đơn:', err);
@@ -479,6 +480,13 @@ ${wallets
         const downloadRes = await FileSystem.downloadAsync(uri, tempPath);
         localPath = downloadRes.uri;
         needCleanTemp = true;
+      }
+
+      // Kiểm tra file có tồn tại trước khi đọc để tránh lỗi ENOENT FileNotFoundException
+      const fileInfo = await FileSystem.getInfoAsync(localPath);
+      if (!fileInfo.exists) {
+        console.log('[GeminiService] Tệp ảnh tạm không còn tồn tại hoặc đã được di chuyển:', localPath);
+        continue;
       }
 
       const base64Data = await FileSystem.readAsStringAsync(localPath, {

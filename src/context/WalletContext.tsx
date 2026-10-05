@@ -135,6 +135,7 @@ interface WalletContextType {
     walletsCount: number;
     transactionsCount: number;
     debtsCount: number;
+    contactsCount?: number;
   }>;
   resetAllData: () => Promise<void>;
 }

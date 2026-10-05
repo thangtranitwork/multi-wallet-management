@@ -25,6 +25,7 @@ import { THEME, formatVND } from '../constants';
 import { hapticLight, hapticSuccess, hapticError } from '../utils/haptics';
 import { calculateItemizedBillShares } from '../utils/splitBillCalculator';
 import { ContactPickerSheet } from './ContactPickerSheet';
+import { ErrorBoundary } from './ErrorBoundary';
 
 interface MemberSplit {
   id: string;
@@ -115,25 +116,53 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
             // Danh sách items đơn thuần
             setBillItems(
               parsed.map((it: any, idx: number) => ({
-                id: `item_${idx}_${Date.now()}`,
+                id: it.id || `item_${idx}_${Date.now()}`,
                 name: it.name || `Món #${idx + 1}`,
-                quantity: it.quantity || 1,
-                price: it.price || 0,
-                assignedMemberIds: ['me'],
+                quantity: Math.max(1, Number(it.quantity) || 1),
+                price: Math.max(0, Number(it.price) || 0),
+                assignedMemberIds: Array.isArray(it.assignedMemberIds) && it.assignedMemberIds.length > 0
+                  ? it.assignedMemberIds
+                  : ['me'],
               }))
             );
           } else if (parsed && typeof parsed === 'object') {
-            if (Array.isArray(parsed.members) && parsed.members.length > 0) {
-              setBillMembers(parsed.members);
-            }
+            const hasCustomMembers = Array.isArray(parsed.members) && parsed.members.length > 0;
+            const validMembers: BillMember[] = hasCustomMembers ? parsed.members : [defaultPayer];
+            setBillMembers(validMembers);
+
+            const validMemberIds = validMembers.map((m: BillMember) => m.id);
+
             if (Array.isArray(parsed.items)) {
-              setBillItems(parsed.items);
+              setBillItems(
+                parsed.items.map((it: any, idx: number) => {
+                  const rawAssigned = Array.isArray(it.assignedMemberIds) ? it.assignedMemberIds : [];
+                  const assignedMemberIds = rawAssigned.length > 0
+                    ? rawAssigned.filter((mid: string) => validMemberIds.includes(mid))
+                    : validMemberIds;
+
+                  return {
+                    id: it.id || `item_${idx}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                    name: it.name || `Món #${idx + 1}`,
+                    quantity: Math.max(1, Number(it.quantity) || 1),
+                    price: Math.max(0, Number(it.price) || 0),
+                    assignedMemberIds: assignedMemberIds.length > 0 ? assignedMemberIds : ['me'],
+                  };
+                })
+              );
             }
             if (Array.isArray(parsed.adjustments)) {
-              setBillAdjustments(parsed.adjustments);
+              setBillAdjustments(
+                parsed.adjustments.map((adj: any, idx: number) => ({
+                  id: adj.id || `adj_${idx}_${Date.now()}`,
+                  type: adj.type === 'discount' ? 'discount' : 'fee',
+                  name: adj.name || (adj.type === 'discount' ? 'Giảm giá' : 'Phụ phí'),
+                  amount: Math.max(0, Number(adj.amount) || 0),
+                }))
+              );
             }
           }
-        } catch {
+        } catch (parseErr) {
+          console.warn('[SplitModal] Lỗi phân tích items JSON:', parseErr);
           setBillItems([]);
         }
       } else {
@@ -151,19 +180,27 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
     }
   }, [visible, transaction]);
 
-  if (!transaction) return null;
-
-  const totalAmount = transaction.amount;
+  const totalAmount = transaction?.amount || 0;
 
   // ── Tính toán cho Tab Itemized ──
   const calcResult = useMemo(() => {
+    if (!transaction) {
+      return {
+        shares: [],
+        itemsSum: 0,
+        adjustmentsSum: 0,
+        calculatedTotal: 0,
+        diffWithTransaction: 0,
+        unassignedItemsCount: 0,
+      };
+    }
     return calculateItemizedBillShares(
       totalAmount,
       billMembers,
       billItems,
       billAdjustments
     );
-  }, [totalAmount, billMembers, billItems, billAdjustments]);
+  }, [transaction, totalAmount, billMembers, billItems, billAdjustments]);
 
   // ── Tính toán cho Tab Quick ──
   const totalQuickSplit = quickMembers.reduce(
@@ -171,6 +208,8 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
     0
   );
   const remainingForMeQuick = totalAmount - totalQuickSplit;
+
+  if (!transaction) return null;
 
   // ==================== ITEM MANAGEMENT ====================
   const handleAddItem = () => {
@@ -215,10 +254,11 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
     setBillItems(prev =>
       prev.map(it => {
         if (it.id !== itemId) return it;
-        const exists = it.assignedMemberIds.includes(memberId);
+        const currentAssigned = it.assignedMemberIds || [];
+        const exists = currentAssigned.includes(memberId);
         const nextIds = exists
-          ? it.assignedMemberIds.filter(id => id !== memberId)
-          : [...it.assignedMemberIds, memberId];
+          ? currentAssigned.filter(id => id !== memberId)
+          : [...currentAssigned, memberId];
         return { ...it, assignedMemberIds: nextIds };
       })
     );
@@ -230,7 +270,8 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
       prev.map(it => {
         if (it.id !== itemId) return it;
         const allIds = billMembers.map(m => m.id);
-        const isAllSelected = allIds.every(id => it.assignedMemberIds.includes(id));
+        const currentAssigned = it.assignedMemberIds || [];
+        const isAllSelected = allIds.length > 0 && allIds.every(id => currentAssigned.includes(id));
         return {
           ...it,
           assignedMemberIds: isAllSelected ? ['me'] : allIds,
@@ -340,7 +381,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
     setBillItems(prev =>
       prev.map(it => ({
         ...it,
-        assignedMemberIds: it.assignedMemberIds.filter(id => id !== memberId),
+        assignedMemberIds: (it.assignedMemberIds || []).filter(id => id !== memberId),
       }))
     );
   };
@@ -363,7 +404,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
     try {
       const splits = othersWithShare.map(s => {
         const userItems = billItems
-          .filter(it => it.assignedMemberIds.includes(s.memberId))
+          .filter(it => (it.assignedMemberIds || []).includes(s.memberId))
           .map(it => `${it.name}${it.quantity > 1 ? ` (x${it.quantity})` : ''}`)
           .join(', ');
 
@@ -532,7 +573,8 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.backdrop}
       >
-        <View style={styles.sheet}>
+        <ErrorBoundary fallbackTitle="Lỗi giao diện Tách tiền & Chia đơn" onReset={onClose}>
+          <View style={styles.sheet}>
           {/* Header */}
           <View style={styles.header}>
             <View style={{ flex: 1, marginRight: 8 }}>
@@ -754,12 +796,13 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
 
                 {billItems.map((item, idx) => {
                   const itemTotal = item.price * item.quantity;
+                  const currentAssigned = item.assignedMemberIds || [];
                   const allSelected =
                     billMembers.length > 0 &&
-                    billMembers.every(m => item.assignedMemberIds.includes(m.id));
+                    billMembers.every(m => currentAssigned.includes(m.id));
 
                   return (
-                    <View key={item.id} style={styles.itemCard}>
+                    <View key={item.id || `item_${idx}`} style={styles.itemCard}>
                       <View style={styles.itemCardHeader}>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.itemName}>
@@ -804,7 +847,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
 
                       <View style={styles.memberTagWrap}>
                         {billMembers.map(m => {
-                          const isAssigned = item.assignedMemberIds.includes(m.id);
+                          const isAssigned = currentAssigned.includes(m.id);
                           return (
                             <Pressable
                               key={m.id}
@@ -1278,6 +1321,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
             )}
           </ScrollView>
         </View>
+      </ErrorBoundary>
 
         {/* Global Contact Picker Modal */}
         <ContactPickerSheet

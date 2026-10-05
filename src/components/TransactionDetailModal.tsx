@@ -1534,7 +1534,6 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                   style={styles.splitActionBtn}
                   onPress={() => {
                     hapticLight();
-                    onClose();
                     onSplit(transaction);
                   }}
                 >

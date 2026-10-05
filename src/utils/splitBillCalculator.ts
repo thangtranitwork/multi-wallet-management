@@ -129,7 +129,17 @@ export function calculateItemizedBillShares(
   // Thứ tự shares giữ nguyên theo thứ tự members
   const shares: BillMemberShare[] = members.map(m => {
     if (m.id === payerMember.id) return payerShare;
-    return otherShares.find(s => s.memberId === m.id)!;
+    const found = otherShares.find(s => s.memberId === m.id);
+    if (found) return found;
+    return {
+      memberId: m.id,
+      memberName: m.name || 'Người tham gia',
+      memberPhone: m.phone || null,
+      isPayer: false,
+      itemsSubtotal: 0,
+      adjustmentShare: 0,
+      finalAmount: 0,
+    };
   });
 
   return {

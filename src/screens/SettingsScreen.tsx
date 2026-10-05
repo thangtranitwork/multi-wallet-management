@@ -33,6 +33,7 @@ import { syncWidgetData } from '../services/widgetSyncService';
 import { loadCloudBackupConfig } from '../services/cloudBackupStorage';
 import { useSQLiteContext } from 'expo-sqlite';
 import { THEME } from '../constants';
+import { logger } from '../services/loggerService';
 import { hapticLight, hapticMedium, hapticSuccess, hapticError } from '../utils/haptics';
 import {
   getGeminiApiKey,
@@ -476,10 +477,26 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
       const jsonStr = await exportDataToJsonString();
       const dateStr = dayjs().format('YYYYMMDD_HHmm');
       const filename = `MultiWallet_Backup_${dateStr}.json`;
-      const backupFile = new File(Paths.cache, filename);
-      backupFile.create({ overwrite: true });
-      await backupFile.write(jsonStr);
-      const fileUri = backupFile.uri;
+
+      const cacheDir = LegacyFileSystem.cacheDirectory;
+      if (!cacheDir) {
+        throw new Error('Không thể truy cập thư mục bộ nhớ tạm của thiết bị');
+      }
+
+      const fileUri = `${cacheDir}${filename}`;
+
+      // Ghi toàn bộ nội dung JSON qua LegacyFileSystem.writeAsStringAsync để đảm bảo dữ liệu không bị cắt ngắn
+      await LegacyFileSystem.writeAsStringAsync(fileUri, jsonStr, {
+        encoding: LegacyFileSystem.EncodingType.UTF8,
+      });
+
+      // Xác thực độ nguyên vẹn của file sao lưu trên ổ đĩa
+      const fileInfo = await LegacyFileSystem.getInfoAsync(fileUri);
+      if (!fileInfo.exists) {
+        throw new Error('Lỗi khi ghi file sao lưu: File không tồn tại trên bộ nhớ máy');
+      }
+
+      logger.info('BACKUP', 'Đã tạo file sao lưu JSON thành công', `Tên file: ${filename}, Kích thước: ${fileInfo.size ?? 0} bytes`);
 
       const isAvailable = await Sharing.isAvailableAsync();
       if (isAvailable) {
@@ -496,6 +513,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
         });
       }
     } catch (err: any) {
+      logger.error('BACKUP', 'Lỗi xuất file sao lưu', err?.message || String(err));
       showAlert('Lỗi xuất dữ liệu', err?.message || 'Không thể tạo file sao lưu');
     } finally {
       setIsProcessing(false);
@@ -556,10 +574,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
       const wCount = (raw.wallets || []).length;
       const tCount = (raw.transactions || []).length;
       const dCount = (raw.debts || []).length;
+      const cCount = (raw.contacts || []).length;
 
       showConfirm(
         'Xác nhận khôi phục',
-        `Phát hiện dữ liệu gồm:\n• ${wCount} ví tiền\n• ${tCount} giao dịch\n• ${dCount} khoản nợ\n\nChế độ: ${
+        `Phát hiện dữ liệu gồm:\n• ${wCount} ví tiền\n• ${tCount} giao dịch\n• ${dCount} khoản nợ${cCount ? `\n• ${cCount} người liên hệ` : ''}\n\nChế độ: ${
           importMode === 'replace'
             ? 'GHI ĐÈ TOÀN BỘ (xóa dữ liệu hiện tại)'
             : 'HỢP NHẤT (bổ sung dữ liệu)'
@@ -570,7 +589,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
             const res = await importDataFromJsonString(content, importMode);
             showAlert(
               'Thành công',
-              `Đã khôi phục thành công:\n• ${res.walletsCount} ví tiền\n• ${res.transactionsCount} giao dịch\n• ${res.debtsCount} khoản nợ`
+              `Đã khôi phục thành công:\n• ${res.walletsCount} ví tiền\n• ${res.transactionsCount} giao dịch\n• ${res.debtsCount} khoản nợ${res.contactsCount ? `\n• ${res.contactsCount} người liên hệ` : ''}`
             );
           } catch (importErr: any) {
             showAlert('Lỗi khôi phục', importErr?.message || 'Không thể nhập dữ liệu');
@@ -604,7 +623,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
       setPastedJson('');
       showAlert(
         'Thành công',
-        `Đã khôi phục thành công:\n• ${res.walletsCount} ví tiền\n• ${res.transactionsCount} giao dịch\n• ${res.debtsCount} khoản nợ`
+        `Đã khôi phục thành công:\n• ${res.walletsCount} ví tiền\n• ${res.transactionsCount} giao dịch\n• ${res.debtsCount} khoản nợ${res.contactsCount ? `\n• ${res.contactsCount} người liên hệ` : ''}`
       );
     } catch (err: any) {
       showAlert('Lỗi nhập dữ liệu', err?.message || 'Nội dung JSON không hợp lệ');

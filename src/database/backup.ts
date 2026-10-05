@@ -1,5 +1,5 @@
 import * as SQLite from 'expo-sqlite';
-import { Wallet, Category, Debt, Transaction, DebtPayment, PlannedExpense } from '../types';
+import { Wallet, Category, Debt, Transaction, DebtPayment, PlannedExpense, ContactPerson } from '../types';
 import { normalizeToIsoString } from '../utils/dateUtils';
 
 export interface BackupData {
@@ -13,6 +13,7 @@ export interface BackupData {
     transactions_count: number;
     debt_payments_count: number;
     planned_expenses_count?: number;
+    contacts_count?: number;
   };
   data: {
     wallets: Wallet[];
@@ -21,6 +22,7 @@ export interface BackupData {
     transactions: Transaction[];
     debt_payments: DebtPayment[];
     planned_expenses?: PlannedExpense[];
+    contacts?: ContactPerson[];
   };
 }
 
@@ -47,13 +49,14 @@ export const DEFAULT_CATEGORIES: Category[] = [
  * Trích xuất toàn bộ dữ liệu SQLite hiện tại thành BackupData
  */
 export async function exportAllData(db: SQLite.SQLiteDatabase): Promise<BackupData> {
-  const [wallets, categories, debts, transactions, debt_payments, planned_expenses] = await Promise.all([
+  const [wallets, categories, debts, transactions, debt_payments, planned_expenses, contacts] = await Promise.all([
     db.getAllAsync<Wallet>('SELECT * FROM wallets ORDER BY created_at ASC'),
     db.getAllAsync<Category>('SELECT * FROM categories ORDER BY type ASC, name ASC'),
     db.getAllAsync<Debt>('SELECT * FROM debts ORDER BY created_at DESC'),
     db.getAllAsync<Transaction>('SELECT * FROM transactions ORDER BY transacted_at DESC'),
     db.getAllAsync<DebtPayment>('SELECT * FROM debt_payments ORDER BY paid_at DESC'),
     db.getAllAsync<PlannedExpense>('SELECT * FROM planned_expenses ORDER BY target_date ASC'),
+    db.getAllAsync<ContactPerson>('SELECT * FROM contacts ORDER BY name ASC'),
   ]);
 
   return {
@@ -67,6 +70,7 @@ export async function exportAllData(db: SQLite.SQLiteDatabase): Promise<BackupDa
       transactions_count: transactions.length,
       debt_payments_count: debt_payments.length,
       planned_expenses_count: planned_expenses.length,
+      contacts_count: contacts.length,
     },
     data: {
       wallets,
@@ -75,6 +79,7 @@ export async function exportAllData(db: SQLite.SQLiteDatabase): Promise<BackupDa
       transactions,
       debt_payments,
       planned_expenses,
+      contacts,
     },
   };
 }
@@ -109,6 +114,7 @@ export async function importAllData(
   walletsCount: number;
   transactionsCount: number;
   debtsCount: number;
+  contactsCount?: number;
 }> {
   const validation = validateBackupData(backupData);
   if (!validation.valid) {
@@ -122,6 +128,7 @@ export async function importAllData(
   const transactions: Transaction[] = raw.transactions || [];
   const debtPayments: DebtPayment[] = raw.debt_payments || [];
   const plannedExpenses: PlannedExpense[] = raw.planned_expenses || [];
+  const contacts: ContactPerson[] = raw.contacts || [];
 
   // Tắt kiểm tra khóa ngoại trước khi bắt đầu transaction để tránh lỗi FOREIGN KEY constraint failed
   await db.execAsync('PRAGMA foreign_keys = OFF;');
@@ -136,6 +143,7 @@ export async function importAllData(
         await db.runAsync('DELETE FROM planned_expenses;');
         await db.runAsync('DELETE FROM wallets;');
         await db.runAsync('DELETE FROM categories;');
+        await db.runAsync('DELETE FROM contacts;');
       }
 
       // 2. Chèn danh mục
@@ -198,13 +206,13 @@ export async function importAllData(
         );
       }
 
-      // 5. Chèn giao dịch (bao gồm đầy đủ is_amortized và image_uris)
+      // 5. Chèn giao dịch (bao gồm đầy đủ is_amortized, image_uris, và items chia tiền/hóa đơn)
       for (const t of transactions) {
         await db.runAsync(
           `INSERT OR REPLACE INTO transactions (
              id, type, amount, wallet_id, to_wallet_id, category_id, debt_id, 
-             note, transacted_at, created_at, is_amortized, image_uris
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             note, transacted_at, created_at, is_amortized, image_uris, items
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             t.id,
             t.type,
@@ -218,6 +226,7 @@ export async function importAllData(
             normalizeToIsoString(t.created_at),
             t.is_amortized ? 1 : 0,
             t.image_uris || null,
+            t.items || null,
           ]
         );
       }
@@ -266,6 +275,21 @@ export async function importAllData(
           ]
         );
       }
+
+      // 8. Chèn danh bạ người liên hệ (contacts)
+      for (const ct of contacts) {
+        await db.runAsync(
+          `INSERT OR REPLACE INTO contacts (id, name, phone, note, created_at)
+           VALUES (?, ?, ?, ?, ?)`,
+          [
+            ct.id,
+            ct.name,
+            ct.phone ?? null,
+            ct.note ?? null,
+            ct.created_at || new Date().toISOString(),
+          ]
+        );
+      }
     });
   } finally {
     // Bật lại kiểm tra khóa ngoại sau khi hoàn tất nhập dữ liệu
@@ -277,6 +301,7 @@ export async function importAllData(
     walletsCount: wallets.length,
     transactionsCount: transactions.length,
     debtsCount: debts.length,
+    contactsCount: contacts.length,
   };
 }
 

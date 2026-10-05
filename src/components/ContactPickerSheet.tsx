@@ -69,11 +69,14 @@ export const ContactPickerSheet: React.FC<ContactPickerSheetProps> = ({
       setNewPhone('');
 
       if (multiSelect && selectedNames.length > 0) {
-        const initial = selectedNames.map(name => {
-          const found = contacts.find(c => c.name.toLowerCase() === name.toLowerCase())
-            || recentDebtPersons.find(r => r.name.toLowerCase() === name.toLowerCase());
-          return { name, phone: found?.phone || null };
-        });
+        const initial = selectedNames
+          .filter(Boolean)
+          .map(name => {
+            const lowerName = (name || '').toLowerCase();
+            const found = contacts.find(c => c?.name && c.name.toLowerCase() === lowerName)
+              || recentDebtPersons.find(r => r?.name && r.name.toLowerCase() === lowerName);
+            return { name, phone: found?.phone || null };
+          });
         setSelectedList(initial);
       } else {
         setSelectedList([]);
@@ -86,16 +89,22 @@ export const ContactPickerSheet: React.FC<ContactPickerSheetProps> = ({
     const list: Array<{ id?: string; name: string; phone?: string | null; isSaved: boolean }> = [];
     const nameMap = new Set<string>();
 
-    contacts.forEach(c => {
-      list.push({ id: c.id, name: c.name, phone: c.phone, isSaved: true });
-      nameMap.add(c.name.trim().toLowerCase());
+    (contacts || []).forEach(c => {
+      if (c && c.name && c.name.trim()) {
+        const cleanName = c.name.trim();
+        list.push({ id: c.id, name: cleanName, phone: c.phone || null, isSaved: true });
+        nameMap.add(cleanName.toLowerCase());
+      }
     });
 
-    recentDebtPersons.forEach(r => {
-      const lower = r.name.trim().toLowerCase();
-      if (!nameMap.has(lower)) {
-        list.push({ name: r.name, phone: r.phone, isSaved: false });
-        nameMap.add(lower);
+    (recentDebtPersons || []).forEach(r => {
+      if (r && r.name && r.name.trim()) {
+        const cleanName = r.name.trim();
+        const lower = cleanName.toLowerCase();
+        if (!nameMap.has(lower)) {
+          list.push({ name: cleanName, phone: r.phone || null, isSaved: false });
+          nameMap.add(lower);
+        }
       }
     });
 
@@ -108,7 +117,7 @@ export const ContactPickerSheet: React.FC<ContactPickerSheetProps> = ({
     if (!q) return allAvailableContacts;
     return allAvailableContacts.filter(
       c =>
-        c.name.toLowerCase().includes(q) ||
+        (c.name && c.name.toLowerCase().includes(q)) ||
         (c.phone && c.phone.includes(q))
     );
   }, [allAvailableContacts, searchQuery]);
