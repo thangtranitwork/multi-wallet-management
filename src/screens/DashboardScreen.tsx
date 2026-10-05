@@ -101,12 +101,14 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
     type: 'cash' | 'bank' | 'e_wallet' | 'credit';
     color: string;
     icon: string;
+    bank_bin?: string;
   }) => {
     await addWallet({
       name: preset.name,
       type: preset.type,
       balance: 0,
       credit_limit: preset.type === 'credit' ? 20000000 : 0,
+      bank_bin: preset.bank_bin || null,
       currency: 'VND',
       color: preset.color,
       icon: preset.icon,
@@ -434,12 +436,14 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
                       type: 'bank' as const,
                       color: THEME.popBlue,
                       icon: 'business-outline',
+                      bank_bin: '970436',
                     },
                     {
                       name: 'Ví MoMo',
                       type: 'e_wallet' as const,
                       color: THEME.popPink,
                       icon: 'phone-portrait-outline',
+                      bank_bin: '971025',
                     },
                     {
                       name: 'Thẻ tín dụng',

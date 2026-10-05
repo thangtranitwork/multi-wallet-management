@@ -259,7 +259,7 @@ export const WalletQRModal: React.FC<WalletQRModalProps> = ({
                             <Ionicons name="qr-code" size={10} color={isSelected ? '#000000' : '#15803D'} />
                           </View>
                         ) : (
-                          <Text style={styles.noQrText}>(k có QR)</Text>
+                          <Text style={styles.noQrText}>(không hỗ trợ QR)</Text>
                         )}
                       </Pressable>
                     );
@@ -320,21 +320,25 @@ export const WalletQRModal: React.FC<WalletQRModalProps> = ({
                   </View>
                 </View>
 
-                {/* Bank Account Details Card */}
+                {/* Bank / E-Wallet Account Details Card */}
                 <View style={styles.bankDetailCard}>
                   <View style={styles.bankDetailRow}>
-                    <Text style={styles.bankDetailLabel}>Ngân hàng:</Text>
+                    <Text style={styles.bankDetailLabel}>
+                      {currentWallet.type === 'e_wallet' ? 'Ví / Đơn vị:' : 'Ngân hàng:'}
+                    </Text>
                     <Pressable
                       style={styles.copyPill}
-                      onPress={() => handleCopyText(bankInfo?.shortName || currentWallet.name, 'Tên ngân hàng')}
+                      onPress={() => handleCopyText(bankInfo?.shortName || currentWallet.name || (currentWallet.bank_bin ? `Mã BIN: ${currentWallet.bank_bin}` : ''), currentWallet.type === 'e_wallet' ? 'Tên ví' : 'Tên ngân hàng')}
                     >
-                      <Text style={styles.bankDetailVal}>{bankInfo?.shortName || currentWallet.name}</Text>
+                      <Text style={styles.bankDetailVal}>{bankInfo?.shortName || currentWallet.name || (currentWallet.bank_bin ? `Mã BIN: ${currentWallet.bank_bin}` : '')}</Text>
                       <Ionicons name="copy-outline" size={12} color="#000000" />
                     </Pressable>
                   </View>
 
                   <View style={[styles.bankDetailRow, { marginTop: 6 }]}>
-                    <Text style={styles.bankDetailLabel}>Số tài khoản:</Text>
+                    <Text style={styles.bankDetailLabel}>
+                      {currentWallet.type === 'e_wallet' ? 'Số TK / SĐT ví:' : 'Số tài khoản:'}
+                    </Text>
                     <Pressable
                       style={styles.copyPill}
                       onPress={() => handleCopyText(currentWallet.bank_account || '', 'Số tài khoản')}
@@ -388,7 +392,9 @@ export const WalletQRModal: React.FC<WalletQRModalProps> = ({
                 </View>
                 <Text style={styles.emptyTitle}>Chưa có mã QR thanh toán</Text>
                 <Text style={styles.emptyDesc}>
-                  Bạn có thể cấu hình số tài khoản ngân hàng để tự tạo mã VietQR chuẩn NAPAS 24/7, hoặc tải lên ảnh chụp mã QR từ thiết bị.
+                  {currentWallet.type === 'e_wallet'
+                    ? 'Bạn có thể cấu hình số điện thoại / STK ví MoMo, Viettel Money... để tự tạo mã VietQR chuẩn NAPAS 24/7, hoặc tải lên ảnh chụp mã QR từ app ví.'
+                    : 'Bạn có thể cấu hình số tài khoản ngân hàng để tự tạo mã VietQR chuẩn NAPAS 24/7, hoặc tải lên ảnh chụp mã QR từ thiết bị.'}
                 </Text>
 
                 <View style={{ width: '100%', gap: 10 }}>
@@ -400,8 +406,14 @@ export const WalletQRModal: React.FC<WalletQRModalProps> = ({
                         onConfigureWallet(currentWallet.id);  
                       }}
                     >
-                      <Ionicons name="business-outline" size={18} color="#000000" />
-                      <Text style={styles.uploadBtnText}>CẤU HÌNH NGÂN HÀNG & STK</Text>
+                      <Ionicons
+                        name={currentWallet.type === 'e_wallet' ? 'phone-portrait-outline' : 'business-outline'}
+                        size={18}
+                        color="#000000"
+                      />
+                      <Text style={styles.uploadBtnText}>
+                        {currentWallet.type === 'e_wallet' ? 'CẤU HÌNH VÍ & SỐ ĐIỆN THOẠI' : 'CẤU HÌNH NGÂN HÀNG & STK'}
+                      </Text>
                     </Pressable>
                   )}
 

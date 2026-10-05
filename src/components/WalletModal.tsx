@@ -20,7 +20,7 @@ import { useWallet } from '../context/WalletContext';
 import { useSecurity } from '../context/SecurityContext';
 import { Wallet, WalletType } from '../types';
 import { THEME, WALLET_TYPES, WALLET_COLORS, WALLET_ICONS, formatVND } from '../constants';
-import { VIETNAMESE_BANKS, findBankByBin, BankInfo } from '../constants/banks';
+import { VIETNAMESE_BANKS, findBankByBin, findBankByName, BankInfo } from '../constants/banks';
 import { hapticLight, hapticSuccess, hapticError } from '../utils/haptics';
 
 interface WalletModalProps {
@@ -82,8 +82,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
           setBalanceStr(currentWallet.balance.toString());
           setCreditLimitStr((currentWallet.credit_limit || 0).toString());
           setStatementDayStr(currentWallet.statement_day ? currentWallet.statement_day.toString() : '');
-          setDueDayStr(currentWallet.due_day ? currentWallet.due_day.toString() : '');
-          setBankBin(currentWallet.bank_bin || '970422');
+          setBankBin(currentWallet.bank_bin || (currentWallet.type === 'e_wallet' ? '971025' : '970422'));
           setBankAccount(currentWallet.bank_account || '');
           setIsBankPickerOpen(false);
           setBankSearchText('');
@@ -199,8 +198,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     const stmtDay = stmtDayRaw >= 1 && stmtDayRaw <= 31 ? stmtDayRaw : null;
     const dueDay = dueDayRaw >= 1 && dueDayRaw <= 31 ? dueDayRaw : null;
     const finalQr = type === 'cash' ? null : qrImageUri;
-    const cleanBin = (type === 'bank' || type === 'credit') ? (bankBin || null) : null;
-    const cleanAccount = (type === 'bank' || type === 'credit') ? (bankAccount.trim() || null) : null;
+    const cleanBin = (type === 'bank' || type === 'credit' || type === 'e_wallet') ? (bankBin || null) : null;
+    const cleanAccount = (type === 'bank' || type === 'credit' || type === 'e_wallet') ? (bankAccount.trim() || null) : null;
 
     try {
       if (currentWallet) {
@@ -370,11 +369,47 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                   <Text style={styles.sectionLabel}>Tên nguồn tiền / Ví (*)</Text>
                   <TextInput
                     style={styles.input}
-                    placeholder="Ví dụ: Vietcombank, SPayLater Shopee, MoMo..."
+                    placeholder="Ví dụ: Vietcombank, MoMo, Techcombank, MB..."
                     placeholderTextColor={THEME.textMuted}
                     value={name}
-                    onChangeText={setName}
+                    onChangeText={(text) => {
+                      setName(text);
+                      const detected = findBankByName(text);
+                      if (detected) {
+                        setBankBin(detected.bin);
+                        if (!currentWallet) {
+                          if (detected.isEWallet) {
+                            if (type !== 'e_wallet') {
+                              setType('e_wallet');
+                              setIcon('phone-portrait-outline');
+                              if (detected.bin === '971025') {
+                                setColor('#A50064');
+                              } else {
+                                setColor('#14B8A6');
+                              }
+                            }
+                          } else {
+                            if (type === 'cash' || type === 'e_wallet') {
+                              setType('bank');
+                              setIcon('business-outline');
+                            }
+                          }
+                        }
+                      }
+                    }}
                   />
+                  {(() => {
+                    const detected = findBankByName(name);
+                    if (!detected) return null;
+                    return (
+                      <View style={styles.autoDetectedBadge}>
+                        <Ionicons name="sparkles" size={13} color="#047857" />
+                        <Text style={styles.autoDetectedText}>
+                          Tự động nhận diện: <Text style={{ fontWeight: '800' }}>{detected.shortName}</Text> (BIN: {detected.bin})
+                        </Text>
+                      </View>
+                    );
+                  })()}
                 </View>
 
                 {/* Wallet Type */}
@@ -391,6 +426,15 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                             setType(t.id as WalletType);
                             setColor(t.defaultColor);
                             setIcon(t.icon);
+                            if (t.id === 'e_wallet') {
+                              if (!bankBin || bankBin === '970422') {
+                                setBankBin('971025');
+                              }
+                            } else if (t.id === 'bank') {
+                              if (bankBin === '971025') {
+                                setBankBin('970422');
+                              }
+                            }
                           }}
                         >
                           <Ionicons
@@ -477,12 +521,16 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                   </>
                 )}
 
-                {/* Bank Selection & Account Number (VietQR NAPAS 24/7) */}
-                {(type === 'bank' || type === 'credit') && (
+                {/* Bank / E-Wallet Selection & Account Number (VietQR NAPAS 24/7) */}
+                {(type === 'bank' || type === 'credit' || type === 'e_wallet') && (
                   <View style={styles.sectionContainer}>
-                    <Text style={styles.sectionLabel}>Thông tin ngân hàng</Text>
+                    <Text style={styles.sectionLabel}>
+                      {type === 'e_wallet' ? 'Thông tin ví điện tử (VietQR NAPAS 24/7)' : 'Thông tin ngân hàng'}
+                    </Text>
                     
-                    <Text style={styles.subFieldLabel}>Ngân hàng thụ hưởng</Text>
+                    <Text style={styles.subFieldLabel}>
+                      {type === 'e_wallet' ? 'Ví điện tử / Đơn vị thụ hưởng' : 'Ngân hàng thụ hưởng'}
+                    </Text>
                     <Pressable
                       style={styles.bankSelectBtn}
                       onPress={() => {
@@ -492,28 +540,63 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                     >
                       <View style={{ flex: 1 }}>
                         <Text style={styles.bankSelectName}>
-                          {findBankByBin(bankBin)?.shortName || 'Chọn ngân hàng...'}
+                          {findBankByBin(bankBin)?.shortName || (bankBin.trim() ? `Mã BIN: ${bankBin.trim()}` : (type === 'e_wallet' ? 'Chọn ví / đơn vị...' : 'Chọn ngân hàng...'))}
                         </Text>
                         <Text style={styles.bankSelectFull} numberOfLines={1}>
-                          {findBankByBin(bankBin)?.name || 'Nhấn để chọn ngân hàng'}
+                          {findBankByBin(bankBin)?.name || (bankBin.trim() ? 'Mã BIN tự nhập thủ công (NAPAS 24/7)' : (type === 'e_wallet' ? 'Nhấn để chọn ví hoặc ngân hàng' : 'Nhấn để chọn ngân hàng'))}
                         </Text>
                       </View>
                       <Ionicons name="chevron-down" size={18} color="#000000" />
                     </Pressable>
 
+                    {/* Manual BIN Code Input */}
                     <View style={{ marginTop: 8 }}>
-                      <Text style={styles.subFieldLabel}>Số tài khoản ngân hàng</Text>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <Text style={styles.subFieldLabel}>Mã định danh BIN (NAPAS 24/7)</Text>
+                        {!!findBankByBin(bankBin) ? (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                            <Ionicons name="checkmark-circle" size={12} color="#047857" />
+                            <Text style={{ fontSize: 11, color: '#047857', fontWeight: '700' }}>
+                              {findBankByBin(bankBin)?.shortName}
+                            </Text>
+                          </View>
+                        ) : bankBin.trim().length > 0 ? (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                            <Ionicons name="create-outline" size={12} color="#D97706" />
+                            <Text style={{ fontSize: 11, color: '#D97706', fontWeight: '700' }}>
+                              Tự nhập thủ công
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      <TextInput
+                        style={styles.input}
+                        keyboardType="numeric"
+                        value={bankBin}
+                        onChangeText={(txt) => setBankBin(txt.replace(/[^0-9]/g, ''))}
+                        placeholder="Nhập mã BIN 6 số (VD: 971025 cho MoMo, 970436 cho VCB...)"
+                        placeholderTextColor={THEME.textMuted}
+                        maxLength={8}
+                      />
+                    </View>
+
+                    <View style={{ marginTop: 8 }}>
+                      <Text style={styles.subFieldLabel}>
+                        {type === 'e_wallet' ? 'Số tài khoản / Số điện thoại đăng ký ví' : 'Số tài khoản ngân hàng'}
+                      </Text>
                       <TextInput
                         style={styles.input}
                         keyboardType="numeric"
                         value={bankAccount}
                         onChangeText={setBankAccount}
-                        placeholder="Ví dụ: 0367854658 hoặc 1903..."
+                        placeholder={type === 'e_wallet' ? 'Ví dụ: 0367854658' : 'Ví dụ: 0367854658 hoặc 1903...'}
                         placeholderTextColor={THEME.textMuted}
                       />
                     </View>
                     <Text style={styles.helperText}>
-                      Khi điền Ngân hàng & STK, app sẽ tự động tạo mã VietQR chuẩn NAPAS 24/7 khi in hóa đơn hoặc nhận tiền.
+                      {type === 'e_wallet'
+                        ? 'Hỗ trợ tạo mã VietQR NAPAS 24/7 cho MoMo, Viettel Money hoặc bất kỳ ví điện tử nào có mã BIN và SĐT/STK.'
+                        : 'Khi điền Ngân hàng & STK, app sẽ tự động tạo mã VietQR chuẩn NAPAS 24/7 khi in hóa đơn hoặc nhận tiền.'}
                     </Text>
                   </View>
                 )}
@@ -666,7 +749,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
           <View style={styles.bankPickerOverlay}>
             <View style={styles.bankPickerModal}>
               <View style={styles.bankPickerHeader}>
-                <Text style={styles.bankPickerTitle}>CHỌN NGÂN HÀNG THỤ HƯỞNG</Text>
+                <Text style={styles.bankPickerTitle}>CHỌN NGÂN HÀNG / VÍ THỤ HƯỞNG</Text>
                 <Pressable
                   style={styles.bankPickerCloseBtn}
                   onPress={() => setIsBankPickerOpen(false)}
@@ -679,7 +762,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 <Ionicons name="search-outline" size={16} color="#6B7280" />
                 <TextInput
                   style={styles.bankSearchInput}
-                  placeholder="Tìm ngân hàng: MB, VCB, TCB, ACB..."
+                  placeholder="Tìm: MoMo, MB, VCB, TCB, ACB, Viettel..."
                   placeholderTextColor={THEME.textMuted}
                   value={bankSearchText}
                   onChangeText={setBankSearchText}
@@ -693,6 +776,34 @@ export const WalletModal: React.FC<WalletModalProps> = ({
               </View>
 
               <ScrollView style={styles.bankListScroll} showsVerticalScrollIndicator={false}>
+                {/* Custom manual BIN action if user typed numbers in search */}
+                {bankSearchText.trim().length >= 4 && /^\d+$/.test(bankSearchText.trim()) && (
+                  <Pressable
+                    style={[
+                      styles.bankListItem,
+                      { backgroundColor: '#FEF3C7', borderColor: '#F59E0B', borderWidth: 1, marginBottom: 8 },
+                    ]}
+                    onPress={() => {
+                      hapticLight();
+                      setBankBin(bankSearchText.trim());
+                      setIsBankPickerOpen(false);
+                    }}
+                  >
+                    <View style={[styles.bankListCodeBadge, { backgroundColor: '#FDE68A' }]}>
+                      <Text style={[styles.bankListCodeText, { color: '#B45309' }]}>CUSTOM</Text>
+                    </View>
+                    <View style={styles.bankListTextCol}>
+                      <Text style={[styles.bankListShortName, { color: '#B45309' }]}>
+                        Sử dụng mã BIN: {bankSearchText.trim()}
+                      </Text>
+                      <Text style={styles.bankListFullName}>
+                        Thiết lập mã BIN thủ công này cho VietQR NAPAS
+                      </Text>
+                    </View>
+                    <Ionicons name="arrow-forward-circle" size={20} color="#D97706" />
+                  </Pressable>
+                )}
+
                 {VIETNAMESE_BANKS.filter(b => {
                   if (!bankSearchText.trim()) return true;
                   const q = bankSearchText.toLowerCase();
@@ -714,8 +825,15 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                       onPress={() => {
                         hapticLight();
                         setBankBin(b.bin);
-                        if (!name.trim() || name === 'Tài khoản ngân hàng') {
-                          setName(b.shortName);
+                        if (!name.trim() || name === 'Tài khoản ngân hàng' || name === 'Ví điện tử') {
+                          setName(b.bin === '971025' ? 'Ví MoMo' : b.shortName);
+                        }
+                        if (b.bin === '971025' || b.bin === '971005' || b.bin === '971011') {
+                          setType('e_wallet');
+                          setIcon('phone-portrait-outline');
+                          if (b.bin === '971025') {
+                            setColor('#A50064');
+                          }
                         }
                         setIsBankPickerOpen(false);
                       }}
@@ -1210,5 +1328,23 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
     color: '#6B7280',
     marginTop: 1,
+  },
+  autoDetectedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 8,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    backgroundColor: '#ECFDF5',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    alignSelf: 'flex-start',
+  },
+  autoDetectedText: {
+    fontSize: 12,
+    color: '#065F46',
+    fontWeight: '600',
   },
 });

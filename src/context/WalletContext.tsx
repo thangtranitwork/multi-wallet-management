@@ -21,6 +21,7 @@ import { syncWidgetData } from '../services/widgetSyncService';
 import { refreshHabitReminders } from '../services/habitNotificationService';
 import { deleteReceiptFiles, parseImageUris, purgeReceiptImagesOlderThan } from '../services/geminiService';
 import { normalizeToIsoString } from '../utils/dateUtils';
+import { findBankByName } from '../constants/banks';
 
 interface WalletContextType {
   wallets: Wallet[];
@@ -489,9 +490,17 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const addWallet = async (wallet: Omit<Wallet, 'id' | 'created_at'>) => {
     const id = 'w_' + Date.now();
+    let finalBin = wallet.bank_bin;
+    if (!finalBin && wallet.name) {
+      const detected = findBankByName(wallet.name);
+      if (detected) {
+        finalBin = detected.bin;
+      }
+    }
     await queries.createWallet(db, {
       id,
       ...wallet,
+      bank_bin: finalBin ?? null,
     });
     await refreshData();
     triggerAutoBackup();
