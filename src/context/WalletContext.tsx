@@ -322,7 +322,24 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     refreshData();
   }, [refreshData]);
 
+  const isMountedRef = useRef<boolean>(true);
+  const dbRef = useRef(db);
   const autoBackupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    dbRef.current = db;
+  }, [db]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (autoBackupTimerRef.current) {
+        clearTimeout(autoBackupTimerRef.current);
+        autoBackupTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const triggerAutoBackup = useCallback(() => {
     if (autoBackupTimerRef.current) {
@@ -330,24 +347,41 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
     // Debounce 8 giây sau lần thao tác cuối để upload nền
     autoBackupTimerRef.current = setTimeout(async () => {
+      if (!isMountedRef.current) return;
+      const currentDb = dbRef.current;
+      if (!currentDb) return;
+
       try {
-        const conf = await loadCloudBackupConfig(db);
+        const conf = await loadCloudBackupConfig(currentDb);
+        if (!isMountedRef.current) return;
         if (conf.isLinked && conf.autoBackupEnabled && conf.accessToken) {
-          const rawData = await backup.exportAllData(db);
+          const rawData = await backup.exportAllData(currentDb);
+          if (!isMountedRef.current) return;
           const jsonStr = JSON.stringify(rawData, null, 2);
           const uploadRes = await uploadBackupToDrive(conf.accessToken, jsonStr);
+          if (!isMountedRef.current) return;
           if (uploadRes.success) {
-            await saveCloudBackupConfig(db, {
+            await saveCloudBackupConfig(currentDb, {
               lastBackupTime: dayjs().format('HH:mm DD/MM/YYYY'),
               lastBackupFileName: uploadRes.fileName,
             });
           }
         }
-      } catch (err) {
+      } catch (err: any) {
+        // Bỏ qua nếu ứng dụng đã unmount hoặc database SQLite đang đóng/re-init
+        const errMsg = String(err?.message || err || '');
+        if (
+          !isMountedRef.current ||
+          errMsg.includes('closed resource') ||
+          errMsg.includes('NativeDatabase') ||
+          errMsg.includes('closed')
+        ) {
+          return;
+        }
         console.warn('Auto-backup skipped or error:', err);
       }
     }, 8000);
-  }, [db]);
+  }, []);
 
   const addTransaction = async (tx: {
     type: 'expense' | 'income' | 'transfer';
@@ -666,6 +700,10 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     jsonStr: string,
     mode: 'replace' | 'merge' = 'replace'
   ) => {
+    if (autoBackupTimerRef.current) {
+      clearTimeout(autoBackupTimerRef.current);
+      autoBackupTimerRef.current = null;
+    }
     const parsed = JSON.parse(jsonStr);
     const result = await backup.importAllData(db, parsed, mode);
     await refreshData();
@@ -673,6 +711,10 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const resetAllData = async () => {
+    if (autoBackupTimerRef.current) {
+      clearTimeout(autoBackupTimerRef.current);
+      autoBackupTimerRef.current = null;
+    }
     await backup.resetDatabase(db);
     await refreshData();
   };

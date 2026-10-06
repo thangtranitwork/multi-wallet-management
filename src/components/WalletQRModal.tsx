@@ -8,6 +8,10 @@ import {
   Image,
   ScrollView,
   Dimensions,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -24,6 +28,7 @@ import { findBankByBin } from '../constants/banks';
 import { hapticLight, hapticSuccess, hapticError } from '../utils/haptics';
 import { useCustomAlert } from './CustomAlertModal';
 import { hasWalletQR } from '../utils/debtUtils';
+import { buildVietQRUrl, parseAmountInput, formatAmountInput } from '../utils/qrUtils';
 
 interface WalletQRModalProps {
   visible: boolean;
@@ -53,23 +58,55 @@ export const WalletQRModal: React.FC<WalletQRModalProps> = ({
   const db = useSQLiteContext();
 
   const [selectedWalletId, setSelectedWalletId] = React.useState<string>(wallet?.id || '');
+  const [amountStr, setAmountStr] = React.useState<string>(
+    amount && amount > 0 ? formatAmountInput(amount) : ''
+  );
+  const [debouncedAmount, setDebouncedAmount] = React.useState<number>(
+    amount && amount > 0 ? Math.round(amount) : 0
+  );
+  const [customNote, setCustomNote] = React.useState<string>(purpose || '');
+  const [isQrLoading, setIsQrLoading] = React.useState<boolean>(false);
 
   React.useEffect(() => {
-    if (wallet?.id) {
-      setSelectedWalletId(wallet.id);
+    if (visible) {
+      if (wallet?.id) {
+        setSelectedWalletId(wallet.id);
+      }
+      if (amount && amount > 0) {
+        const rounded = Math.round(amount);
+        setAmountStr(formatAmountInput(rounded));
+        setDebouncedAmount(rounded);
+      } else {
+        setAmountStr('');
+        setDebouncedAmount(0);
+      }
+      setCustomNote(purpose || '');
     }
-  }, [wallet?.id]);
+  }, [visible, wallet?.id, amount, purpose]);
+
+  React.useEffect(() => {
+    const num = parseAmountInput(amountStr);
+    const timer = setTimeout(() => {
+      setDebouncedAmount(num);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [amountStr]);
 
   if (!wallet) return null;
   const currentWallet = wallets.find(w => w.id === selectedWalletId) || wallet;
 
-  const transferNote = purpose ? `Tra tien ${purpose}`.trim() : '';
-  const vietQrUrl = (currentWallet.bank_bin && currentWallet.bank_account)
-    ? `https://img.vietqr.io/image/${currentWallet.bank_bin}-${currentWallet.bank_account}-compact2.png?amount=${Math.round(amount || 0)}${transferNote ? `&addInfo=${encodeURIComponent(transferNote.slice(0, 25))}` : ''}`
-    : null;
+  const vietQrUrl = React.useMemo(() => {
+    return buildVietQRUrl({
+      bankBin: currentWallet.bank_bin,
+      bankAccount: currentWallet.bank_account,
+      amount: debouncedAmount,
+      purpose: customNote,
+    });
+  }, [currentWallet.bank_bin, currentWallet.bank_account, debouncedAmount, customNote]);
+
   const bankInfo = findBankByBin(currentWallet.bank_bin);
 
-  const hasVietQr = !!vietQrUrl;
+  const hasVietQr = Boolean(currentWallet.bank_bin && currentWallet.bank_account);
   const hasCustomImage = !!currentWallet.qr_image_uri;
   const [activeTab, setActiveTab] = React.useState<'vietqr' | 'custom'>(hasVietQr ? 'vietqr' : 'custom');
 
@@ -80,6 +117,41 @@ export const WalletQRModal: React.FC<WalletQRModalProps> = ({
       setActiveTab('custom');
     }
   }, [hasVietQr, hasCustomImage, selectedWalletId]);
+
+  const handleAmountChange = (text: string) => {
+    const rawDigits = text.replace(/[^0-9]/g, '');
+    if (!rawDigits) {
+      setAmountStr('');
+      return;
+    }
+    if (rawDigits.length > 12) return;
+    setAmountStr(formatAmountInput(rawDigits));
+  };
+
+  const handleAddAmount = (delta: number) => {
+    hapticLight();
+    const current = parseAmountInput(amountStr);
+    const next = current + delta;
+    if (next <= 0) {
+      setAmountStr('');
+      setDebouncedAmount(0);
+    } else {
+      setAmountStr(formatAmountInput(next));
+      setDebouncedAmount(next);
+    }
+  };
+
+  const handleClearAmount = () => {
+    hapticLight();
+    setAmountStr('');
+    setDebouncedAmount(0);
+  };
+
+  const handleNoteChange = (text: string) => {
+    if (text.length <= 25) {
+      setCustomNote(text);
+    }
+  };
 
   const handlePickQRImage = async () => {
     try {
@@ -202,283 +274,407 @@ export const WalletQRModal: React.FC<WalletQRModalProps> = ({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <View style={styles.sheet}>
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={{ flex: 1, marginRight: 8 }}>
-              <Text style={styles.headerTitle} numberOfLines={1}>
-                {title || `MÃ QR: ${currentWallet.name.toUpperCase()}`}
-              </Text>
-              <Text style={styles.headerSub}>Quét mã để nhận tiền hoặc thanh toán</Text>
-            </View>
-            <Pressable style={styles.closeBtn} onPress={onClose}>
-              <Ionicons name="close" size={22} color="#000000" />
-            </Pressable>
-          </View>
-
-          <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false}>
-            {/* Wallet Picker if multiple wallets */}
-            {wallets.length > 1 && (
-              <View style={styles.walletPickerSection}>
-                <View style={styles.walletPickerHeader}>
-                  <Ionicons name="wallet-outline" size={13} color="#000000" />
-                  <Text style={styles.walletPickerLabel}>Ví nhận thanh toán</Text>
-                </View>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.walletChipsRow}
-                >
-                  {wallets.map(w => {
-                    const isSelected = w.id === currentWallet.id;
-                    const wHasQR = hasWalletQR(w);
-                    return (
-                      <Pressable
-                        key={w.id}
-                        style={[
-                          styles.walletChip,
-                          isSelected && styles.walletChipSelected,
-                        ]}
-                        onPress={() => {
-                          hapticLight();
-                          setSelectedWalletId(w.id);
-                        }}
-                      >
-                        <Text
-                          style={[
-                            styles.walletChipText,
-                            isSelected && styles.walletChipTextSelected,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {w.name}
-                        </Text>
-                        {wHasQR ? (
-                          <View style={[styles.qrDot, isSelected && styles.qrDotSelected]}>
-                            <Ionicons name="qr-code" size={10} color={isSelected ? '#000000' : '#15803D'} />
-                          </View>
-                        ) : (
-                          <Text style={styles.noQrText}>(không hỗ trợ QR)</Text>
-                        )}
-                      </Pressable>
-                    );
-                  })}
-                </ScrollView>
-              </View>
-            )}
-
-            {/* Tab switcher if wallet has both dynamic VietQR and custom uploaded image */}
-            {hasVietQr && hasCustomImage && (
-              <View style={styles.tabContainer}>
-                <Pressable
-                  style={[styles.tabBtn, activeTab === 'vietqr' && styles.tabBtnActive]}
-                  onPress={() => {
-                    hapticLight();
-                    setActiveTab('vietqr');
-                  }}
-                >
-                  <Ionicons
-                    name="qr-code-outline"
-                    size={14}
-                    color={activeTab === 'vietqr' ? '#000000' : '#6B7280'}
-                  />
-                  <Text style={[styles.tabBtnText, activeTab === 'vietqr' && styles.tabBtnTextActive]}>
-                    Mã VietQR động
-                  </Text>
-                </Pressable>
-
-                <Pressable
-                  style={[styles.tabBtn, activeTab === 'custom' && styles.tabBtnActive]}
-                  onPress={() => {
-                    hapticLight();
-                    setActiveTab('custom');
-                  }}
-                >
-                  <Ionicons
-                    name="image-outline"
-                    size={14}
-                    color={activeTab === 'custom' ? '#000000' : '#6B7280'}
-                  />
-                  <Text style={[styles.tabBtnText, activeTab === 'custom' && styles.tabBtnTextActive]}>
-                    Ảnh QR đã lưu
-                  </Text>
-                </Pressable>
-              </View>
-            )}
-
-            {/* 1. Dynamic VietQR Preview */}
-            {activeTab === 'vietqr' && vietQrUrl && (
-              <View style={styles.imageWrapper}>
-                <View style={styles.imageCardShadow}>
-                  <View style={styles.imageCardInner}>
-                    <Image
-                      source={{ uri: vietQrUrl }}
-                      style={{ width: QR_BOX_SIZE, height: QR_BOX_SIZE }}
-                      resizeMode="contain"
-                    />
-                  </View>
-                </View>
-
-                {/* Bank / E-Wallet Account Details Card */}
-                <View style={styles.bankDetailCard}>
-                  <View style={styles.bankDetailRow}>
-                    <Text style={styles.bankDetailLabel}>
-                      {currentWallet.type === 'e_wallet' ? 'Ví / Đơn vị:' : 'Ngân hàng:'}
-                    </Text>
-                    <Pressable
-                      style={styles.copyPill}
-                      onPress={() => handleCopyText(bankInfo?.shortName || currentWallet.name || (currentWallet.bank_bin ? `Mã BIN: ${currentWallet.bank_bin}` : ''), currentWallet.type === 'e_wallet' ? 'Tên ví' : 'Tên ngân hàng')}
-                    >
-                      <Text style={styles.bankDetailVal}>{bankInfo?.shortName || currentWallet.name || (currentWallet.bank_bin ? `Mã BIN: ${currentWallet.bank_bin}` : '')}</Text>
-                      <Ionicons name="copy-outline" size={12} color="#000000" />
-                    </Pressable>
-                  </View>
-
-                  <View style={[styles.bankDetailRow, { marginTop: 6 }]}>
-                    <Text style={styles.bankDetailLabel}>
-                      {currentWallet.type === 'e_wallet' ? 'Số TK / SĐT ví:' : 'Số tài khoản:'}
-                    </Text>
-                    <Pressable
-                      style={styles.copyPill}
-                      onPress={() => handleCopyText(currentWallet.bank_account || '', 'Số tài khoản')}
-                    >
-                      <Text style={[styles.bankDetailVal, { color: '#047857' }]}>
-                        {currentWallet.bank_account}
-                      </Text>
-                      <Ionicons name="copy-outline" size={12} color="#047857" />
-                    </Pressable>
-                  </View>
-                </View>
-              </View>
-            )}
-
-            {/* 2. Custom Uploaded Image QR Preview */}
-            {activeTab === 'custom' && currentWallet.qr_image_uri && (
-              <View style={styles.imageWrapper}>
-                <View style={styles.imageCardShadow}>
-                  <View style={styles.imageCardInner}>
-                    <Image
-                      source={{ uri: currentWallet.qr_image_uri }}
-                      style={{ width: QR_BOX_SIZE, height: QR_BOX_SIZE }}
-                      resizeMode="contain"
-                    />
-                  </View>
-                </View>
-
-                {/* Quick actions for Image */}
-                <View style={styles.imageActionsRow}>
-                  <Pressable style={styles.imageMiniBtn} onPress={handlePickQRImage}>
-                    <Ionicons name="image-outline" size={15} color="#000000" />
-                    <Text style={styles.imageMiniBtnText}>Đổi ảnh khác</Text>
-                  </Pressable>
-
-                  <Pressable
-                    style={[styles.imageMiniBtn, styles.deleteMiniBtn]}
-                    onPress={handleRemoveQRImage}
-                  >
-                    <Ionicons name="trash-outline" size={15} color="#DC2626" />
-                    <Text style={[styles.imageMiniBtnText, { color: '#DC2626' }]}>Xóa ảnh</Text>
-                  </Pressable>
-                </View>
-              </View>
-            )}
-
-            {/* 3. Empty state: Neither VietQR nor Custom Image */}
-            {!hasVietQr && !hasCustomImage && (
-              <View style={styles.emptyBox}>
-                <View style={styles.emptyIconCircle}>
-                  <Ionicons name="qr-code-outline" size={36} color="#000000" />
-                </View>
-                <Text style={styles.emptyTitle}>Chưa có mã QR thanh toán</Text>
-                <Text style={styles.emptyDesc}>
-                  {currentWallet.type === 'e_wallet'
-                    ? 'Bạn có thể cấu hình số điện thoại / STK ví MoMo, Viettel Money... để tự tạo mã VietQR chuẩn NAPAS 24/7, hoặc tải lên ảnh chụp mã QR từ app ví.'
-                    : 'Bạn có thể cấu hình số tài khoản ngân hàng để tự tạo mã VietQR chuẩn NAPAS 24/7, hoặc tải lên ảnh chụp mã QR từ thiết bị.'}
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoidingView}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={styles.backdrop}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+          <View style={styles.sheet}>
+            {/* Header */}
+            <View style={styles.header}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text style={styles.headerTitle} numberOfLines={1}>
+                  {title || `MÃ QR: ${currentWallet.name.toUpperCase()}`}
                 </Text>
+                <Text style={styles.headerSub}>Quét mã để nhận tiền hoặc thanh toán</Text>
+              </View>
+              <Pressable style={styles.closeBtn} onPress={onClose}>
+                <Ionicons name="close" size={22} color="#000000" />
+              </Pressable>
+            </View>
 
-                <View style={{ width: '100%', gap: 10 }}>
-                  {onConfigureWallet && (
-                    <Pressable
-                      style={styles.uploadBtn}
-                      onPress={() => {
-                        onClose();
-                        onConfigureWallet(currentWallet.id);  
-                      }}
-                    >
-                      <Ionicons
-                        name={currentWallet.type === 'e_wallet' ? 'phone-portrait-outline' : 'business-outline'}
-                        size={18}
-                        color="#000000"
-                      />
-                      <Text style={styles.uploadBtnText}>
-                        {currentWallet.type === 'e_wallet' ? 'CẤU HÌNH VÍ & SỐ ĐIỆN THOẠI' : 'CẤU HÌNH NGÂN HÀNG & STK'}
-                      </Text>
-                    </Pressable>
-                  )}
+            <ScrollView
+              style={styles.scrollArea}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              {/* Wallet Picker if multiple wallets */}
+              {wallets.length > 1 && (
+                <View style={styles.walletPickerSection}>
+                  <View style={styles.walletPickerHeader}>
+                    <Ionicons name="wallet-outline" size={13} color="#000000" />
+                    <Text style={styles.walletPickerLabel}>Ví nhận thanh toán</Text>
+                  </View>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.walletChipsRow}
+                    keyboardShouldPersistTaps="handled"
+                  >
+                    {wallets.map(w => {
+                      const isSelected = w.id === currentWallet.id;
+                      const wHasQR = hasWalletQR(w);
+                      return (
+                        <Pressable
+                          key={w.id}
+                          style={[
+                            styles.walletChip,
+                            isSelected && styles.walletChipSelected,
+                          ]}
+                          onPress={() => {
+                            hapticLight();
+                            setSelectedWalletId(w.id);
+                          }}
+                        >
+                          <Text
+                            style={[
+                              styles.walletChipText,
+                              isSelected && styles.walletChipTextSelected,
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {w.name}
+                          </Text>
+                          {wHasQR ? (
+                            <View style={[styles.qrDot, isSelected && styles.qrDotSelected]}>
+                              <Ionicons name="qr-code" size={10} color={isSelected ? '#000000' : '#15803D'} />
+                            </View>
+                          ) : (
+                            <Text style={styles.noQrText}>(không hỗ trợ QR)</Text>
+                          )}
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              )}
+
+              {/* Tab switcher if wallet has both dynamic VietQR and custom uploaded image */}
+              {hasVietQr && hasCustomImage && (
+                <View style={styles.tabContainer}>
+                  <Pressable
+                    style={[styles.tabBtn, activeTab === 'vietqr' && styles.tabBtnActive]}
+                    onPress={() => {
+                      hapticLight();
+                      setActiveTab('vietqr');
+                    }}
+                  >
+                    <Ionicons
+                      name="qr-code-outline"
+                      size={14}
+                      color={activeTab === 'vietqr' ? '#000000' : '#6B7280'}
+                    />
+                    <Text style={[styles.tabBtnText, activeTab === 'vietqr' && styles.tabBtnTextActive]}>
+                      Mã VietQR động
+                    </Text>
+                  </Pressable>
 
                   <Pressable
-                    style={[styles.uploadBtn, { backgroundColor: '#FFFFFF' }]}
-                    onPress={handlePickQRImage}
+                    style={[styles.tabBtn, activeTab === 'custom' && styles.tabBtnActive]}
+                    onPress={() => {
+                      hapticLight();
+                      setActiveTab('custom');
+                    }}
                   >
-                    <Ionicons name="cloud-upload-outline" size={18} color="#000000" />
-                    <Text style={styles.uploadBtnText}>TẢI LÊN ẢNH MÃ QR TỪ MÁY</Text>
+                    <Ionicons
+                      name="image-outline"
+                      size={14}
+                      color={activeTab === 'custom' ? '#000000' : '#6B7280'}
+                    />
+                    <Text style={[styles.tabBtnText, activeTab === 'custom' && styles.tabBtnTextActive]}>
+                      Ảnh QR đã lưu
+                    </Text>
                   </Pressable>
                 </View>
-              </View>
-            )}
+              )}
 
-            {/* Hint for Amount & Purpose if opened from Debt or Split */}
-            {amount > 0 && (
-              <View style={styles.infoBox}>
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Số tiền cần chuyển:</Text>
-                  <View style={styles.infoValWithCopy}>
-                    <Text style={styles.infoAmountVal}>{formatVND(amount)}</Text>
-                    <Pressable
-                      style={styles.copyBtn}
-                      onPress={() => handleCopyText(Math.round(amount).toString(), 'Số tiền')}
-                    >
-                      <Ionicons name="copy-outline" size={13} color="#000000" />
-                      <Text style={styles.copyBtnText}>Chép</Text>
-                    </Pressable>
+              {/* 1. Dynamic VietQR Preview */}
+              {activeTab === 'vietqr' && vietQrUrl && (
+                <View style={styles.imageWrapper}>
+                  <View style={styles.imageCardShadow}>
+                    <View style={styles.imageCardInner}>
+                      <Image
+                        key={vietQrUrl}
+                        source={{ uri: vietQrUrl }}
+                        style={{ width: QR_BOX_SIZE, height: QR_BOX_SIZE }}
+                        resizeMode="contain"
+                        onLoadStart={() => setIsQrLoading(true)}
+                        onLoadEnd={() => setIsQrLoading(false)}
+                      />
+                      {isQrLoading && (
+                        <View style={styles.qrLoadingOverlay}>
+                          <ActivityIndicator size="small" color="#000000" />
+                          <Text style={styles.qrLoadingText}>Đang cập nhật QR...</Text>
+                        </View>
+                      )}
+                    </View>
                   </View>
-                </View>
 
-                {purpose ? (
-                  <View style={[styles.infoRow, { marginTop: 8 }]}>
-                    <Text style={styles.infoLabel}>Nội dung chuyển:</Text>
-                    <View style={styles.infoValWithCopy}>
-                      <Text style={styles.infoPurposeVal} numberOfLines={1}>
-                        {purpose}
+                  {/* Bank / E-Wallet Account Details Card */}
+                  <View style={styles.bankDetailCard}>
+                    <View style={styles.bankDetailRow}>
+                      <Text style={styles.bankDetailLabel}>
+                        {currentWallet.type === 'e_wallet' ? 'Ví / Đơn vị:' : 'Ngân hàng:'}
                       </Text>
                       <Pressable
-                        style={styles.copyBtn}
-                        onPress={() => handleCopyText(purpose, 'Nội dung')}
+                        style={styles.copyPill}
+                        onPress={() => handleCopyText(bankInfo?.shortName || currentWallet.name || (currentWallet.bank_bin ? `Mã BIN: ${currentWallet.bank_bin}` : ''), currentWallet.type === 'e_wallet' ? 'Tên ví' : 'Tên ngân hàng')}
                       >
-                        <Ionicons name="copy-outline" size={13} color="#000000" />
-                        <Text style={styles.copyBtnText}>Chép</Text>
+                        <Text style={styles.bankDetailVal}>{bankInfo?.shortName || currentWallet.name || (currentWallet.bank_bin ? `Mã BIN: ${currentWallet.bank_bin}` : '')}</Text>
+                        <Ionicons name="copy-outline" size={12} color="#000000" />
+                      </Pressable>
+                    </View>
+
+                    <View style={[styles.bankDetailRow, { marginTop: 6 }]}>
+                      <Text style={styles.bankDetailLabel}>
+                        {currentWallet.type === 'e_wallet' ? 'Số TK / SĐT ví:' : 'Số tài khoản:'}
+                      </Text>
+                      <Pressable
+                        style={styles.copyPill}
+                        onPress={() => handleCopyText(currentWallet.bank_account || '', 'Số tài khoản')}
+                      >
+                        <Text style={[styles.bankDetailVal, { color: '#047857' }]}>
+                          {currentWallet.bank_account}
+                        </Text>
+                        <Ionicons name="copy-outline" size={12} color="#047857" />
                       </Pressable>
                     </View>
                   </View>
-                ) : null}
+                </View>
+              )}
+
+              {/* 2. Custom Uploaded Image QR Preview */}
+              {activeTab === 'custom' && currentWallet.qr_image_uri && (
+                <View style={styles.imageWrapper}>
+                  <View style={styles.imageCardShadow}>
+                    <View style={styles.imageCardInner}>
+                      <Image
+                        source={{ uri: currentWallet.qr_image_uri }}
+                        style={{ width: QR_BOX_SIZE, height: QR_BOX_SIZE }}
+                        resizeMode="contain"
+                      />
+                    </View>
+                  </View>
+
+                  {/* Quick actions for Image */}
+                  <View style={styles.imageActionsRow}>
+                    <Pressable style={styles.imageMiniBtn} onPress={handlePickQRImage}>
+                      <Ionicons name="image-outline" size={15} color="#000000" />
+                      <Text style={styles.imageMiniBtnText}>Đổi ảnh khác</Text>
+                    </Pressable>
+
+                    <Pressable
+                      style={[styles.imageMiniBtn, styles.deleteMiniBtn]}
+                      onPress={handleRemoveQRImage}
+                    >
+                      <Ionicons name="trash-outline" size={15} color="#DC2626" />
+                      <Text style={[styles.imageMiniBtnText, { color: '#DC2626' }]}>Xóa ảnh</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              )}
+
+              {/* 3. Empty state: Neither VietQR nor Custom Image */}
+              {!hasVietQr && !hasCustomImage && (
+                <View style={styles.emptyBox}>
+                  <View style={styles.emptyIconCircle}>
+                    <Ionicons name="qr-code-outline" size={36} color="#000000" />
+                  </View>
+                  <Text style={styles.emptyTitle}>Chưa có mã QR thanh toán</Text>
+                  <Text style={styles.emptyDesc}>
+                    {currentWallet.type === 'e_wallet'
+                      ? 'Bạn có thể cấu hình số điện thoại / STK ví MoMo, Viettel Money... để tự tạo mã VietQR chuẩn NAPAS 24/7, hoặc tải lên ảnh chụp mã QR từ app ví.'
+                      : 'Bạn có thể cấu hình số tài khoản ngân hàng để tự tạo mã VietQR chuẩn NAPAS 24/7, hoặc tải lên ảnh chụp mã QR từ thiết bị.'}
+                  </Text>
+
+                  <View style={{ width: '100%', gap: 10 }}>
+                    {onConfigureWallet && (
+                      <Pressable
+                        style={styles.uploadBtn}
+                        onPress={() => {
+                          onClose();
+                          onConfigureWallet(currentWallet.id);  
+                        }}
+                      >
+                        <Ionicons
+                          name={currentWallet.type === 'e_wallet' ? 'phone-portrait-outline' : 'business-outline'}
+                          size={18}
+                          color="#000000"
+                        />
+                        <Text style={styles.uploadBtnText}>
+                          {currentWallet.type === 'e_wallet' ? 'CẤU HÌNH VÍ & SỐ ĐIỆN THOẠI' : 'CẤU HÌNH NGÂN HÀNG & STK'}
+                        </Text>
+                      </Pressable>
+                    )}
+
+                    <Pressable
+                      style={[styles.uploadBtn, { backgroundColor: '#FFFFFF' }]}
+                      onPress={handlePickQRImage}
+                    >
+                      <Ionicons name="cloud-upload-outline" size={18} color="#000000" />
+                      <Text style={styles.uploadBtnText}>TẢI LÊN ẢNH MÃ QR TỪ MÁY</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              )}
+
+              {/* Amount & Transfer Note Customization Section */}
+              {(hasVietQr || hasCustomImage) && (
+                <View style={styles.amountConfigCard}>
+                  <View style={styles.amountConfigHeader}>
+                    <View style={styles.amountConfigHeaderTitleRow}>
+                      <View style={styles.amountIconSquare}>
+                        <Ionicons name="cash-outline" size={16} color="#000000" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.amountConfigTitle}>TUỲ CHỈNH SỐ TIỀN & GHI CHÚ</Text>
+                        <Text style={styles.amountConfigSub}>
+                          {activeTab === 'vietqr'
+                            ? 'Mã QR tự động cập nhật khi bạn đổi số tiền'
+                            : 'Hiển thị để người nhận tiện sao chép'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {debouncedAmount > 0 ? (
+                      <View style={styles.amountFixedBadge}>
+                        <Ionicons name="lock-closed" size={10} color="#047857" />
+                        <Text style={styles.amountFixedBadgeText}>Đã khóa tiền</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.amountFlexBadge}>
+                        <Ionicons name="sparkles-outline" size={10} color="#6B7280" />
+                        <Text style={styles.amountFlexBadgeText}>Tự do (0đ)</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Amount Input */}
+                  <View style={styles.amountInputSection}>
+                    <Text style={styles.inputFieldLabel}>Số tiền nhận (₫):</Text>
+                    <View style={styles.amountInputRow}>
+                      <TextInput
+                        style={styles.amountTextInput}
+                        value={amountStr}
+                        onChangeText={handleAmountChange}
+                        placeholder="0"
+                        placeholderTextColor="#9CA3AF"
+                        keyboardType="numeric"
+                        selectTextOnFocus
+                      />
+                      <Text style={styles.amountCurrencySuffix}>₫</Text>
+                      {amountStr ? (
+                        <Pressable style={styles.clearCircleBtn} onPress={handleClearAmount}>
+                          <Ionicons name="close-circle" size={18} color="#9CA3AF" />
+                        </Pressable>
+                      ) : null}
+                    </View>
+
+                    {debouncedAmount > 0 && (
+                      <View style={styles.amountPreviewRow}>
+                        <Text style={styles.amountPreviewText}>
+                          Quy đổi: <Text style={styles.amountPreviewHighlight}>{formatVND(debouncedAmount)}</Text>
+                        </Text>
+                        <Pressable
+                          style={styles.copySmallBtn}
+                          onPress={() => handleCopyText(Math.round(debouncedAmount).toString(), 'Số tiền')}
+                        >
+                          <Ionicons name="copy-outline" size={11} color="#000000" />
+                          <Text style={styles.copySmallBtnText}>Chép số</Text>
+                        </Pressable>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Quick Presets */}
+                  <View style={styles.presetsRow}>
+                    {[
+                      { label: '+50k', val: 50000 },
+                      { label: '+100k', val: 100000 },
+                      { label: '+200k', val: 200000 },
+                      { label: '+500k', val: 500000 },
+                      { label: '+1M', val: 1000000 },
+                      { label: '+2M', val: 2000000 },
+                    ].map(chip => (
+                      <Pressable
+                        key={chip.label}
+                        style={styles.presetChip}
+                        onPress={() => handleAddAmount(chip.val)}
+                      >
+                        <Text style={styles.presetChipText}>{chip.label}</Text>
+                      </Pressable>
+                    ))}
+                    {debouncedAmount > 0 && (
+                      <Pressable
+                        style={[styles.presetChip, styles.resetPresetChip]}
+                        onPress={handleClearAmount}
+                      >
+                        <Ionicons name="refresh" size={11} color="#DC2626" />
+                        <Text style={[styles.presetChipText, { color: '#DC2626' }]}>Về 0đ</Text>
+                      </Pressable>
+                    )}
+                  </View>
+
+                  {/* Transfer Note / Purpose Input */}
+                  <View style={styles.noteInputSection}>
+                    <View style={styles.noteLabelRow}>
+                      <Text style={styles.inputFieldLabel}>Nội dung chuyển khoản (VietQR):</Text>
+                      <Text style={styles.charCountText}>{customNote.length}/25</Text>
+                    </View>
+                    <View style={styles.noteInputRow}>
+                      <TextInput
+                        style={styles.noteTextInput}
+                        value={customNote}
+                        onChangeText={handleNoteChange}
+                        placeholder="VD: Tien an trua, tra no..."
+                        placeholderTextColor="#9CA3AF"
+                        maxLength={25}
+                      />
+                      {customNote ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Pressable
+                            style={styles.copySmallBtn}
+                            onPress={() => handleCopyText(customNote, 'Nội dung chuyển')}
+                          >
+                            <Ionicons name="copy-outline" size={11} color="#000000" />
+                            <Text style={styles.copySmallBtnText}>Chép</Text>
+                          </Pressable>
+                          <Pressable style={styles.clearCircleBtn} onPress={() => setCustomNote('')}>
+                            <Ionicons name="close-circle" size={18} color="#9CA3AF" />
+                          </Pressable>
+                        </View>
+                      ) : null}
+                    </View>
+                  </View>
+
+                  {/* Warning / Hint for Custom Image Tab */}
+                  {activeTab === 'custom' && (
+                    <View style={styles.customNoticeBox}>
+                      <Ionicons name="information-circle-outline" size={15} color="#D97706" />
+                      <Text style={styles.customNoticeText}>
+                        Ảnh mã QR đã lưu là ảnh tĩnh. Để tạo mã QR tự động nhúng số tiền & nội dung khi người khác quét, hãy chuyển sang tab <Text style={{ fontWeight: '800' }}>"Mã VietQR động"</Text>.
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              )}
+            </ScrollView>
+
+            {/* Footer */}
+            {(hasVietQr || hasCustomImage) ? (
+              <View style={styles.footer}>
+                <Pressable style={styles.shareBtn} onPress={handleShareImage}>
+                  <Ionicons name="share-social-outline" size={18} color="#000000" />
+                  <Text style={styles.shareBtnText}>CHIA SẺ ẢNH MÃ QR</Text>
+                </Pressable>
               </View>
-            )}
-          </ScrollView>
+            ) : null}
 
-          {/* Footer */}
-          {(hasVietQr || hasCustomImage) ? (
-            <View style={styles.footer}>
-              <Pressable style={styles.shareBtn} onPress={handleShareImage}>
-                <Ionicons name="share-social-outline" size={18} color="#000000" />
-                <Text style={styles.shareBtnText}>CHIA SẺ ẢNH MÃ QR</Text>
-              </Pressable>
-            </View>
-          ) : null}
-
-          {AlertModalComponent}
+            {AlertModalComponent}
+          </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };
@@ -712,57 +908,252 @@ const styles = StyleSheet.create({
     color: '#000000',
     letterSpacing: 0.5,
   },
-  infoBox: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 14,
+  keyboardAvoidingView: {
+    flex: 1,
+  },
+  qrLoadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.88)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 18,
+  },
+  qrLoadingText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  amountConfigCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     borderWidth: 2,
     borderColor: '#000000',
-    padding: 12,
+    padding: 14,
     marginBottom: 16,
+    shadowColor: '#000000',
+    shadowOffset: { width: 2, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 2,
   },
-  infoRow: {
+  amountConfigHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 8,
+    marginBottom: 12,
   },
-  infoLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#64748B',
-    flexShrink: 1,
-  },
-  infoValWithCopy: {
+  amountConfigHeaderTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
+    flex: 1,
+    marginRight: 6,
   },
-  infoAmountVal: {
-    fontSize: 15,
+  amountIconSquare: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#FFE600',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  amountConfigTitle: {
+    fontSize: 12,
     fontWeight: '900',
-    color: '#047857',
-  },
-  infoPurposeVal: {
-    fontSize: 13,
-    fontWeight: '800',
     color: '#000000',
-    maxWidth: 160,
+    letterSpacing: 0.3,
   },
-  copyBtn: {
+  amountConfigSub: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#64748B',
+    marginTop: 1,
+  },
+  amountFixedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#DCFCE7',
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#000000',
+    borderColor: '#15803D',
   },
-  copyBtnText: {
+  amountFixedBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  amountFlexBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#9CA3AF',
+  },
+  amountFlexBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#4B5563',
+  },
+  amountInputSection: {
+    marginBottom: 10,
+  },
+  inputFieldLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#374151',
+    marginBottom: 4,
+  },
+  amountInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === 'ios' ? 8 : 4,
+  },
+  amountTextInput: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#000000',
+    paddingVertical: 0,
+  },
+  amountCurrencySuffix: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#047857',
+    marginHorizontal: 4,
+  },
+  clearCircleBtn: {
+    padding: 2,
+  },
+  amountPreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 5,
+    paddingHorizontal: 2,
+  },
+  amountPreviewText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  amountPreviewHighlight: {
+    fontWeight: '900',
+    color: '#047857',
+  },
+  copySmallBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#000000',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
+  },
+  copySmallBtnText: {
     fontSize: 10,
     fontWeight: '800',
     color: '#000000',
+  },
+  presetsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 12,
+  },
+  presetChip: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    shadowColor: '#000000',
+    shadowOffset: { width: 1, height: 1 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 1,
+  },
+  presetChipText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  resetPresetChip: {
+    backgroundColor: '#FEE2E2',
+    borderColor: '#DC2626',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  noteInputSection: {
+    marginTop: 2,
+  },
+  noteLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  charCountText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#9CA3AF',
+  },
+  noteInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: Platform.OS === 'ios' ? 7 : 4,
+  },
+  noteTextInput: {
+    flex: 1,
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#000000',
+    paddingVertical: 0,
+  },
+  customNoticeBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    borderRadius: 8,
+    padding: 8,
+    marginTop: 10,
+  },
+  customNoticeText: {
+    flex: 1,
+    fontSize: 11,
+    lineHeight: 15,
+    color: '#92400E',
+    fontWeight: '600',
   },
   footer: {
     paddingHorizontal: 20,
