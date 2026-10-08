@@ -108,7 +108,7 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
 }) => {
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(isSaved);
-  const [showItems, setShowItems] = useState(true);
+  const [showItems, setShowItems] = useState(false);
   const [overrideAmount, setOverrideAmount] = useState<number | null>(null);
   const isSubmittingRef = React.useRef(false);
 
@@ -258,31 +258,6 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
                 );
               })}
             </View>
-
-            {allImages.length > 0 && (
-              <View style={styles.receiptPreviewRow}>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  {allImages.slice(0, 3).map((img, idx) => (
-                    <Image
-                      key={idx}
-                      source={{ uri: img }}
-                      style={[
-                        styles.receiptMiniThumb,
-                        idx > 0 && { marginLeft: -14 },
-                      ]}
-                      resizeMode="cover"
-                    />
-                  ))}
-                </View>
-                <View style={{ flex: 1, marginLeft: 8 }}>
-                  <Text style={styles.receiptAttachedTitle}>
-                    {allImages.length === 1 ? 'Ảnh hóa đơn đính kèm' : `${allImages.length} ảnh hóa đơn đính kèm`}
-                  </Text>
-                  <Text style={styles.receiptAttachedSub}>Sẽ tự động lưu vào tất cả các giao dịch này</Text>
-                </View>
-                <Ionicons name="checkmark-circle" size={16} color="#0D9488" />
-              </View>
-            )}
 
             {saved ? (
               <View style={styles.savedBadge}>
@@ -837,31 +812,6 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
               </View>
             )}
 
-            {allImages.length > 0 && (
-              <View style={styles.receiptPreviewRow}>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  {allImages.slice(0, 3).map((img, idx) => (
-                    <Image
-                      key={idx}
-                      source={{ uri: img }}
-                      style={[
-                        styles.receiptMiniThumb,
-                        idx > 0 && { marginLeft: -14 },
-                      ]}
-                      resizeMode="cover"
-                    />
-                  ))}
-                </View>
-                <View style={{ flex: 1, marginLeft: 8 }}>
-                  <Text style={styles.receiptAttachedTitle}>
-                    {allImages.length === 1 ? 'Ảnh hóa đơn đính kèm' : `${allImages.length} ảnh hóa đơn đính kèm`}
-                  </Text>
-                  <Text style={styles.receiptAttachedSub}>Sẽ tự động lưu vào giao dịch này</Text>
-                </View>
-                <Ionicons name="checkmark-circle" size={16} color="#0D9488" />
-              </View>
-            )}
-
             {saved ? (
               <View style={styles.savedBadge}>
                 <Ionicons name="checkmark-circle" size={16} color="#15803D" />
@@ -1290,53 +1240,51 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
 
 const styles = StyleSheet.create({
   cardShadow: {
-    backgroundColor: '#000000',
-    borderRadius: 12,
-    marginTop: 8,
-    marginBottom: 4,
+    borderRadius: 10,
+    marginTop: 6,
+    marginBottom: 2,
   },
   cardInner: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 2,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
     borderColor: '#000000',
-    borderRadius: 12,
+    borderRadius: 10,
     overflow: 'hidden',
-    transform: [{ translateX: -2 }, { translateY: -2 }],
   },
   cardHeaderTag: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderBottomWidth: 1.5,
     borderBottomColor: '#000000',
   },
   cardHeaderTagText: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '900',
     letterSpacing: 0.5,
     flexShrink: 1,
   },
   cardBody: {
-    padding: 12,
+    padding: 10,
   },
   amountText: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '900',
     letterSpacing: -0.5,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   detailRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 10,
+    marginBottom: 8,
   },
   categoryIconBox: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 7,
     borderWidth: 1.5,
     borderColor: '#000000',
     alignItems: 'center',
@@ -1344,36 +1292,36 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   categoryNameText: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '800',
     color: '#000000',
   },
   noteText: {
-    fontSize: 11,
+    fontSize: 10.5,
     color: '#4B5563',
-    marginTop: 2,
+    marginTop: 1,
   },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 12,
+    gap: 6,
+    marginBottom: 8,
   },
   walletPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#000000',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    borderRadius: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
     maxWidth: '100%',
   },
   walletText: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '800',
     color: '#000000',
     flexShrink: 1,
@@ -1517,23 +1465,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 6,
     backgroundColor: '#86EFAC',
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: '#000000',
     borderRadius: 8,
-    paddingVertical: 10,
+    paddingVertical: 8,
     paddingHorizontal: 12,
-    minHeight: 46,
-    transform: [{ translateX: -2 }, { translateY: -2 }],
+    minHeight: 40,
+    transform: [{ translateX: -1.5 }, { translateY: -1.5 }],
   },
   confirmBtnText: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '900',
     color: '#000000',
     flexShrink: 1,
     textAlign: 'center',
-    lineHeight: 18,
+    lineHeight: 16,
   },
   savedBadge: {
     flexDirection: 'row',
@@ -1544,45 +1492,17 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: '#15803D',
     borderRadius: 8,
-    paddingVertical: 9,
+    paddingVertical: 8,
     paddingHorizontal: 10,
-    minHeight: 42,
+    minHeight: 38,
   },
   savedBadgeText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '800',
     color: '#15803D',
     flexShrink: 1,
     textAlign: 'center',
-    lineHeight: 16,
-  },
-  receiptPreviewRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F0FDFA',
-    borderWidth: 1.5,
-    borderColor: '#99F6E4',
-    borderRadius: 8,
-    padding: 6,
-    marginBottom: 10,
-  },
-  receiptMiniThumb: {
-    width: 34,
-    height: 34,
-    borderRadius: 5,
-    borderWidth: 1,
-    borderColor: '#000000',
-  },
-  receiptAttachedTitle: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#0F766E',
-  },
-  receiptAttachedSub: {
-    fontSize: 9.5,
-    fontWeight: '600',
-    color: '#115E59',
-    marginTop: 1,
+    lineHeight: 15,
   },
   receiptItemsBox: {
     backgroundColor: '#F8FAFC',

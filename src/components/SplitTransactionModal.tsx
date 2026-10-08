@@ -82,15 +82,9 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
   const [quickMembers, setQuickMembers] = useState<MemberSplit[]>([
     { id: '1', name: '', phone: '', amountStr: '0', note: '' },
   ]);
-  const [activeInputId, setActiveInputId] = useState<string>('1');
 
   // ── Payer Share Option: Tôi có cùng chia tiền vs Tôi chỉ trả hộ (Tôi 0đ) ──
   const [includeMeInSplit, setIncludeMeInSplit] = useState<boolean>(true);
-
-  // ── Modal chia theo phần trăm (%) tùy chỉnh ──
-  const [showPercentModal, setShowPercentModal] = useState<boolean>(false);
-  const [percentTargetId, setPercentTargetId] = useState<string>('1');
-  const [percentInputStr, setPercentInputStr] = useState<string>('50');
 
   // Khởi tạo state khi mở modal
   useEffect(() => {
@@ -106,10 +100,8 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
           note: '',
         },
       ]);
-      setActiveInputId('1');
       setIsChangingCat(false);
       setIncludeMeInSplit(true);
-      setShowPercentModal(false);
 
       // 2. Khởi tạo Itemized Split
       const defaultPayer: BillMember = { id: 'me', name: 'Tôi', isPayer: true };
@@ -557,9 +549,8 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
   const handleToggleIncludeMe = (includeMe: boolean) => {
     hapticLight();
     setIncludeMeInSplit(includeMe);
+    handleEvenSplit(includeMe, quickMembers);
     if (!includeMe) {
-      // Chuyển sang "Tôi chỉ trả hộ": Tự động chia đều 100% cho các bạn (tôi 0đ)
-      handleEvenSplit(false);
       // Với tab theo món: Nếu có món chỉ gán cho 'me', tự động chuyển gán cho các bạn
       const otherIds = billMembers.filter(m => !m.isPayer).map(m => m.id);
       if (otherIds.length > 0) {
@@ -574,63 +565,43 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
           })
         );
       }
-    } else {
-      // Chuyển lại "Tôi có cùng chia": Chia đều tính cả tôi
-      handleEvenSplit(true);
     }
   };
 
-  // ==================== KEYPAD & QUICK SPLIT HANDLERS ====================
-  const handleDigitPress = (digit: string) => {
+  // ==================== QUICK SPLIT HANDLERS ====================
+  const handleEvenSplit = (withMe = includeMeInSplit, membersList?: MemberSplit[]) => {
     hapticLight();
-    setQuickMembers(prev =>
-      prev.map(m => {
-        if (m.id !== activeInputId) return m;
-        let nextStr = m.amountStr;
-        if (digit === '000') {
-          nextStr = nextStr === '0' ? '0' : nextStr + '000';
-        } else if (nextStr === '0') {
-          nextStr = digit;
-        } else {
-          nextStr = nextStr + digit;
-        }
-        return { ...m, amountStr: nextStr };
-      })
-    );
+    const list = membersList || quickMembers;
+    if (list.length === 0) return;
+    if (!withMe) {
+      // Chỉ chia cho các bạn bè, tôi 0đ
+      const count = list.length;
+      const each = Math.floor(totalAmount / count);
+      const remainder = totalAmount - each * count;
+      setQuickMembers(
+        list.map((m, idx) => ({
+          ...m,
+          amountStr: (idx === 0 ? each + remainder : each).toString(),
+        }))
+      );
+    } else {
+      // Chia đều cả tôi (tổng số người = số bạn bè + 1)
+      const count = list.length + 1;
+      const each = Math.floor(totalAmount / count);
+      setQuickMembers(
+        list.map(m => ({
+          ...m,
+          amountStr: each.toString(),
+        }))
+      );
+    }
   };
 
-  const handleBackspace = () => {
-    hapticLight();
+  const handleAmountChange = (memberId: string, val: string) => {
+    const rawNum = val.replace(/\D/g, '');
+    const cleanNum = rawNum === '' ? '0' : parseInt(rawNum, 10).toString();
     setQuickMembers(prev =>
-      prev.map(m => {
-        if (m.id !== activeInputId) return m;
-        const nextStr = m.amountStr.length <= 1 ? '0' : m.amountStr.slice(0, -1);
-        return { ...m, amountStr: nextStr };
-      })
-    );
-  };
-
-  const handlePresetSplit = (percentage: number) => {
-    hapticLight();
-    const splitVal = Math.floor((totalAmount * percentage) / 100);
-    setQuickMembers(prev =>
-      prev.map(m => {
-        if (m.id === activeInputId) {
-          return { ...m, amountStr: splitVal.toString() };
-        }
-        return m;
-      })
-    );
-  };
-
-  const handleAssignPercent = (memberId: string, percent: number) => {
-    hapticLight();
-    const clampedPct = Math.min(100, Math.max(0, percent));
-    const calculatedAmt = Math.round((totalAmount * clampedPct) / 100);
-    setQuickMembers(prev =>
-      prev.map(m =>
-        m.id === memberId ? { ...m, amountStr: calculatedAmt.toString() } : m
-      )
+      prev.map(m => (m.id === memberId ? { ...m, amountStr: cleanNum } : m))
     );
   };
 
@@ -647,72 +618,21 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
     );
   };
 
-  const handleOpenPercentModal = (memberId: string) => {
-    hapticLight();
-    setPercentTargetId(memberId);
-    const target = quickMembers.find(m => m.id === memberId);
-    const curAmt = parseInt(target?.amountStr || '0', 10) || 0;
-    const curPct = totalAmount > 0 ? Math.round((curAmt / totalAmount) * 100) : 50;
-    setPercentInputStr(curPct > 0 ? curPct.toString() : '50');
-    setShowPercentModal(true);
-  };
-
-  const handleApplyCustomPercent = (pctVal?: number) => {
-    const pct = pctVal !== undefined ? pctVal : parseInt(percentInputStr, 10);
-    if (isNaN(pct) || pct < 0 || pct > 100) {
-      hapticError();
-      showAlert('Tỷ lệ không hợp lệ', 'Vui lòng nhập tỷ lệ từ 0% đến 100%');
-      return;
-    }
-    hapticSuccess();
-    handleAssignPercent(percentTargetId, pct);
-    setShowPercentModal(false);
-  };
-
-  const handleEvenSplit = (withMe = includeMeInSplit) => {
-    hapticLight();
-    if (quickMembers.length === 0) return;
-    if (!withMe) {
-      // Chỉ chia cho các thành viên khác, tôi 0đ
-      const count = quickMembers.length;
-      const each = Math.floor(totalAmount / count);
-      const remainder = totalAmount - each * count;
-      setQuickMembers(prev =>
-        prev.map((m, idx) => ({
-          ...m,
-          amountStr: (idx === 0 ? each + remainder : each).toString(),
-        }))
-      );
-    } else {
-      // Chia đều cả tôi
-      const count = quickMembers.length + 1;
-      const each = Math.floor(totalAmount / count);
-      setQuickMembers(prev =>
-        prev.map(m => ({
-          ...m,
-          amountStr: each.toString(),
-        }))
-      );
-    }
-  };
-
   const addQuickMember = () => {
     hapticLight();
     const newId = Date.now().toString();
-    setQuickMembers(prev => [
-      ...prev,
+    const nextMembers = [
+      ...quickMembers,
       { id: newId, name: '', phone: '', amountStr: '0', note: '' },
-    ]);
-    setActiveInputId(newId);
+    ];
+    handleEvenSplit(includeMeInSplit, nextMembers);
   };
 
   const removeQuickMember = (id: string) => {
     hapticLight();
     if (quickMembers.length <= 1) return;
-    setQuickMembers(prev => prev.filter(m => m.id !== id));
-    if (activeInputId === id) {
-      setActiveInputId(quickMembers[0].id);
-    }
+    const nextMembers = quickMembers.filter(m => m.id !== id);
+    handleEvenSplit(includeMeInSplit, nextMembers);
   };
 
   const updateQuickMember = (id: string, field: keyof MemberSplit, val: string) => {
@@ -784,9 +704,6 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
       showAlert('Lỗi', err?.message || 'Không thể tách giao dịch');
     }
   };
-
-  const activeQuickMember = quickMembers.find(m => m.id === activeInputId) || quickMembers[0];
-  const activeQuickAmount = parseInt(activeQuickMember?.amountStr || '0', 10);
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -997,10 +914,10 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
                     </View>
                   )}
                 </View>
-                <Text style={styles.payForOtherDesc} numberOfLines={1}>
+                <Text style={styles.payForOtherDesc}>
                   {!includeMeInSplit
-                    ? 'Bạn chỉ ứng tiền giúp bạn bè · Chi tiêu thực của bạn là 0 ₫'
-                    : 'Bỏ chọn: Bạn cùng chịu 1 phần chi phí hóa đơn (mặc định)'}
+                    ? 'Bạn chỉ ứng tiền giúp bạn bè (Chi tiêu của bạn: 0 ₫)'
+                    : 'Bạn cùng chia đều chi phí hóa đơn với bạn bè'}
                 </Text>
               </View>
             </Pressable>
@@ -1477,75 +1394,50 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
             ) : (
               // ==================== TAB 2: CHIA NHANH ====================
               <View style={{ paddingBottom: 20 }}>
-                {/* Quick Presets Row */}
-                <View style={styles.presetsRow}>
-                  <Text style={styles.presetLabel}>Tự động chia:</Text>
+                {/* 1. Quick Presets: 2 nút chia đều và làm tròn rõ ràng */}
+                <View style={styles.quickActionButtonsRow}>
                   <Pressable
-                    style={[styles.presetChip, styles.presetChipHighlight]}
+                    style={[styles.quickActionBtn, styles.quickActionBtnPrimary]}
                     onPress={() => handleEvenSplit()}
                   >
-                    <Ionicons name="git-merge" size={12} color="#000000" />
-                    <Text style={styles.presetChipTextHighlight}>
+                    <Ionicons name="git-merge" size={15} color="#000000" />
+                    <Text style={styles.quickActionBtnTextPrimary}>
                       {includeMeInSplit
-                        ? `Chia đều (${quickMembers.length + 1} người)`
+                        ? `Chia đều (${quickMembers.length} bạn + Tôi)`
                         : `Chia đều ${quickMembers.length} bạn (Tôi 0đ)`}
                     </Text>
                   </Pressable>
 
                   <Pressable
-                    style={styles.presetChip}
+                    style={styles.quickActionBtn}
                     onPress={handleRoundUp1k}
                   >
-                    <Ionicons name="sparkles-outline" size={12} color="#000000" />
-                    <Text style={styles.presetChipText}>Làm tròn 1k</Text>
-                  </Pressable>
-
-                  {includeMeInSplit ? (
-                    <Pressable
-                      style={styles.presetChip}
-                      onPress={() => handlePresetSplit(50)}
-                    >
-                      <Text style={styles.presetChipText}>Nửa tiền (50%)</Text>
-                    </Pressable>
-                  ) : (
-                    <Pressable
-                      style={styles.presetChip}
-                      onPress={() => handleAssignPercent(activeInputId, 100)}
-                    >
-                      <Text style={styles.presetChipText}>100% người chọn</Text>
-                    </Pressable>
-                  )}
-
-                  <Pressable
-                    style={styles.presetChip}
-                    onPress={() => handleOpenPercentModal(activeInputId)}
-                  >
-                    <Ionicons name="pie-chart-outline" size={12} color="#000000" />
-                    <Text style={styles.presetChipText}>Tùy chỉnh %</Text>
+                    <Ionicons name="sparkles" size={14} color="#D97706" />
+                    <Text style={styles.quickActionBtnText}>Làm tròn 1k</Text>
                   </Pressable>
                 </View>
 
-                {/* Members Section */}
+                {/* 2. Members Section */}
                 <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>NGƯỜI CẦN TRẢ LẠI BẠN</Text>
+                  <Text style={styles.sectionTitle}>
+                    NGƯỜI CẦN TRẢ LẠI BẠN ({quickMembers.length})
+                  </Text>
                   <Pressable style={styles.addMemberHeaderBtn} onPress={addQuickMember}>
-                    <Ionicons name="add" size={14} color="#000000" />
-                    <Text style={styles.addMemberHeaderText}>Thêm người</Text>
+                    <Ionicons name="person-add" size={13} color="#000000" />
+                    <Text style={styles.addMemberHeaderText}>+ Thêm người</Text>
                   </Pressable>
                 </View>
 
                 {quickMembers.map((m, idx) => {
-                  const isActive = m.id === activeInputId;
                   const mAmt = parseInt(m.amountStr, 10) || 0;
                   const mPct = totalAmount > 0 ? Math.round((mAmt / totalAmount) * 100) : 0;
 
                   return (
-                    <View
-                      key={m.id}
-                      style={[styles.memberCard, isActive && styles.memberCardActive]}
-                    >
+                    <View key={m.id} style={styles.memberCard}>
                       <View style={styles.memberCardTop}>
-                        <Text style={styles.memberIndex}>Người #{idx + 1}</Text>
+                        <Text style={styles.memberIndex}>
+                          {m.name.trim() ? m.name.trim() : `Người #${idx + 1}`}
+                        </Text>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                           <Pressable
                             style={styles.quickContactPickBtn}
@@ -1558,6 +1450,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
                             <Pressable
                               style={styles.deleteMemberBtn}
                               onPress={() => removeQuickMember(m.id)}
+                              hitSlop={6}
                             >
                               <Ionicons name="trash-outline" size={16} color="#EF4444" />
                             </Pressable>
@@ -1567,7 +1460,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
 
                       <View style={styles.memberInputsRow}>
                         <TextInput
-                          style={[styles.input, { flex: 1 }]}
+                          style={[styles.input, { flex: 1.3 }]}
                           placeholder="Tên người (*)"
                           placeholderTextColor={THEME.textMuted}
                           value={m.name}
@@ -1583,226 +1476,85 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
                         />
                       </View>
 
-                      {/* Tap to set active for keypad */}
-                      <Pressable
-                        style={[
-                          styles.amountTriggerBtn,
-                          isActive && styles.amountTriggerBtnActive,
-                        ]}
-                        onPress={() => {
-                          hapticLight();
-                          setActiveInputId(m.id);
-                        }}
-                      >
-                        <Text style={styles.amountTriggerLabel}>Phần tiền họ nợ:</Text>
-                        <View style={styles.percentBadge}>
-                          <Text style={styles.percentBadgeText}>{mPct}%</Text>
+                      {/* Direct Amount Input Row with % Badge & "Còn lại" Helper */}
+                      <View style={styles.quickAmountRow}>
+                        <Text style={styles.quickAmountLabel}>Tiền nợ:</Text>
+                        <View style={styles.quickAmountInputWrap}>
+                          <TextInput
+                            style={styles.quickAmountInput}
+                            placeholder="0 ₫"
+                            placeholderTextColor="#9CA3AF"
+                            keyboardType="numeric"
+                            value={mAmt > 0 ? mAmt.toLocaleString('vi-VN') : ''}
+                            onChangeText={val => handleAmountChange(m.id, val)}
+                          />
+                          <Text style={styles.quickAmountUnit}>₫</Text>
+                          <View style={styles.percentBadge}>
+                            <Text style={styles.percentBadgeText}>{mPct}%</Text>
+                          </View>
                         </View>
-                        <Text
-                          style={[
-                            styles.amountTriggerValue,
-                            mAmt > 0 ? { color: '#0F766E' } : { color: '#9CA3AF' },
-                          ]}
-                        >
-                          {formatVND(mAmt)}
-                        </Text>
-                        <Ionicons
-                          name="calculator-outline"
-                          size={16}
-                          color={isActive ? '#0F766E' : '#6B7280'}
-                        />
-                      </Pressable>
 
-                      {/* Quick % chips row directly on member card */}
-                      <View style={styles.memberPercentBar}>
-                        <Text style={styles.memberPercentBarLabel}>Tỷ lệ %:</Text>
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                          {[
-                            ...(!includeMeInSplit
-                              ? [
-                                  ...(quickMembers.length === 2 ? [50] : []),
-                                  ...(quickMembers.length === 3 ? [33] : []),
-                                  ...(quickMembers.length === 4 ? [25] : []),
-                                  50,
-                                  100,
-                                ]
-                              : [25, 33, 50]),
-                          ]
-                            .filter((v, i, a) => a.indexOf(v) === i)
-                            .map(pct => (
-                              <Pressable
-                                key={pct}
-                                style={styles.memberPercentChip}
-                                onPress={() => handleAssignPercent(m.id, pct)}
-                              >
-                                <Text style={styles.memberPercentChipText}>{pct}%</Text>
-                              </Pressable>
-                            ))}
-                          <Pressable
-                            style={[styles.memberPercentChip, styles.memberPercentChipRem]}
-                            onPress={() => handleDistributeRemaining(m.id)}
-                          >
-                            <Text style={styles.memberPercentChipTextRem}>Gán còn lại</Text>
-                          </Pressable>
-                          <Pressable
-                            style={styles.memberPercentChip}
-                            onPress={() => handleOpenPercentModal(m.id)}
-                          >
-                            <Ionicons name="options-outline" size={11} color="#000000" />
-                            <Text style={styles.memberPercentChipText}>Nhập %</Text>
-                          </Pressable>
-                        </ScrollView>
+                        <Pressable
+                          style={styles.assignRemBtn}
+                          onPress={() => handleDistributeRemaining(m.id)}
+                          hitSlop={4}
+                        >
+                          <Ionicons name="arrow-down-circle-outline" size={13} color="#047857" />
+                          <Text style={styles.assignRemBtnText}>Còn lại</Text>
+                        </Pressable>
                       </View>
                     </View>
                   );
                 })}
 
-                {/* Smart Summary Breakdown Bar */}
+                {/* 3. Smart Summary Breakdown Bar */}
                 <View style={styles.breakdownCard}>
                   <View style={styles.breakdownRow}>
                     <Text style={styles.breakdownKey}>Giao dịch gốc:</Text>
                     <Text style={styles.breakdownVal}>{formatVND(totalAmount)}</Text>
                   </View>
                   <View style={styles.breakdownRow}>
-                    <Text style={styles.breakdownKey}>Tách cho người khác:</Text>
-                    <Text style={[styles.breakdownVal, { color: '#0F766E' }]}>
-                      -{formatVND(totalQuickSplit)}
-                    </Text>
+                    <Text style={styles.breakdownKey}>Tách cho bạn bè:</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={[styles.breakdownVal, { color: '#0F766E' }]}>
+                        -{formatVND(totalQuickSplit)}
+                      </Text>
+                      {totalQuickSplit === totalAmount ? (
+                        <View style={styles.matchBadge}>
+                          <Ionicons name="checkmark-circle" size={13} color="#047857" />
+                          <Text style={styles.matchBadgeText}>Khớp 100%</Text>
+                        </View>
+                      ) : totalQuickSplit > totalAmount ? (
+                        <View style={[styles.matchBadge, { backgroundColor: '#ECFDF5', borderColor: '#10B981' }]}>
+                          <Text style={[styles.matchBadgeText, { color: '#047857' }]}>
+                            +{formatVND(totalQuickSplit - totalAmount)}
+                          </Text>
+                        </View>
+                      ) : (
+                        <View style={styles.diffBadge}>
+                          <Text style={styles.diffBadgeText}>
+                            Thiếu {formatVND(totalAmount - totalQuickSplit)}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
                   </View>
                   <View style={styles.breakdownDivider} />
                   <View style={styles.breakdownRow}>
                     <Text style={styles.myExpenseKey}>Chi tiêu thực của tôi:</Text>
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text
-                        style={[
-                          styles.myExpenseVal,
-                          remainingForMeQuick < 0
-                            ? { color: '#059669' }
-                            : !includeMeInSplit || remainingForMeQuick === 0
-                            ? { color: '#D97706' }
-                            : { color: '#15803D' },
-                        ]}
-                      >
-                        {formatVND(Math.max(0, remainingForMeQuick))}
-                      </Text>
-                      {remainingForMeQuick < 0 ? (
-                        <View style={[styles.payForOtherBadge, { backgroundColor: '#ECFDF5', borderColor: '#10B981' }]}>
-                          <Ionicons name="sparkles" size={11} color="#047857" />
-                          <Text style={[styles.payForOtherBadgeText, { color: '#047857' }]}>
-                            Làm tròn dư +{formatVND(Math.abs(remainingForMeQuick))}
-                          </Text>
-                        </View>
-                      ) : !includeMeInSplit && remainingForMeQuick === 0 ? (
-                        <View style={styles.payForOtherBadge}>
-                          <Ionicons name="gift" size={11} color="#92400E" />
-                          <Text style={styles.payForOtherBadgeText}>
-                            Trả hộ 100% (Tôi không chịu tiền)
-                          </Text>
-                        </View>
-                      ) : null}
-                    </View>
-                  </View>
-                </View>
-
-                {/* Notice / Explanation */}
-                <View
-                  style={[
-                    styles.infoBox,
-                    !includeMeInSplit && styles.infoBoxGift,
-                  ]}
-                >
-                  <Ionicons
-                    name={!includeMeInSplit ? 'gift-outline' : 'shield-checkmark-outline'}
-                    size={18}
-                    color={!includeMeInSplit ? '#D97706' : '#059669'}
-                  />
-                  <Text
-                    style={[
-                      styles.infoText,
-                      !includeMeInSplit && styles.infoTextGift,
-                    ]}
-                  >
-                    {!includeMeInSplit ? (
-                      <>
-                        Bạn đang chọn chế độ{' '}
-                        <Text style={{ fontWeight: '900' }}>Tôi chỉ trả hộ (Tôi 0đ)</Text>. Toàn
-                        bộ {formatVND(totalAmount)} sẽ được chuyển thành khoản nợ của bạn bè. Giao
-                        dịch này sẽ không bị tính vào chi tiêu cá nhân của bạn.
-                      </>
-                    ) : (
-                      <>
-                        Số dư ví hiện tại không đổi. Chi tiêu thực của bạn sẽ được điều chỉnh còn{' '}
-                        <Text style={{ fontWeight: '900', color: '#047857' }}>
-                          {formatVND(Math.max(0, remainingForMeQuick))}
-                        </Text>
-                        . Khi người này trả nợ, tiền sẽ tự động cộng lại vào ví mà không tính thành
-                        thu nhập mới.
-                      </>
-                    )}
-                  </Text>
-                </View>
-
-                {/* Keypad */}
-                <View style={styles.keypadWrapper}>
-                  <Text style={styles.keypadTargetLabel}>
-                    Nhập số tiền cho:{' '}
-                    <Text style={{ fontWeight: '900', color: '#000000' }}>
-                      {activeQuickMember?.name ||
-                        `Người #${quickMembers.findIndex(m => m.id === activeInputId) + 1}`}
-                    </Text>
-                  </Text>
-                  <Text style={styles.keypadDisplayAmount}>
-                    {formatVND(activeQuickAmount)}
-                  </Text>
-
-                  {/* Quick % chips row right above keypad */}
-                  <View style={styles.keypadQuickPercentRow}>
-                    {[20, 25, 33, 50, 100].map(pct => (
-                      <Pressable
-                        key={pct}
-                        style={styles.keypadQuickPctChip}
-                        onPress={() => handleAssignPercent(activeInputId, pct)}
-                      >
-                        <Text style={styles.keypadQuickPctText}>{pct}%</Text>
-                      </Pressable>
-                    ))}
-                    <Pressable
-                      style={[styles.keypadQuickPctChip, styles.keypadQuickPctChipRem]}
-                      onPress={() => handleDistributeRemaining(activeInputId)}
+                    <Text
+                      style={[
+                        styles.myExpenseVal,
+                        remainingForMeQuick < 0
+                          ? { color: '#059669' }
+                          : !includeMeInSplit || remainingForMeQuick === 0
+                          ? { color: '#D97706' }
+                          : { color: '#15803D' },
+                      ]}
                     >
-                      <Text style={styles.keypadQuickPctTextRem}>Còn lại</Text>
-                    </Pressable>
+                      {formatVND(Math.max(0, remainingForMeQuick))}
+                    </Text>
                   </View>
-
-                  {[
-                    ['1', '2', '3'],
-                    ['4', '5', '6'],
-                    ['7', '8', '9'],
-                    ['000', '0', 'DEL'],
-                  ].map((row, rIdx) => (
-                    <View key={rIdx} style={styles.keypadRow}>
-                      {row.map(key => (
-                        <Pressable
-                          key={key}
-                          style={({ pressed }) => [
-                            styles.keypadBtn,
-                            pressed && styles.keypadBtnPressed,
-                            key === 'DEL' && styles.keypadDeleteBtn,
-                          ]}
-                          onPress={() => {
-                            if (key === 'DEL') handleBackspace();
-                            else handleDigitPress(key);
-                          }}
-                        >
-                          {key === 'DEL' ? (
-                            <Ionicons name="backspace-outline" size={22} color="#EF4444" />
-                          ) : (
-                            <Text style={styles.keypadText}>{key}</Text>
-                          )}
-                        </Pressable>
-                      ))}
-                    </View>
-                  ))}
                 </View>
 
                 {/* Confirm Button for Quick Split */}
@@ -1820,9 +1572,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
                     {remainingForMeQuick < 0
                       ? `Xác nhận · Tách ${formatVND(totalQuickSplit)} (Dư +${formatVND(Math.abs(remainingForMeQuick))})`
                       : !includeMeInSplit && remainingForMeQuick === 0
-                      ? 'Xác nhận · Trả hộ 100% (Tạo nợ)'
-                      : remainingForMeQuick === 0
-                      ? 'Tách toàn bộ 100% thành khoản nợ'
+                      ? `Xác nhận · Trả hộ 100% (${formatVND(totalQuickSplit)})`
                       : `Xác nhận · Tách ${formatVND(totalQuickSplit)}`}
                   </Text>
                 </Pressable>
@@ -1859,111 +1609,6 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
           parsedBill={parsedBillForPrint}
           wallets={wallets}
         />
-
-        {/* Custom Percent Modal */}
-        <Modal
-          visible={showPercentModal}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setShowPercentModal(false)}
-        >
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            style={styles.percentModalOverlay}
-          >
-            <View style={styles.percentModalContent}>
-              <View style={styles.percentModalHeader}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Ionicons name="pie-chart" size={18} color="#000000" />
-                  <Text style={styles.percentModalTitle}>Chia theo tỷ lệ %</Text>
-                </View>
-                <Pressable
-                  style={styles.percentModalCloseBtn}
-                  onPress={() => setShowPercentModal(false)}
-                  hitSlop={8}
-                >
-                  <Ionicons name="close" size={18} color="#000000" />
-                </Pressable>
-              </View>
-
-              <Text style={styles.percentTargetSub}>
-                Áp dụng cho:{' '}
-                <Text style={{ fontWeight: '900', color: '#000000' }}>
-                  {quickMembers.find(m => m.id === percentTargetId)?.name ||
-                    `Người #${quickMembers.findIndex(m => m.id === percentTargetId) + 1}`}
-                </Text>
-              </Text>
-
-              {/* Quick % chips */}
-              <View style={styles.percentModalChipsRow}>
-                {[10, 20, 25, 30, 33, 40, 50, 60, 70, 75, 100].map(pct => (
-                  <Pressable
-                    key={pct}
-                    style={[
-                      styles.percentModalChip,
-                      percentInputStr === pct.toString() && styles.percentModalChipActive,
-                    ]}
-                    onPress={() => {
-                      hapticLight();
-                      setPercentInputStr(pct.toString());
-                    }}
-                  >
-                    <Text
-                      style={[
-                        styles.percentModalChipText,
-                        percentInputStr === pct.toString() && styles.percentModalChipTextActive,
-                      ]}
-                    >
-                      {pct}%
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              {/* Percentage input box */}
-              <View style={styles.percentInputWrapper}>
-                <TextInput
-                  style={styles.percentInput}
-                  keyboardType="numeric"
-                  maxLength={3}
-                  value={percentInputStr}
-                  onChangeText={txt => setPercentInputStr(txt.replace(/\D/g, ''))}
-                  placeholder="50"
-                  placeholderTextColor="#9CA3AF"
-                />
-                <Text style={styles.percentInputSuffix}>%</Text>
-              </View>
-
-              {/* Calculated amount preview */}
-              <View style={styles.percentPreviewBox}>
-                <Text style={styles.percentPreviewLabel}>Số tiền tương ứng:</Text>
-                <Text style={styles.percentPreviewVal}>
-                  {formatVND(
-                    Math.round(
-                      (totalAmount * Math.min(100, Math.max(0, parseInt(percentInputStr, 10) || 0))) / 100
-                    )
-                  )}
-                </Text>
-              </View>
-
-              <View style={styles.percentModalActions}>
-                <Pressable
-                  style={styles.percentModalCancelBtn}
-                  onPress={() => setShowPercentModal(false)}
-                >
-                  <Text style={styles.percentModalCancelText}>Đóng</Text>
-                </Pressable>
-                <Pressable
-                  style={styles.percentModalApplyBtn}
-                  onPress={() => handleApplyCustomPercent()}
-                >
-                  <Ionicons name="checkmark" size={16} color="#000000" />
-                  <Text style={styles.percentModalApplyText}>Áp dụng</Text>
-                </Pressable>
-              </View>
-            </View>
-          </KeyboardAvoidingView>
-        </Modal>
 
         {AlertModalComponent}
       </KeyboardAvoidingView>
@@ -2716,30 +2361,36 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#B45309',
   },
-  presetsRow: {
+  quickActionButtonsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  quickActionBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 6,
-    marginBottom: 12,
-    flexWrap: 'wrap',
-  },
-  presetLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#6B7280',
-    textTransform: 'uppercase',
-  },
-  presetChip: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1.5,
     borderColor: '#000000',
-    borderRadius: 8,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
+    borderRadius: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 8,
   },
-  presetChipText: {
-    fontSize: 11,
+  quickActionBtnPrimary: {
+    backgroundColor: THEME.popYellow,
+    flex: 1.6,
+  },
+  quickActionBtnText: {
+    fontSize: 12,
     fontWeight: '800',
+    color: '#000000',
+  },
+  quickActionBtnTextPrimary: {
+    fontSize: 12,
+    fontWeight: '900',
     color: '#000000',
   },
   memberCard: {
@@ -2800,37 +2451,65 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: '#D1D5DB',
     paddingHorizontal: 10,
-    paddingVertical: 7,
+    paddingVertical: Platform.OS === 'android' ? 6 : 8,
+    minHeight: 42,
     fontSize: 13,
     fontWeight: '700',
     color: '#000000',
   },
-  amountTriggerBtn: {
+  quickAmountRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 8,
     backgroundColor: '#FAF8F5',
     borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
     borderWidth: 1.5,
     borderColor: '#D1D5DB',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
   },
-  amountTriggerBtnActive: {
-    borderColor: '#059669',
-    backgroundColor: '#ECFDF5',
-  },
-  amountTriggerLabel: {
+  quickAmountLabel: {
     fontSize: 12,
     fontWeight: '800',
     color: '#4B5563',
   },
-  amountTriggerValue: {
+  quickAmountInputWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  quickAmountInput: {
     fontSize: 16,
     fontWeight: '900',
-    flex: 1,
+    color: '#0F766E',
     textAlign: 'right',
-    marginRight: 8,
+    paddingVertical: Platform.OS === 'android' ? 4 : 6,
+    paddingHorizontal: 4,
+    minWidth: 80,
+    minHeight: 38,
+  },
+  quickAmountUnit: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#0F766E',
+    marginLeft: 2,
+  },
+  assignRemBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#059669',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  assignRemBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#047857',
   },
   breakdownCard: {
     backgroundColor: '#FFFFFF',
@@ -2870,73 +2549,6 @@ const styles = StyleSheet.create({
   myExpenseVal: {
     fontSize: 17,
     fontWeight: '900',
-  },
-  infoBox: {
-    flexDirection: 'row',
-    gap: 8,
-    backgroundColor: '#ECFDF5',
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1.5,
-    borderColor: '#059669',
-    alignItems: 'flex-start',
-    marginBottom: 14,
-  },
-  infoText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#065F46',
-    flex: 1,
-    lineHeight: 18,
-  },
-  keypadWrapper: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 12,
-    borderWidth: 2.5,
-    borderColor: '#000000',
-    marginBottom: 14,
-  },
-  keypadTargetLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#6B7280',
-    textAlign: 'center',
-    marginBottom: 2,
-  },
-  keypadDisplayAmount: {
-    fontSize: 26,
-    fontWeight: '900',
-    color: '#0F766E',
-    textAlign: 'center',
-    marginBottom: 10,
-  },
-  keypadRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  keypadBtn: {
-    flex: 1,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginHorizontal: 3,
-    backgroundColor: '#FAF8F5',
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: '#000000',
-  },
-  keypadBtnPressed: {
-    backgroundColor: THEME.popYellow,
-  },
-  keypadDeleteBtn: {
-    backgroundColor: '#FEE2E2',
-  },
-  keypadText: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#000000',
   },
   confirmBtn: {
     flexDirection: 'row',
@@ -3088,256 +2700,5 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '900',
     color: '#0369A1',
-  },
-  memberPercentBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingTop: 4,
-    paddingBottom: 2,
-    gap: 6,
-  },
-  memberPercentBarLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#6B7280',
-  },
-  memberPercentChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: '#9CA3AF',
-    borderRadius: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    marginRight: 4,
-  },
-  memberPercentChipText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#1F2937',
-  },
-  memberPercentChipRem: {
-    backgroundColor: '#ECFDF5',
-    borderColor: '#059669',
-  },
-  memberPercentChipTextRem: {
-    fontSize: 10,
-    fontWeight: '900',
-    color: '#047857',
-  },
-
-  // ── Breakdown & Info Gift Mode ──
-  payForOtherBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: '#FEF3C7',
-    borderWidth: 1,
-    borderColor: '#F59E0B',
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    marginTop: 2,
-  },
-  payForOtherBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#92400E',
-  },
-  infoBoxGift: {
-    backgroundColor: '#FFFBEB',
-    borderColor: '#F59E0B',
-  },
-  infoTextGift: {
-    color: '#92400E',
-  },
-
-  // ── Keypad Quick % Row ──
-  keypadQuickPercentRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 6,
-    marginBottom: 6,
-    gap: 4,
-  },
-  keypadQuickPctChip: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1.5,
-    borderColor: '#D1D5DB',
-    borderRadius: 8,
-    paddingVertical: 5,
-  },
-  keypadQuickPctText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#1F2937',
-  },
-  keypadQuickPctChipRem: {
-    backgroundColor: '#FEF08A',
-    borderColor: '#000000',
-  },
-  keypadQuickPctTextRem: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: '#000000',
-  },
-
-  // ── Custom Percent Modal Styles ──
-  percentModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  percentModalContent: {
-    width: '100%',
-    maxWidth: 360,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    borderWidth: 2.5,
-    borderColor: '#000000',
-    padding: 16,
-    shadowColor: '#000000',
-    shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 8,
-  },
-  percentModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  percentModalTitle: {
-    fontSize: 15,
-    fontWeight: '900',
-    color: '#000000',
-  },
-  percentModalCloseBtn: {
-    padding: 4,
-  },
-  percentTargetSub: {
-    fontSize: 12,
-    color: '#4B5563',
-    marginBottom: 12,
-  },
-  percentModalChipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 12,
-  },
-  percentModalChip: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    backgroundColor: '#F9FAFB',
-  },
-  percentModalChipActive: {
-    backgroundColor: '#FEF08A',
-    borderColor: '#000000',
-    borderWidth: 1.5,
-  },
-  percentModalChipText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#374151',
-  },
-  percentModalChipTextActive: {
-    color: '#000000',
-    fontWeight: '900',
-  },
-  percentInputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FAF8F5',
-    borderWidth: 2,
-    borderColor: '#000000',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    marginBottom: 10,
-  },
-  percentInput: {
-    flex: 1,
-    fontSize: 22,
-    fontWeight: '900',
-    color: '#000000',
-    paddingVertical: 8,
-  },
-  percentInputSuffix: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#4B5563',
-  },
-  percentPreviewBox: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#ECFDF5',
-    borderWidth: 1.5,
-    borderColor: '#059669',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    marginBottom: 14,
-  },
-  percentPreviewLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#065F46',
-  },
-  percentPreviewVal: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: '#047857',
-  },
-  percentModalActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  percentModalCancelBtn: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: '#000000',
-    backgroundColor: '#F3F4F6',
-  },
-  percentModalCancelText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#4B5563',
-  },
-  percentModalApplyBtn: {
-    flex: 1.5,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: '#000000',
-    backgroundColor: THEME.primary,
-    shadowColor: '#000000',
-    shadowOffset: { width: 2, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-  },
-  percentModalApplyText: {
-    fontSize: 13,
-    fontWeight: '900',
-    color: '#000000',
   },
 });
