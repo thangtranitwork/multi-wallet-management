@@ -87,11 +87,11 @@ class ShareIntentModule(reactContext: ReactApplicationContext) : ReactContextBas
             val type = intent.type ?: ""
 
             if (Intent.ACTION_SEND == action && type.startsWith("image/")) {
-                val streamUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val streamUri: Uri? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
                 } else {
                     @Suppress("DEPRECATION")
-                    intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri
                 }
 
                 if (streamUri != null) {
@@ -267,7 +267,7 @@ function withShareIntent(config) {
           if (!mainAppContent.includes('ShareIntentPackage()')) {
             mainAppContent = mainAppContent.replace(
               'PackageList(this).packages.apply {',
-              'PackageList(this).packages.apply {\\n          add(ShareIntentPackage())'
+              'PackageList(this).packages.apply {\n          add(ShareIntentPackage())'
             );
             fs.writeFileSync(mainAppPath, mainAppContent, 'utf-8');
           }
@@ -279,18 +279,21 @@ function withShareIntent(config) {
           let mainActivityContent = fs.readFileSync(mainActivityPath, 'utf-8');
           if (!mainActivityContent.includes('ShareIntentModule.processIntent')) {
             if (!mainActivityContent.includes('import android.content.Intent')) {
-              mainActivityContent = 'import android.content.Intent\\n' + mainActivityContent;
+              mainActivityContent = mainActivityContent.replace(
+                'package com.thang.multiwallet',
+                'package com.thang.multiwallet\n\nimport android.content.Intent'
+              );
             }
             if (mainActivityContent.includes('super.onCreate(null)')) {
               mainActivityContent = mainActivityContent.replace(
                 'super.onCreate(null)',
-                'super.onCreate(null)\\n    ShareIntentModule.processIntent(this, intent)'
+                'super.onCreate(null)\n    ShareIntentModule.processIntent(this, intent)'
               );
             }
             if (!mainActivityContent.includes('override fun onNewIntent')) {
               mainActivityContent = mainActivityContent.replace(
                 'class MainActivity : ReactActivity() {',
-                `class MainActivity : ReactActivity() {\\n  override fun onNewIntent(intent: Intent) {\\n    super.onNewIntent(intent)\\n    setIntent(intent)\\n    ShareIntentModule.processIntent(this, intent)\\n  }`
+                'class MainActivity : ReactActivity() {\n  override fun onNewIntent(intent: Intent) {\n    super.onNewIntent(intent)\n    setIntent(intent)\n    ShareIntentModule.processIntent(this, intent)\n  }'
               );
             }
             fs.writeFileSync(mainActivityPath, mainActivityContent, 'utf-8');
