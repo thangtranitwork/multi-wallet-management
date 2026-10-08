@@ -13,16 +13,19 @@ import { QuickAddModal } from '../components/QuickAddModal';
 import { THEME } from '../constants';
 import { hapticMedium } from '../utils/haptics';
 import { saveWidgetData, syncWidgetData } from '../services/widgetSyncService';
+import { useCopilot } from '../context/CopilotContext';
 import {
-  getInitialSharedImage,
+  getInitialSharedData,
   subscribeToSharedImages,
   clearSharedImage,
+  SharedImagePayload,
 } from '../services/shareIntentService';
 
 const Tab = createBottomTabNavigator();
 const NullComponent = () => null;
 
 export const RootNavigator: React.FC = () => {
+  const { openCopilot } = useCopilot();
   const [quickAddVisible, setQuickAddVisible] = useState(false);
   const [quickAddType, setQuickAddType] = useState<'expense' | 'income' | 'transfer'>('expense');
   const [quickAddPrefill, setQuickAddPrefill] = useState<{
@@ -100,18 +103,29 @@ export const RootNavigator: React.FC = () => {
     });
 
     // Xử lý khi nhận được ảnh biên lai chia sẻ từ app ngân hàng / ví điện tử
-    const handleReceivedSharedImage = (uri: string) => {
-      if (!uri) return;
-      setSharedReceiptUri(uri);
-      setQuickAddPrefill({});
-      setQuickAddType('expense');
-      setQuickAddVisible(true);
+    const handleReceivedSharedImage = (payload: SharedImagePayload) => {
+      if (!payload?.uri) return;
+      const { uri, target } = payload;
       clearSharedImage();
+
+      if (target === 'copilot') {
+        // Mở thẳng Trợ lý AI Copilot với ảnh để phân tích
+        openCopilot({
+          imageUris: [uri],
+          autoSend: true,
+        });
+      } else {
+        // Mở form Tạo giao dịch nhanh (quét hóa đơn OCR)
+        setSharedReceiptUri(uri);
+        setQuickAddPrefill({});
+        setQuickAddType('expense');
+        setQuickAddVisible(true);
+      }
     };
 
-    getInitialSharedImage().then((uri) => {
-      if (uri) {
-        handleReceivedSharedImage(uri);
+    getInitialSharedData().then((data) => {
+      if (data) {
+        handleReceivedSharedImage(data);
       }
     });
 
@@ -122,7 +136,7 @@ export const RootNavigator: React.FC = () => {
       notificationSub.remove();
       shareSub();
     };
-  }, []);
+  }, [openCopilot]);
 
   return (
     <>

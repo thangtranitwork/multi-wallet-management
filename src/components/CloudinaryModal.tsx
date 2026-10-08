@@ -64,12 +64,11 @@ export const CloudinaryModal: React.FC<CloudinaryModalProps> = ({
   const [showGuide, setShowGuide] = useState<boolean>(false);
 
   const loadData = useCallback(async () => {
+    if (!db) return;
     try {
       setLoading(true);
-      const [cfg, imgStats] = await Promise.all([
-        getCloudinaryConfig(db),
-        getLocalImagesStats(db),
-      ]);
+      const cfg = await getCloudinaryConfig(db);
+      const imgStats = await getLocalImagesStats(db);
       setCloudName(cfg.cloudName);
       setUploadPreset(cfg.uploadPreset);
       setFolder(cfg.folder);

@@ -30,12 +30,10 @@ export interface CloudinaryUploadResult {
  * Lấy cấu hình Cloudinary từ SQLite
  */
 export async function getCloudinaryConfig(db: SQLite.SQLiteDatabase): Promise<CloudinaryConfig> {
-  const [cloudName, uploadPreset, folder, enabledStr] = await Promise.all([
-    getAppSetting(db, CLOUDINARY_SETTING_KEYS.CLOUD_NAME, ''),
-    getAppSetting(db, CLOUDINARY_SETTING_KEYS.UPLOAD_PRESET, ''),
-    getAppSetting(db, CLOUDINARY_SETTING_KEYS.FOLDER, 'multi_wallet_receipts'),
-    getAppSetting(db, CLOUDINARY_SETTING_KEYS.ENABLED, 'false'),
-  ]);
+  const cloudName = await getAppSetting(db, CLOUDINARY_SETTING_KEYS.CLOUD_NAME, '');
+  const uploadPreset = await getAppSetting(db, CLOUDINARY_SETTING_KEYS.UPLOAD_PRESET, '');
+  const folder = await getAppSetting(db, CLOUDINARY_SETTING_KEYS.FOLDER, 'multi_wallet_receipts');
+  const enabledStr = await getAppSetting(db, CLOUDINARY_SETTING_KEYS.ENABLED, 'false');
 
   return {
     cloudName: cloudName.trim(),

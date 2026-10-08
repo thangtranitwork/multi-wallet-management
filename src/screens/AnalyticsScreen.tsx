@@ -179,19 +179,18 @@ export const AnalyticsScreen: React.FC<{ navigation?: any }> = ({ navigation }) 
   }, []);
 
   const fetchAnalytics = useCallback(async () => {
+    if (!db) return;
     try {
       setLoadingRange(true);
       const { start, end } = getDateBounds(selectedRange);
-      const [data, advanced, trajectory] = await Promise.all([
-        queries.getAnalyticsByRange(db, start, end),
-        queries.getAdvancedAnalyticsMetrics(
-          db,
-          start,
-          end,
-          selectedRange === 'month' ? isFullMonth : false
-        ),
-        queries.getDailyAssetTrajectory(db, summary?.totalAssets || 0, start, end),
-      ]);
+      const data = await queries.getAnalyticsByRange(db, start, end);
+      const advanced = await queries.getAdvancedAnalyticsMetrics(
+        db,
+        start,
+        end,
+        selectedRange === 'month' ? isFullMonth : false
+      );
+      const trajectory = await queries.getDailyAssetTrajectory(db, summary?.totalAssets || 0, start, end);
       setRangeData(data);
       setAdvancedData(advanced);
       setAssetTrajectory(trajectory);

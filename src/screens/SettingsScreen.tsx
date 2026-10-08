@@ -426,11 +426,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
   };
 
   const refreshCloudinarySummary = useCallback(async () => {
+    if (!db) return;
     try {
-      const [cfg, stats] = await Promise.all([
-        getCloudinaryConfig(db),
-        getLocalImagesStats(db),
-      ]);
+      const cfg = await getCloudinaryConfig(db);
+      const stats = await getLocalImagesStats(db);
       setCloudinaryEnabled(cfg.enabled);
       setCloudinaryCloudName(cfg.cloudName);
       setLocalImagesCount(stats.totalCount);
@@ -2354,7 +2353,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
         <View style={styles.footerContainer}>
           <Text style={styles.footerAppName}>Ví Của Tôi • Multi-Wallet Manager</Text>
           <Text style={styles.footerNote}>
-            Phiên bản 1.2.8(3) • SQLite Offline Local Storage
+            Phiên bản 1.2.9 • SQLite Offline Local Storage
           </Text>
           <Text style={styles.footerPrivacy}>
             100% dữ liệu được lưu trữ trên thiết bị của bạn, hoàn toàn riêng tư và không tải lên máy chủ ngoài.

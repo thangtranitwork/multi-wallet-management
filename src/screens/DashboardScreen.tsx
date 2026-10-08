@@ -22,7 +22,7 @@ import { SplitTransactionModal } from '../components/SplitTransactionModal';
 import { TransactionDetailModal } from '../components/TransactionDetailModal';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
 import { SmartForecastCard } from '../components/SmartForecastCard';
-import { FinancialCopilotModal } from '../components/ai/FinancialCopilotModal';
+import { useCopilot } from '../context/CopilotContext';
 import { getDashboardForecast, DashboardForecast } from '../services/predictionService';
 import { Wallet, Transaction } from '../types';
 import { THEME, formatVND } from '../constants';
@@ -68,7 +68,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
   const [splitTargetTx, setSplitTargetTx] = useState<Transaction | null>(null);
   const [selectedDetailTx, setSelectedDetailTx] = useState<Transaction | null>(null);
   const [txToDelete, setTxToDelete] = useState<Transaction | null>(null);
-  const [copilotVisible, setCopilotVisible] = useState(false);
+  const { openCopilot } = useCopilot();
 
   const dashboardForecast = useMemo(() => {
     return getDashboardForecast(transactions, categories);
@@ -730,7 +730,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
           style={styles.floatingCopilotShadow}
           onPress={() => {
             hapticMedium();
-            setCopilotVisible(true);
+            openCopilot();
           }}
         >
           <View style={styles.floatingCopilotInner}>
@@ -741,11 +741,6 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
           </View>
         </Pressable>
       </View>
-
-      <FinancialCopilotModal
-        visible={copilotVisible}
-        onClose={() => setCopilotVisible(false)}
-      />
     </SafeAreaView>
   );
 };

@@ -26,10 +26,32 @@ class ShareIntentModule(reactContext: ReactApplicationContext) : ReactContextBas
     override fun getName(): String = "ShareIntentModule"
 
     @ReactMethod
+    fun getInitialSharedData(promise: Promise) {
+        try {
+            val uri = initialSharedUri
+            val target = initialSharedTarget ?: "quick_add"
+            initialSharedUri = null
+            initialSharedTarget = null
+            if (uri != null) {
+                val map = Arguments.createMap().apply {
+                    putString("uri", uri)
+                    putString("target", target)
+                }
+                promise.resolve(map)
+            } else {
+                promise.resolve(null)
+            }
+        } catch (e: Exception) {
+            promise.reject("ERROR_GET_SHARED_DATA", e.message, e)
+        }
+    }
+
+    @ReactMethod
     fun getInitialSharedImage(promise: Promise) {
         try {
             val uri = initialSharedUri
             initialSharedUri = null
+            initialSharedTarget = null
             promise.resolve(uri)
         } catch (e: Exception) {
             promise.reject("ERROR_GET_SHARED_IMAGE", e.message, e)
@@ -39,6 +61,7 @@ class ShareIntentModule(reactContext: ReactApplicationContext) : ReactContextBas
     @ReactMethod
     fun clearSharedImage(promise: Promise) {
         initialSharedUri = null
+        initialSharedTarget = null
         promise.resolve(true)
     }
 
@@ -55,6 +78,7 @@ class ShareIntentModule(reactContext: ReactApplicationContext) : ReactContextBas
     companion object {
         private const val EVENT_NAME = "onSharedImageReceived"
         var initialSharedUri: String? = null
+        var initialSharedTarget: String? = null
         var instance: ShareIntentModule? = null
 
         fun processIntent(context: Context, intent: Intent?) {
@@ -73,8 +97,11 @@ class ShareIntentModule(reactContext: ReactApplicationContext) : ReactContextBas
                 if (streamUri != null) {
                     val localUri = copyUriToInternalCache(context, streamUri)
                     if (localUri != null) {
+                        val className = intent.component?.className ?: ""
+                        val target = if (className.contains("Copilot", ignoreCase = true)) "copilot" else "quick_add"
                         initialSharedUri = localUri
-                        instance?.sendEvent(localUri)
+                        initialSharedTarget = target
+                        instance?.sendEvent(localUri, target)
                     }
                 }
             }
@@ -102,10 +129,11 @@ class ShareIntentModule(reactContext: ReactApplicationContext) : ReactContextBas
         }
     }
 
-    private fun sendEvent(uri: String) {
+    private fun sendEvent(uri: String, target: String) {
         if (reactApplicationContext.hasActiveReactInstance()) {
             val params = Arguments.createMap().apply {
                 putString("uri", uri)
+                putString("target", target)
             }
             reactApplicationContext
                 .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
@@ -134,29 +162,74 @@ class ShareIntentPackage : ReactPackage {
 `;
 
 function withShareIntent(config) {
-  // 1. AndroidManifest: thêm intent-filter cho SEND image
+  // 1. AndroidManifest: cấu hình 2 lựa chọn riêng biệt trong System Share Sheet
   config = withAndroidManifest(config, (config) => {
     const mainApplication = config.modResults.manifest.application?.[0];
     if (mainApplication?.activity) {
       const mainActivity = mainApplication.activity.find(
         (a) => a.$?.['android:name'] === '.MainActivity'
       );
-      if (mainActivity) {
-        if (!mainActivity['intent-filter']) {
-          mainActivity['intent-filter'] = [];
-        }
-
-        const hasSendFilter = mainActivity['intent-filter'].some((f) =>
-          f.action?.some((a) => a.$?.['android:name'] === 'android.intent.action.SEND')
+      if (mainActivity && mainActivity['intent-filter']) {
+        // Gỡ bỏ SEND khỏi MainActivity nếu có để ủy quyền cho 2 alias độc lập
+        mainActivity['intent-filter'] = mainActivity['intent-filter'].filter(
+          (f) => !f.action?.some((a) => a.$?.['android:name'] === 'android.intent.action.SEND')
         );
+      }
 
-        if (!hasSendFilter) {
-          mainActivity['intent-filter'].push({
-            action: [{ $: { 'android:name': 'android.intent.action.SEND' } }],
-            category: [{ $: { 'android:name': 'android.intent.category.DEFAULT' } }],
-            data: [{ $: { 'android:mimeType': 'image/*' } }],
-          });
-        }
+      if (!mainApplication['activity-alias']) {
+        mainApplication['activity-alias'] = [];
+      }
+
+      const aliases = mainApplication['activity-alias'];
+
+      // Alias 1: Quét hóa đơn (Quick Add)
+      const hasQuickAddAlias = aliases.some(
+        (a) => a.$?.['android:name'] === '.ShareToQuickAddAlias'
+      );
+      if (!hasQuickAddAlias) {
+        aliases.push({
+          $: {
+            'android:name': '.ShareToQuickAddAlias',
+            'android:targetActivity': '.MainActivity',
+            'android:label': 'MultiWallet - Quét hóa đơn',
+            'android:icon': '@mipmap/ic_launcher',
+            'android:roundIcon': '@mipmap/ic_launcher_round',
+            'android:exported': 'true',
+          },
+          'intent-filter': [
+            {
+              $: { 'android:label': 'MultiWallet - Quét hóa đơn' },
+              action: [{ $: { 'android:name': 'android.intent.action.SEND' } }],
+              category: [{ $: { 'android:name': 'android.intent.category.DEFAULT' } }],
+              data: [{ $: { 'android:mimeType': 'image/*' } }],
+            },
+          ],
+        });
+      }
+
+      // Alias 2: AI Copilot
+      const hasCopilotAlias = aliases.some(
+        (a) => a.$?.['android:name'] === '.ShareToCopilotAlias'
+      );
+      if (!hasCopilotAlias) {
+        aliases.push({
+          $: {
+            'android:name': '.ShareToCopilotAlias',
+            'android:targetActivity': '.MainActivity',
+            'android:label': 'MultiWallet - AI Copilot',
+            'android:icon': '@mipmap/ic_launcher',
+            'android:roundIcon': '@mipmap/ic_launcher_round',
+            'android:exported': 'true',
+          },
+          'intent-filter': [
+            {
+              $: { 'android:label': 'MultiWallet - AI Copilot' },
+              action: [{ $: { 'android:name': 'android.intent.action.SEND' } }],
+              category: [{ $: { 'android:name': 'android.intent.category.DEFAULT' } }],
+              data: [{ $: { 'android:mimeType': 'image/*' } }],
+            },
+          ],
+        });
       }
     }
     return config;
@@ -179,6 +252,7 @@ function withShareIntent(config) {
           SHARE_MODULE_KOTLIN,
           'utf-8'
         );
+
         // Ghi file package
         fs.writeFileSync(
           path.join(packageDir, 'ShareIntentPackage.kt'),
@@ -186,38 +260,39 @@ function withShareIntent(config) {
           'utf-8'
         );
 
-        // Chèn vào MainApplication.kt nếu chưa có
+        // Cập nhật MainApplication.kt để đăng ký package nếu chưa có
         const mainAppPath = path.join(packageDir, 'MainApplication.kt');
         if (fs.existsSync(mainAppPath)) {
           let mainAppContent = fs.readFileSync(mainAppPath, 'utf-8');
           if (!mainAppContent.includes('ShareIntentPackage()')) {
             mainAppContent = mainAppContent.replace(
               'PackageList(this).packages.apply {',
-              'PackageList(this).packages.apply {\n          add(ShareIntentPackage())'
+              'PackageList(this).packages.apply {\\n          add(ShareIntentPackage())'
             );
             fs.writeFileSync(mainAppPath, mainAppContent, 'utf-8');
           }
         }
 
-        // Chèn vào MainActivity.kt nếu chưa có
+        // Cập nhật MainActivity.kt để đón Intent chia sẻ
         const mainActivityPath = path.join(packageDir, 'MainActivity.kt');
         if (fs.existsSync(mainActivityPath)) {
           let mainActivityContent = fs.readFileSync(mainActivityPath, 'utf-8');
           if (!mainActivityContent.includes('ShareIntentModule.processIntent')) {
             if (!mainActivityContent.includes('import android.content.Intent')) {
+              mainActivityContent = 'import android.content.Intent\\n' + mainActivityContent;
+            }
+            if (mainActivityContent.includes('super.onCreate(null)')) {
               mainActivityContent = mainActivityContent.replace(
-                'package com.thang.multiwallet\n',
-                'package com.thang.multiwallet\n\nimport android.content.Intent'
+                'super.onCreate(null)',
+                'super.onCreate(null)\\n    ShareIntentModule.processIntent(this, intent)'
               );
             }
-            mainActivityContent = mainActivityContent.replace(
-              'super.onCreate(null)',
-              'super.onCreate(null)\n    ShareIntentModule.processIntent(this, intent)'
-            );
-            mainActivityContent = mainActivityContent.replace(
-              'class MainActivity : ReactActivity() {',
-              `class MainActivity : ReactActivity() {\n  override fun onNewIntent(intent: Intent) {\n    super.onNewIntent(intent)\n    setIntent(intent)\n    ShareIntentModule.processIntent(this, intent)\n  }`
-            );
+            if (!mainActivityContent.includes('override fun onNewIntent')) {
+              mainActivityContent = mainActivityContent.replace(
+                'class MainActivity : ReactActivity() {',
+                `class MainActivity : ReactActivity() {\\n  override fun onNewIntent(intent: Intent) {\\n    super.onNewIntent(intent)\\n    setIntent(intent)\\n    ShareIntentModule.processIntent(this, intent)\\n  }`
+              );
+            }
             fs.writeFileSync(mainActivityPath, mainActivityContent, 'utf-8');
           }
         }

@@ -562,12 +562,9 @@ export async function splitTransactionIntoDebts(
 
     const totalSplit = splits.reduce((sum, s) => sum + s.amount, 0);
     if (totalSplit <= 0) throw new Error('Số tiền tách phải lớn hơn 0');
-    if (totalSplit > tx.amount) {
-      throw new Error('Tổng số tiền tách không được vượt quá số tiền giao dịch gốc');
-    }
 
     const now = new Date().toISOString();
-    const remainingAmount = tx.amount - totalSplit;
+    const remainingAmount = Math.max(0, tx.amount - totalSplit);
 
     // 1. Tạo các khoản nợ (debts) cho từng người và giao dịch debt_lend tương ứng
     const splitNames: string[] = [];

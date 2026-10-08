@@ -5,155 +5,172 @@ import { normalizeToIsoString } from '../utils/dateUtils';
 export const DB_NAME = 'multi_wallet_emerald_v3.db';
 
 export async function initDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
-  await db.execAsync(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA foreign_keys = ON;
+  if (!db) {
+    console.warn('[initDatabase] Database instance is null or undefined!');
+    return;
+  }
 
-    CREATE TABLE IF NOT EXISTS wallets (
-      id TEXT PRIMARY KEY NOT NULL,
-      name TEXT NOT NULL,
-      type TEXT NOT NULL,
-      balance REAL NOT NULL DEFAULT 0,
-      credit_limit REAL NOT NULL DEFAULT 0,
-      currency TEXT NOT NULL DEFAULT 'VND',
-      color TEXT NOT NULL,
-      icon TEXT NOT NULL,
-      is_excluded INTEGER NOT NULL DEFAULT 0,
-      statement_day INTEGER DEFAULT NULL,
-      due_day INTEGER DEFAULT NULL,
-      bank_bin TEXT DEFAULT NULL,
-      bank_account TEXT DEFAULT NULL,
-      qr_image_uri TEXT DEFAULT NULL,
-      note TEXT,
-      created_at TEXT NOT NULL
-    );
+  try {
+    await db.execAsync(`
+      PRAGMA journal_mode = WAL;
+      PRAGMA foreign_keys = ON;
 
-    CREATE TABLE IF NOT EXISTS categories (
-      id TEXT PRIMARY KEY NOT NULL,
-      name TEXT NOT NULL,
-      type TEXT NOT NULL,
-      icon TEXT NOT NULL,
-      color TEXT NOT NULL
-    );
+      CREATE TABLE IF NOT EXISTS wallets (
+        id TEXT PRIMARY KEY NOT NULL,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        balance REAL NOT NULL DEFAULT 0,
+        credit_limit REAL NOT NULL DEFAULT 0,
+        currency TEXT NOT NULL DEFAULT 'VND',
+        color TEXT NOT NULL,
+        icon TEXT NOT NULL,
+        is_excluded INTEGER NOT NULL DEFAULT 0,
+        statement_day INTEGER DEFAULT NULL,
+        due_day INTEGER DEFAULT NULL,
+        bank_bin TEXT DEFAULT NULL,
+        bank_account TEXT DEFAULT NULL,
+        qr_image_uri TEXT DEFAULT NULL,
+        note TEXT,
+        created_at TEXT NOT NULL
+      );
 
-    CREATE TABLE IF NOT EXISTS debts (
-      id TEXT PRIMARY KEY NOT NULL,
-      type TEXT NOT NULL, -- 'lend' (người khác nợ mình), 'borrow' (mình nợ người khác)
-      person_name TEXT NOT NULL,
-      person_phone TEXT,
-      initial_amount REAL NOT NULL,
-      remaining_amount REAL NOT NULL,
-      wallet_id TEXT,
-      due_date TEXT,
-      status TEXT NOT NULL DEFAULT 'active', -- 'active', 'partially_paid', 'settled'
-      note TEXT,
-      created_at TEXT NOT NULL
-    );
+      CREATE TABLE IF NOT EXISTS categories (
+        id TEXT PRIMARY KEY NOT NULL,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        icon TEXT NOT NULL,
+        color TEXT NOT NULL
+      );
 
-    CREATE TABLE IF NOT EXISTS transactions (
-      id TEXT PRIMARY KEY NOT NULL,
-      type TEXT NOT NULL, -- 'expense', 'income', 'transfer', 'adjustment', 'debt_lend', 'debt_borrow', 'debt_repay', 'debt_collect'
-      amount REAL NOT NULL,
-      wallet_id TEXT NOT NULL,
-      to_wallet_id TEXT,
-      category_id TEXT,
-      debt_id TEXT,
-      note TEXT,
-      transacted_at TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      is_amortized INTEGER DEFAULT 0,
-      image_uris TEXT DEFAULT NULL,
-      items TEXT DEFAULT NULL,
-      FOREIGN KEY (wallet_id) REFERENCES wallets(id) ON DELETE CASCADE,
-      FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL,
-      FOREIGN KEY (debt_id) REFERENCES debts(id) ON DELETE SET NULL
-    );
+      CREATE TABLE IF NOT EXISTS debts (
+        id TEXT PRIMARY KEY NOT NULL,
+        type TEXT NOT NULL, -- 'lend' (người khác nợ mình), 'borrow' (mình nợ người khác)
+        person_name TEXT NOT NULL,
+        person_phone TEXT,
+        initial_amount REAL NOT NULL,
+        remaining_amount REAL NOT NULL,
+        wallet_id TEXT,
+        due_date TEXT,
+        status TEXT NOT NULL DEFAULT 'active', -- 'active', 'partially_paid', 'settled'
+        note TEXT,
+        created_at TEXT NOT NULL
+      );
 
-    CREATE TABLE IF NOT EXISTS contacts (
-      id TEXT PRIMARY KEY NOT NULL,
-      name TEXT NOT NULL,
-      phone TEXT,
-      note TEXT,
-      created_at TEXT NOT NULL
-    );
+      CREATE TABLE IF NOT EXISTS transactions (
+        id TEXT PRIMARY KEY NOT NULL,
+        type TEXT NOT NULL, -- 'expense', 'income', 'transfer', 'adjustment', 'debt_lend', 'debt_borrow', 'debt_repay', 'debt_collect'
+        amount REAL NOT NULL,
+        wallet_id TEXT NOT NULL,
+        to_wallet_id TEXT,
+        category_id TEXT,
+        debt_id TEXT,
+        note TEXT,
+        transacted_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        is_amortized INTEGER DEFAULT 0,
+        image_uris TEXT DEFAULT NULL,
+        items TEXT DEFAULT NULL,
+        FOREIGN KEY (wallet_id) REFERENCES wallets(id) ON DELETE CASCADE,
+        FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL,
+        FOREIGN KEY (debt_id) REFERENCES debts(id) ON DELETE SET NULL
+      );
 
-    CREATE TABLE IF NOT EXISTS debt_payments (
-      id TEXT PRIMARY KEY NOT NULL,
-      debt_id TEXT NOT NULL,
-      amount REAL NOT NULL,
-      wallet_id TEXT NOT NULL,
-      paid_at TEXT NOT NULL,
-      note TEXT,
-      FOREIGN KEY (debt_id) REFERENCES debts(id) ON DELETE CASCADE,
-      FOREIGN KEY (wallet_id) REFERENCES wallets(id)
-    );
+      CREATE TABLE IF NOT EXISTS contacts (
+        id TEXT PRIMARY KEY NOT NULL,
+        name TEXT NOT NULL,
+        phone TEXT,
+        note TEXT,
+        created_at TEXT NOT NULL
+      );
 
-    CREATE TABLE IF NOT EXISTS app_settings (
-      key TEXT PRIMARY KEY NOT NULL,
-      value TEXT NOT NULL
-    );
+      CREATE TABLE IF NOT EXISTS debt_payments (
+        id TEXT PRIMARY KEY NOT NULL,
+        debt_id TEXT NOT NULL,
+        amount REAL NOT NULL,
+        wallet_id TEXT NOT NULL,
+        paid_at TEXT NOT NULL,
+        note TEXT,
+        FOREIGN KEY (debt_id) REFERENCES debts(id) ON DELETE CASCADE,
+        FOREIGN KEY (wallet_id) REFERENCES wallets(id)
+      );
 
-    CREATE TABLE IF NOT EXISTS planned_expenses (
-      id TEXT PRIMARY KEY NOT NULL,
-      title TEXT NOT NULL,
-      amount REAL NOT NULL,
-      target_date TEXT NOT NULL,
-      wallet_id TEXT,
-      to_wallet_id TEXT,
-      category_id TEXT,
-      planned_type TEXT NOT NULL DEFAULT 'expense',
-      installment_current INTEGER DEFAULT NULL,
-      installment_total INTEGER DEFAULT NULL,
-      fee REAL DEFAULT 0,
-      parent_tx_id TEXT DEFAULT NULL,
-      status TEXT NOT NULL DEFAULT 'pending',
-      actual_amount REAL,
-      note TEXT,
-      created_at TEXT NOT NULL,
-      FOREIGN KEY (wallet_id) REFERENCES wallets(id) ON DELETE SET NULL,
-      FOREIGN KEY (to_wallet_id) REFERENCES wallets(id) ON DELETE SET NULL,
-      FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
-    );
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key TEXT PRIMARY KEY NOT NULL,
+        value TEXT NOT NULL
+      );
 
-    CREATE TABLE IF NOT EXISTS payee_mappings (
-      id TEXT PRIMARY KEY NOT NULL,
-      payee_name TEXT NOT NULL,
-      payee_display_name TEXT,
-      account_number TEXT,
-      bank_name TEXT,
-      suggested_note TEXT NOT NULL,
-      suggested_category_id TEXT,
-      suggested_wallet_id TEXT,
-      use_count INTEGER DEFAULT 1,
-      recent_notes TEXT,
-      last_used_at TEXT NOT NULL,
-      created_at TEXT NOT NULL
-    );
+      CREATE TABLE IF NOT EXISTS planned_expenses (
+        id TEXT PRIMARY KEY NOT NULL,
+        title TEXT NOT NULL,
+        amount REAL NOT NULL,
+        target_date TEXT NOT NULL,
+        wallet_id TEXT,
+        to_wallet_id TEXT,
+        category_id TEXT,
+        planned_type TEXT NOT NULL DEFAULT 'expense',
+        installment_current INTEGER DEFAULT NULL,
+        installment_total INTEGER DEFAULT NULL,
+        fee REAL DEFAULT 0,
+        parent_tx_id TEXT DEFAULT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        actual_amount REAL,
+        note TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (wallet_id) REFERENCES wallets(id) ON DELETE SET NULL,
+        FOREIGN KEY (to_wallet_id) REFERENCES wallets(id) ON DELETE SET NULL,
+        FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
+      );
 
-    CREATE INDEX IF NOT EXISTS idx_transactions_transacted_at ON transactions(transacted_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_transactions_wallet ON transactions(wallet_id);
-    CREATE INDEX IF NOT EXISTS idx_debts_status ON debts(status);
-    CREATE INDEX IF NOT EXISTS idx_planned_target_date ON planned_expenses(target_date ASC);
-    CREATE INDEX IF NOT EXISTS idx_planned_status ON planned_expenses(status);
-    CREATE INDEX IF NOT EXISTS idx_contacts_name ON contacts(name);
-    CREATE INDEX IF NOT EXISTS idx_payee_mappings_name ON payee_mappings(payee_name);
-  `);
+      CREATE TABLE IF NOT EXISTS payee_mappings (
+        id TEXT PRIMARY KEY NOT NULL,
+        payee_name TEXT NOT NULL,
+        payee_display_name TEXT,
+        account_number TEXT,
+        bank_name TEXT,
+        suggested_note TEXT NOT NULL,
+        suggested_category_id TEXT,
+        suggested_wallet_id TEXT,
+        use_count INTEGER DEFAULT 1,
+        recent_notes TEXT,
+        last_used_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
 
-  // Safe ALTER TABLE migrations for existing installations
-  try { await db.execAsync('ALTER TABLE wallets ADD COLUMN statement_day INTEGER DEFAULT NULL;'); } catch {}
-  try { await db.execAsync('ALTER TABLE wallets ADD COLUMN due_day INTEGER DEFAULT NULL;'); } catch {}
-  try { await db.execAsync('ALTER TABLE wallets ADD COLUMN bank_bin TEXT DEFAULT NULL;'); } catch {}
-  try { await db.execAsync('ALTER TABLE wallets ADD COLUMN bank_account TEXT DEFAULT NULL;'); } catch {}
-  try { await db.execAsync('ALTER TABLE wallets ADD COLUMN qr_image_uri TEXT DEFAULT NULL;'); } catch {}
-  try { await db.execAsync('ALTER TABLE planned_expenses ADD COLUMN to_wallet_id TEXT DEFAULT NULL;'); } catch {}
-  try { await db.execAsync("ALTER TABLE planned_expenses ADD COLUMN planned_type TEXT NOT NULL DEFAULT 'expense';"); } catch {}
-  try { await db.execAsync('ALTER TABLE planned_expenses ADD COLUMN installment_current INTEGER DEFAULT NULL;'); } catch {}
-  try { await db.execAsync('ALTER TABLE planned_expenses ADD COLUMN installment_total INTEGER DEFAULT NULL;'); } catch {}
-  try { await db.execAsync('ALTER TABLE planned_expenses ADD COLUMN fee REAL DEFAULT 0;'); } catch {}
-  try { await db.execAsync('ALTER TABLE planned_expenses ADD COLUMN parent_tx_id TEXT DEFAULT NULL;'); } catch {}
-  try { await db.execAsync('ALTER TABLE transactions ADD COLUMN is_amortized INTEGER DEFAULT 0;'); } catch {}
-  try { await db.execAsync('ALTER TABLE transactions ADD COLUMN image_uris TEXT DEFAULT NULL;'); } catch {}
-  try { await db.execAsync('ALTER TABLE transactions ADD COLUMN items TEXT DEFAULT NULL;'); } catch {}
+      CREATE INDEX IF NOT EXISTS idx_transactions_transacted_at ON transactions(transacted_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_transactions_wallet ON transactions(wallet_id);
+      CREATE INDEX IF NOT EXISTS idx_debts_status ON debts(status);
+      CREATE INDEX IF NOT EXISTS idx_planned_target_date ON planned_expenses(target_date ASC);
+      CREATE INDEX IF NOT EXISTS idx_planned_status ON planned_expenses(status);
+      CREATE INDEX IF NOT EXISTS idx_contacts_name ON contacts(name);
+      CREATE INDEX IF NOT EXISTS idx_payee_mappings_name ON payee_mappings(payee_name);
+    `);
+
+    // Safe ALTER TABLE migrations for existing installations
+    const safeAlter = async (sql: string) => {
+      try {
+        await db.execAsync(sql);
+      } catch {
+        // Column already exists or already migrated
+      }
+    };
+    await safeAlter('ALTER TABLE wallets ADD COLUMN statement_day INTEGER DEFAULT NULL;');
+    await safeAlter('ALTER TABLE wallets ADD COLUMN due_day INTEGER DEFAULT NULL;');
+    await safeAlter('ALTER TABLE wallets ADD COLUMN bank_bin TEXT DEFAULT NULL;');
+    await safeAlter('ALTER TABLE wallets ADD COLUMN bank_account TEXT DEFAULT NULL;');
+    await safeAlter('ALTER TABLE wallets ADD COLUMN qr_image_uri TEXT DEFAULT NULL;');
+    await safeAlter('ALTER TABLE planned_expenses ADD COLUMN to_wallet_id TEXT DEFAULT NULL;');
+    await safeAlter("ALTER TABLE planned_expenses ADD COLUMN planned_type TEXT NOT NULL DEFAULT 'expense';");
+    await safeAlter('ALTER TABLE planned_expenses ADD COLUMN installment_current INTEGER DEFAULT NULL;');
+    await safeAlter('ALTER TABLE planned_expenses ADD COLUMN installment_total INTEGER DEFAULT NULL;');
+    await safeAlter('ALTER TABLE planned_expenses ADD COLUMN fee REAL DEFAULT 0;');
+    await safeAlter('ALTER TABLE planned_expenses ADD COLUMN parent_tx_id TEXT DEFAULT NULL;');
+    await safeAlter('ALTER TABLE transactions ADD COLUMN is_amortized INTEGER DEFAULT 0;');
+    await safeAlter('ALTER TABLE transactions ADD COLUMN image_uris TEXT DEFAULT NULL;');
+    await safeAlter('ALTER TABLE transactions ADD COLUMN items TEXT DEFAULT NULL;');
+  } catch (error) {
+    console.error('[initDatabase] Lỗi tạo bảng SQLite:', error);
+    throw error;
+  }
 
   // Migration: Chuẩn hóa tất cả transacted_at cũ chưa đúng chuẩn ISO UTC (ví dụ dạng "YYYY-MM-DD HH:mm:ss" do AI tạo)
   try {

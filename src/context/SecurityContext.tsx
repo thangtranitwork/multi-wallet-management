@@ -58,21 +58,14 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     let isMounted = true;
 
     async function loadSettings() {
+      if (!db) return;
       try {
-        const [
-          lockVal,
-          fpVal,
-          pinVal,
-          hapticsVal,
-          timeoutVal,
-          hasHw,
-          isEnrolled,
-        ] = await Promise.all([
-          queries.getAppSetting(db, 'is_app_lock_enabled', 'false'),
-          queries.getAppSetting(db, 'use_fingerprint', 'false'),
-          queries.getAppSetting(db, 'pin_code', ''),
-          queries.getAppSetting(db, 'haptics_enabled', 'true'),
-          queries.getAppSetting(db, 'auto_lock_timeout', '30'),
+        const lockVal = await queries.getAppSetting(db, 'is_app_lock_enabled', 'false');
+        const fpVal = await queries.getAppSetting(db, 'use_fingerprint', 'false');
+        const pinVal = await queries.getAppSetting(db, 'pin_code', '');
+        const hapticsVal = await queries.getAppSetting(db, 'haptics_enabled', 'true');
+        const timeoutVal = await queries.getAppSetting(db, 'auto_lock_timeout', '30');
+        const [hasHw, isEnrolled] = await Promise.all([
           LocalAuthentication.hasHardwareAsync(),
           LocalAuthentication.isEnrolledAsync(),
         ]);

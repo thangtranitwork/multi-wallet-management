@@ -618,6 +618,15 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
       (s, it) => s + (it.price || 0) * (it.quantity || 1),
       0
     );
+    const adjustments = effectiveTransaction.adjustments || [];
+    const members = effectiveTransaction.members || [];
+    const netAdjustments = adjustments.reduce(
+      (s, a) => s + (a.type === 'fee' ? a.amount : -a.amount),
+      0
+    );
+    const expectedTotal = itemsSum > 0 ? itemsSum + netAdjustments : currentAmount;
+    const hasDiscrepancy =
+      itemsSum > 0 && Math.abs(expectedTotal - currentAmount) > 100;
 
     return (
       <View style={styles.cardShadow}>
@@ -692,7 +701,8 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
               </View>
             </View>
 
-            {effectiveTransaction.items && effectiveTransaction.items.length > 0 && (
+            {((effectiveTransaction.items && effectiveTransaction.items.length > 0) ||
+              adjustments.length > 0) && (
               <View style={styles.receiptItemsBox}>
                 <Pressable
                   style={styles.receiptItemsHeader}
@@ -701,7 +711,8 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     <Ionicons name="receipt-outline" size={13} color="#000000" />
                     <Text style={styles.receiptItemsHeaderTitle}>
-                      Chi tiết hóa đơn ({effectiveTransaction.items.length} món)
+                      Chi tiết hóa đơn ({effectiveTransaction.items?.length || 0} món
+                      {adjustments.length > 0 ? `, ${adjustments.length} phí/voucher` : ''})
                     </Text>
                   </View>
                   <Ionicons
@@ -713,7 +724,18 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
 
                 {showItems && (
                   <View style={styles.receiptItemsList}>
-                    {effectiveTransaction.items.map((it, idx) => (
+                    {/* Tag đơn nhóm nếu có */}
+                    {members.length > 1 && (
+                      <View style={styles.groupOrderBadge}>
+                        <Ionicons name="people" size={12} color="#1D4ED8" />
+                        <Text style={styles.groupOrderBadgeText} numberOfLines={1}>
+                          Đơn nhóm ({members.length} người: {members.map(m => m.name).join(', ')})
+                        </Text>
+                      </View>
+                    )}
+
+                    {/* Danh sách món */}
+                    {effectiveTransaction.items?.map((it, idx) => (
                       <View
                         key={idx}
                         style={[
@@ -739,32 +761,76 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
                         </Text>
                       </View>
                     ))}
+
+                    {/* Danh sách adjustments (phí ship, phí áp dụng, giảm giá voucher...) */}
+                    {adjustments.length > 0 && (
+                      <View style={{ marginTop: 6, paddingTop: 4, borderTopWidth: 1, borderTopColor: '#E2E8F0' }}>
+                        {adjustments.map((adj, idx) => {
+                          const isDiscount = adj.type === 'discount';
+                          return (
+                            <View key={adj.id || idx} style={styles.receiptAdjRow}>
+                              <View style={styles.receiptAdjBadge}>
+                                <Ionicons
+                                  name={isDiscount ? 'pricetag-outline' : 'car-outline'}
+                                  size={12}
+                                  color={isDiscount ? '#059669' : '#2563EB'}
+                                />
+                                <Text
+                                  style={[
+                                    styles.receiptItemName,
+                                    { color: isDiscount ? '#059669' : '#1E40AF', fontWeight: '700' },
+                                  ]}
+                                  numberOfLines={1}
+                                >
+                                  {adj.name}
+                                </Text>
+                              </View>
+                              <Text
+                                style={[
+                                  styles.receiptItemPrice,
+                                  { color: isDiscount ? '#059669' : '#1E40AF' },
+                                ]}
+                              >
+                                {isDiscount ? '-' : '+'}{formatVND(adj.amount)}
+                              </Text>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
+
+                    {/* Tổng kết món & phí */}
                     <View style={styles.receiptItemsSummaryRow}>
-                      <Text style={styles.receiptItemsSummaryLabel}>Tổng tiền các món:</Text>
-                      <Text style={styles.receiptItemsSummaryVal}>{formatVND(itemsSum)}</Text>
+                      <Text style={styles.receiptItemsSummaryLabel}>
+                        {adjustments.length > 0 ? 'Tổng tính toán sau phí & voucher:' : 'Tổng tiền các món:'}
+                      </Text>
+                      <Text style={styles.receiptItemsSummaryVal}>{formatVND(expectedTotal)}</Text>
                     </View>
                   </View>
                 )}
 
                 {/* Discrepancy warning banner */}
-                {itemsSum > 0 && Math.abs(itemsSum - currentAmount) > 100 && (
+                {hasDiscrepancy && (
                   <View style={styles.discrepancyAlertBox}>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.discrepancyAlertTitle}>
-                        ⚠️ Tổng món ({formatVND(itemsSum)}) lệch với số tiền thanh toán ({formatVND(currentAmount)})
-                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <Ionicons name="warning-outline" size={13} color="#92400E" />
+                        <Text style={[styles.discrepancyAlertTitle, { flex: 1 }]}>
+                          Tổng tính toán ({formatVND(expectedTotal)}) lệch với số tiền thanh toán ({formatVND(currentAmount)})
+                        </Text>
+                      </View>
                       <Text style={styles.discrepancyAlertDesc}>
-                        Chênh {formatVND(Math.abs(itemsSum - currentAmount))} (có thể do voucher giảm giá hoặc thuế VAT).
+                        Chênh {formatVND(Math.abs(expectedTotal - currentAmount))}.
                       </Text>
                     </View>
                     <Pressable
                       style={styles.discrepancySyncBtn}
                       onPress={() => {
                         hapticSuccess();
-                        setOverrideAmount(itemsSum);
+                        setOverrideAmount(expectedTotal);
                       }}
                     >
-                      <Text style={styles.discrepancySyncBtnText}>Khớp tổng món</Text>
+                      <Text style={styles.discrepancySyncBtnText}>Khớp số tiền</Text>
                     </Pressable>
                   </View>
                 )}
@@ -1745,5 +1811,37 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     color: '#000000',
+  },
+  receiptAdjRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+  },
+  receiptAdjBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flex: 1,
+    marginRight: 8,
+  },
+  groupOrderBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#93C5FD',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginBottom: 8,
+  },
+  groupOrderBadgeText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#1D4ED8',
+    flex: 1,
   },
 });

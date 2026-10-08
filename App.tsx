@@ -10,6 +10,7 @@ dayjs.locale('vi');
 import { DB_NAME, initDatabase } from './src/database/db';
 import { WalletProvider } from './src/context/WalletContext';
 import { SecurityProvider } from './src/context/SecurityContext';
+import { CopilotProvider } from './src/context/CopilotContext';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { LockScreenOverlay } from './src/components/LockScreenOverlay';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
@@ -18,14 +19,22 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <ErrorBoundary>
-        <StatusBar style="dark" />
-        <SQLiteProvider databaseName={DB_NAME} onInit={initDatabase}>
+        <SQLiteProvider
+          databaseName={DB_NAME}
+          onInit={initDatabase}
+          options={{ useNewConnection: true }}
+          onError={(error) => {
+            console.error('[SQLiteProvider] Lỗi kết nối cơ sở dữ liệu SQLite:', error);
+          }}
+        >
           <SecurityProvider>
             <WalletProvider>
-              <NavigationContainer>
-                <RootNavigator />
-                <LockScreenOverlay />
-              </NavigationContainer>
+              <CopilotProvider>
+                <NavigationContainer>
+                  <RootNavigator />
+                  <LockScreenOverlay />
+                </NavigationContainer>
+              </CopilotProvider>
             </WalletProvider>
           </SecurityProvider>
         </SQLiteProvider>

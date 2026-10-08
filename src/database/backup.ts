@@ -49,15 +49,13 @@ export const DEFAULT_CATEGORIES: Category[] = [
  * Trích xuất toàn bộ dữ liệu SQLite hiện tại thành BackupData
  */
 export async function exportAllData(db: SQLite.SQLiteDatabase): Promise<BackupData> {
-  const [wallets, categories, debts, transactions, debt_payments, planned_expenses, contacts] = await Promise.all([
-    db.getAllAsync<Wallet>('SELECT * FROM wallets ORDER BY created_at ASC'),
-    db.getAllAsync<Category>('SELECT * FROM categories ORDER BY type ASC, name ASC'),
-    db.getAllAsync<Debt>('SELECT * FROM debts ORDER BY created_at DESC'),
-    db.getAllAsync<Transaction>('SELECT * FROM transactions ORDER BY transacted_at DESC'),
-    db.getAllAsync<DebtPayment>('SELECT * FROM debt_payments ORDER BY paid_at DESC'),
-    db.getAllAsync<PlannedExpense>('SELECT * FROM planned_expenses ORDER BY target_date ASC'),
-    db.getAllAsync<ContactPerson>('SELECT * FROM contacts ORDER BY name ASC'),
-  ]);
+  const wallets = await db.getAllAsync<Wallet>('SELECT * FROM wallets ORDER BY created_at ASC');
+  const categories = await db.getAllAsync<Category>('SELECT * FROM categories ORDER BY type ASC, name ASC');
+  const debts = await db.getAllAsync<Debt>('SELECT * FROM debts ORDER BY created_at DESC');
+  const transactions = await db.getAllAsync<Transaction>('SELECT * FROM transactions ORDER BY transacted_at DESC');
+  const debt_payments = await db.getAllAsync<DebtPayment>('SELECT * FROM debt_payments ORDER BY paid_at DESC');
+  const planned_expenses = await db.getAllAsync<PlannedExpense>('SELECT * FROM planned_expenses ORDER BY target_date ASC');
+  const contacts = await db.getAllAsync<ContactPerson>('SELECT * FROM contacts ORDER BY name ASC');
 
   return {
     app: 'multi-wallet-management',

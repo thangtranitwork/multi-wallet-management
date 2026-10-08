@@ -1,7 +1,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import * as SQLite from 'expo-sqlite';
 import dayjs from 'dayjs';
-import { Category, ReceiptScanResult, Wallet, ReceiptItem } from '../types';
+import { Category, ReceiptScanResult, Wallet, ReceiptItem, BillAdjustment, BillMember } from '../types';
 import {
   getAppSetting,
   setAppSetting,
@@ -495,6 +495,47 @@ export function sanitizeReceiptItems(
   return list;
 }
 
+export function sanitizeAdjustments(rawAdj: any): BillAdjustment[] {
+  if (!Array.isArray(rawAdj)) return [];
+  return rawAdj
+    .map((adj, idx) => {
+      if (!adj || typeof adj !== 'object') return null;
+      const type = adj.type === 'discount' ? 'discount' : 'fee';
+      const name =
+        typeof adj.name === 'string' && adj.name.trim().length > 0
+          ? adj.name.trim()
+          : type === 'discount'
+          ? 'Giảm giá'
+          : 'Phụ phí';
+      const amount = Math.abs(Number(adj.amount) || 0);
+      if (amount <= 0) return null;
+      return {
+        id: String(adj.id || `adj_${idx}_${Date.now()}`),
+        type,
+        name,
+        amount,
+      };
+    })
+    .filter(Boolean) as BillAdjustment[];
+}
+
+export function sanitizeMembers(rawMembers: any): BillMember[] {
+  if (!Array.isArray(rawMembers)) return [];
+  return rawMembers
+    .map((m, idx) => {
+      if (!m || typeof m !== 'object') return null;
+      const name = typeof m.name === 'string' ? m.name.trim() : '';
+      if (!name) return null;
+      return {
+        id: String(m.id || (idx === 0 ? 'me' : `mem_${idx}_${Date.now()}`)),
+        name,
+        isPayer: Boolean(m.isPayer),
+        phone: typeof m.phone === 'string' ? m.phone.trim() : null,
+      };
+    })
+    .filter(Boolean) as BillMember[];
+}
+
 /**
  * Đọc và phân tích một hoặc nhiều ảnh (hóa đơn, đồ ăn, món hàng, màn hình chuyển khoản) bằng Gemini Vision API
  */
@@ -633,6 +674,29 @@ HÌNH ẢNH ĐƯỢC TẢI LÊN CÓ THỂ THUỘC CÁC TRƯỜNG HỢP SAU:
      + Nếu hóa đơn có thuế VAT, phí dịch vụ hoặc giảm giá voucher: amount phải là số tiền thanh toán thực tế cuối cùng sau thuế và giảm giá.
      + Nếu trường 'amount' bị thiếu, bị mờ hoặc = 0 nhưng danh sách món (items) có đơn giá rõ ràng: hãy lấy tổng các món (sum_items) làm giá trị cho 'amount'.
 
+6. BÓC TÁCH CÁC CHI PHÍ KHÁC VÀ GIẢM GIÁ (ADJUSTMENTS):
+   - Phụ phí (type: "fee"): Phí giao hàng (phí ship), Phí áp dụng, Phí dịch vụ, Phí nền tảng, Thuế VAT...
+   - Giảm giá (type: "discount"): Khuyến mãi, Voucher giảm giá, Giảm giá món, Shopee Xu, Chiết khấu...
+   - Bóc tách vào mảng "adjustments":
+     [
+       { "id": "adj_1", "type": "fee", "name": "Phí giao hàng (2.5 km)", "amount": 16000 },
+       { "id": "adj_2", "type": "fee", "name": "Phí áp dụng", "amount": 3000 },
+       { "id": "adj_3", "type": "discount", "name": "Giảm giá", "amount": 37500 }
+     ]
+   - Đối chiếu tổng tiền:
+     amount = sum(quantity * price) + sum(fees) - sum(discounts).
+     Số tiền 'amount' BẮT BUỘC là số tiền thực tế đã thanh toán cuối cùng (có con dấu 'Paid' hoặc 'Tổng thanh toán', ví dụ: 131.500đ).
+
+7. BÓC TÁCH ĐƠN NHÓM (MEMBERS):
+   - Nếu là ảnh chụp đơn nhóm (ví dụ ShopeeFood/GrabFood có chia người đặt: "thangtran01111 (Trưởng nhóm)", "Nguyen Quyenth"):
+     + "members": [
+         { "id": "me", "name": "thangtran01111 (Trưởng nhóm)", "isPayer": true },
+         { "id": "mem_1", "name": "Nguyen Quyenth", "isPayer": false }
+       ]
+     + Trong "items", điền "assignedMemberIds" cho từng món:
+       { "name": "Bánh Tráng Tỏi Ớt", "quantity": 1, "price": 25000, "assignedMemberIds": ["me"] },
+       { "name": "Bánh tráng tỏi ớt - lớn", "quantity": 2, "price": 25000, "assignedMemberIds": ["mem_1"] }
+
 DANH SÁCH DANH MỤC CHI TIÊU CỦA NGƯỜI DÙNG:
 ${catPromptList}
 
@@ -644,7 +708,7 @@ HÃY TRẢ VỀ ĐÚNG ĐỊNH DẠNG JSON SAU (TUYỆT ĐỐI KHÔNG KÈM TEXT 
   "recipient_name": string hoặc null (tên người/đơn vị nhận tiền nếu là ảnh chuyển khoản/bill, nếu không có để null),
   "recipient_account": string hoặc null (số tài khoản nhận tiền nếu có trên bill, nếu không có để null),
   "recipient_bank": string hoặc null (ngân hàng nhận nếu có, nếu không có để null),
-  "note": string (mô tả món đồ/đồ ăn/tên quán/nội dung giao dịch, ví dụ "2 hộp cơm", "Highlands Coffee - 2 Cà phê", "Chuyển khoản tiền phòng"),
+  "note": string (mô tả món đồ/đồ ăn/tên quán/nội dung giao dịch, ví dụ "ShopeeFood - Bánh tráng", "Highlands Coffee - 2 Cà phê", "Chuyển khoản tiền phòng"),
   "transacted_at": string hoặc null (format "YYYY-MM-DDTHH:mm:ss" hoặc "YYYY-MM-DD", nếu không thấy để null),
   "category_id": string hoặc null (ID danh mục chi tiêu phù hợp nhất từ danh sách trên, hoặc null),
   "category_name": string hoặc null (tên danh mục tương ứng, hoặc null),
@@ -654,7 +718,23 @@ HÃY TRẢ VỀ ĐÚNG ĐỊNH DẠNG JSON SAU (TUYỆT ĐỐI KHÔNG KÈM TEXT 
     {
       "name": string (tên món hàng/món ăn),
       "quantity": number (số lượng, mặc định 1),
-      "price": number (BẮT BUỘC LÀ ĐƠN GIÁ CỦA 1 SẢN PHẨM bằng VND. TUYỆT ĐỐI KHÔNG điền cột thành tiền vào price khi số lượng > 1, ví dụ mua 4 gói mì hết 26.000đ thì quantity: 4, price: 6500)
+      "price": number (BẮT BUỘC LÀ ĐƠN GIÁ CỦA 1 SẢN PHẨM bằng VND. TUYỆT ĐỐI KHÔNG điền cột thành tiền vào price khi số lượng > 1, ví dụ mua 4 gói mì hết 26.000đ thì quantity: 4, price: 6500),
+      "assignedMemberIds": ["me"] (nếu là đơn nhóm)
+    }
+  ],
+  "adjustments": [
+    {
+      "id": "adj_1",
+      "type": "fee" | "discount",
+      "name": string (ví dụ "Phí giao hàng (2.5 km)", "Phí áp dụng", "Giảm giá voucher"),
+      "amount": number
+    }
+  ],
+  "members": [
+    {
+      "id": "me" | "mem_1",
+      "name": string (ví dụ "thangtran01111 (Trưởng nhóm)", "Nguyen Quyenth"),
+      "isPayer": boolean
     }
   ],
   "confidence": number (độ tin cậy từ 0.0 đến 1.0)
@@ -719,14 +799,29 @@ LƯU Ý QUAN TRỌNG:
         const isFallback = model !== originalPreferredModel;
         let finalAmount = typeof parsed.amount === 'number' ? Math.round(parsed.amount) : 0;
         const sanitizedItems = sanitizeReceiptItems(parsed.items, finalAmount);
-        const itemsSum = sanitizedItems.reduce((acc: number, it: any) => acc + (it.price * (it.quantity || 1)), 0);
+        const sanitizedAdjustments = sanitizeAdjustments(parsed.adjustments);
+        const sanitizedMembers = sanitizeMembers(parsed.members);
 
-        // Nếu amount = 0 mà items có giá tiền, tự động lấy tổng các items làm amount
-        if (finalAmount <= 0 && itemsSum > 0) {
+        const itemsSum = sanitizedItems.reduce((acc: number, it: any) => acc + (it.price * (it.quantity || 1)), 0);
+        const netAdjustments = sanitizedAdjustments.reduce(
+          (sum, a) => sum + (a.type === 'fee' ? a.amount : -a.amount),
+          0
+        );
+        const expectedTotal = itemsSum + netAdjustments;
+
+        // Nếu amount = 0 mà items có giá tiền, tự động lấy tổng các items/adjustments làm amount
+        if (finalAmount <= 0 && expectedTotal > 0) {
+          finalAmount = expectedTotal;
+        } else if (finalAmount <= 0 && itemsSum > 0) {
           finalAmount = itemsSum;
         }
 
-        const hasDiscrepancy = sanitizedItems.length > 0 && itemsSum > 0 && finalAmount > 0 && Math.abs(itemsSum - finalAmount) > 100;
+        const effectiveTotalForDiscrepancy = expectedTotal > 0 ? expectedTotal : itemsSum;
+        const hasDiscrepancy =
+          sanitizedItems.length > 0 &&
+          effectiveTotalForDiscrepancy > 0 &&
+          finalAmount > 0 &&
+          Math.abs(effectiveTotalForDiscrepancy - finalAmount) > 100;
 
         const recipientName =
           typeof parsed.recipient_name === 'string' && parsed.recipient_name.trim().length > 0
@@ -800,6 +895,8 @@ LƯU Ý QUAN TRỌNG:
           transacted_at: typeof parsed.transacted_at === 'string' ? normalizeToIsoString(parsed.transacted_at) : null,
           items: sanitizedItems,
           items_sum: itemsSum,
+          adjustments: sanitizedAdjustments,
+          members: sanitizedMembers,
           has_discrepancy: hasDiscrepancy,
           confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.9,
           used_model: model,

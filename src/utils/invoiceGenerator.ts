@@ -71,7 +71,7 @@ const formatCurrency = (val: number): string => {
  */
 export function getInvoiceOptions(
   transaction: Transaction,
-  parsedBill: { items?: BillItem[]; adjustments?: BillAdjustment[]; members?: BillMember[] } | null
+  parsedBill: { items?: BillItem[]; adjustments?: BillAdjustment[]; members?: BillMember[]; includeMeInSplit?: boolean } | null
 ): InvoiceMemberOption[] {
   if (!parsedBill || !Array.isArray(parsedBill.items) || parsedBill.items.length === 0) {
     return [
@@ -117,7 +117,8 @@ export function getInvoiceOptions(
       transaction.amount,
       parsedBill.members!,
       parsedBill.items,
-      parsedBill.adjustments || []
+      parsedBill.adjustments || [],
+      parsedBill.includeMeInSplit !== false
     );
 
     calcResult.shares.forEach((share) => {
@@ -245,7 +246,7 @@ export function getAvailableQrOptions(
 export function buildInvoiceData(
   option: InvoiceMemberOption,
   transaction: Transaction,
-  parsedBill: { items?: BillItem[]; adjustments?: BillAdjustment[]; members?: BillMember[] } | null,
+  parsedBill: { items?: BillItem[]; adjustments?: BillAdjustment[]; members?: BillMember[]; includeMeInSplit?: boolean } | null,
   selectedQr?: InvoiceQrOption | null,
   defaultWallet?: Wallet | null
 ): InvoiceReportData {
@@ -318,7 +319,8 @@ export function buildInvoiceData(
         transaction.amount,
         members,
         items,
-        adjustments
+        adjustments,
+        parsedBill?.includeMeInSplit !== false
       );
       memberAllocations = calcResult.shares.map((s) => ({
         name: s.memberName,
@@ -366,7 +368,8 @@ export function buildInvoiceData(
       transaction.amount,
       members,
       items,
-      adjustments
+      adjustments,
+      parsedBill?.includeMeInSplit !== false
     );
     const memberShare = calcResult.shares.find((s) => s.memberId === targetMemberId);
 

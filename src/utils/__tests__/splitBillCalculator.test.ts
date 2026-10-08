@@ -89,6 +89,28 @@ describe('splitBillCalculator', () => {
     expect(shareB?.finalAmount).toBe(0);      // not assigned
   });
 
+  it('supports paying on behalf of friends (includeMeInSplit = false)', () => {
+    const items: BillItem[] = [
+      { id: 'i1', name: 'Pizza', price: 200000, quantity: 1, assignedMemberIds: ['user_1', 'user_2'] },
+    ];
+    const adjustments: BillAdjustment[] = [
+      { id: 'a1', name: 'Phí ship', type: 'fee', amount: 20000 },
+    ];
+
+    const result = calculateItemizedBillShares(220000, members, items, adjustments, false);
+
+    const shareMe = result.shares.find(s => s.memberId === 'me');
+    const shareA = result.shares.find(s => s.memberId === 'user_1');
+    const shareB = result.shares.find(s => s.memberId === 'user_2');
+
+    // Payer pays 0đ because includeMeInSplit is false
+    expect(shareMe?.finalAmount).toBe(0);
+    // 2 friends share 200k items (100k each) + 20k fee (10k each) = 110k each
+    expect(shareA?.finalAmount).toBe(110000);
+    expect(shareB?.finalAmount).toBe(110000);
+    expect((shareA?.finalAmount || 0) + (shareB?.finalAmount || 0)).toBe(220000);
+  });
+
   describe('buildMemberItemizedPayload', () => {
     it('creates dedicated itemized bill payload for split member with shared items', () => {
       const items: BillItem[] = [

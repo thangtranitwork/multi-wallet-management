@@ -566,6 +566,7 @@ export const DebtsScreen: React.FC = () => {
             amount={qrDebt.remaining_amount}
             purpose={purposeText}
             title={modalTitle}
+            isReadOnly={true}
           />
         );
       })()}

@@ -33,31 +33,17 @@ const SETTING_KEYS = {
 export async function loadCloudBackupConfig(
   db: SQLite.SQLiteDatabase
 ): Promise<CloudBackupConfig> {
-  const [
-    isLinkedVal,
-    userId,
-    userEmail,
-    userName,
-    userPicture,
-    accessToken,
-    customClientId,
-    autoBackupVal,
-    autoBackupFreq,
-    lastBackupTime,
-    lastBackupFileName,
-  ] = await Promise.all([
-    queries.getAppSetting(db, SETTING_KEYS.IS_LINKED, 'false'),
-    queries.getAppSetting(db, SETTING_KEYS.USER_ID, ''),
-    queries.getAppSetting(db, SETTING_KEYS.USER_EMAIL, ''),
-    queries.getAppSetting(db, SETTING_KEYS.USER_NAME, ''),
-    queries.getAppSetting(db, SETTING_KEYS.USER_PICTURE, ''),
-    queries.getAppSetting(db, SETTING_KEYS.ACCESS_TOKEN, ''),
-    queries.getAppSetting(db, SETTING_KEYS.CUSTOM_CLIENT_ID, ''),
-    queries.getAppSetting(db, SETTING_KEYS.AUTO_BACKUP_ENABLED, 'true'),
-    queries.getAppSetting(db, SETTING_KEYS.AUTO_BACKUP_FREQ, 'on_change'),
-    queries.getAppSetting(db, SETTING_KEYS.LAST_BACKUP_TIME, ''),
-    queries.getAppSetting(db, SETTING_KEYS.LAST_BACKUP_FILE, ''),
-  ]);
+  const isLinkedVal = await queries.getAppSetting(db, SETTING_KEYS.IS_LINKED, 'false');
+  const userId = await queries.getAppSetting(db, SETTING_KEYS.USER_ID, '');
+  const userEmail = await queries.getAppSetting(db, SETTING_KEYS.USER_EMAIL, '');
+  const userName = await queries.getAppSetting(db, SETTING_KEYS.USER_NAME, '');
+  const userPicture = await queries.getAppSetting(db, SETTING_KEYS.USER_PICTURE, '');
+  const accessToken = await queries.getAppSetting(db, SETTING_KEYS.ACCESS_TOKEN, '');
+  const customClientId = await queries.getAppSetting(db, SETTING_KEYS.CUSTOM_CLIENT_ID, '');
+  const autoBackupVal = await queries.getAppSetting(db, SETTING_KEYS.AUTO_BACKUP_ENABLED, 'true');
+  const autoBackupFreq = await queries.getAppSetting(db, SETTING_KEYS.AUTO_BACKUP_FREQ, 'on_change');
+  const lastBackupTime = await queries.getAppSetting(db, SETTING_KEYS.LAST_BACKUP_TIME, '');
+  const lastBackupFileName = await queries.getAppSetting(db, SETTING_KEYS.LAST_BACKUP_FILE, '');
 
   // Nếu customClientId lưu trong máy là Web Client ID cũ gây lỗi 400, tự động xóa để dùng Android Client ID mặc định
   let activeCustomClientId = customClientId;
@@ -96,66 +82,54 @@ export async function saveCloudBackupConfig(
   db: SQLite.SQLiteDatabase,
   updates: Partial<CloudBackupConfig>
 ): Promise<void> {
-  const promises: Promise<void>[] = [];
-
   if (updates.isLinked !== undefined) {
-    promises.push(
-      queries.setAppSetting(db, SETTING_KEYS.IS_LINKED, updates.isLinked ? 'true' : 'false')
-    );
+    await queries.setAppSetting(db, SETTING_KEYS.IS_LINKED, updates.isLinked ? 'true' : 'false');
   }
 
   if (updates.user !== undefined) {
-    promises.push(
-      queries.setAppSetting(db, SETTING_KEYS.USER_ID, updates.user?.id || ''),
-      queries.setAppSetting(db, SETTING_KEYS.USER_EMAIL, updates.user?.email || ''),
-      queries.setAppSetting(db, SETTING_KEYS.USER_NAME, updates.user?.name || ''),
-      queries.setAppSetting(db, SETTING_KEYS.USER_PICTURE, updates.user?.picture || '')
-    );
+    await queries.setAppSetting(db, SETTING_KEYS.USER_ID, updates.user?.id || '');
+    await queries.setAppSetting(db, SETTING_KEYS.USER_EMAIL, updates.user?.email || '');
+    await queries.setAppSetting(db, SETTING_KEYS.USER_NAME, updates.user?.name || '');
+    await queries.setAppSetting(db, SETTING_KEYS.USER_PICTURE, updates.user?.picture || '');
   }
 
   if (updates.accessToken !== undefined) {
-    promises.push(queries.setAppSetting(db, SETTING_KEYS.ACCESS_TOKEN, updates.accessToken));
+    await queries.setAppSetting(db, SETTING_KEYS.ACCESS_TOKEN, updates.accessToken);
   }
 
   if (updates.customClientId !== undefined) {
-    promises.push(queries.setAppSetting(db, SETTING_KEYS.CUSTOM_CLIENT_ID, updates.customClientId));
+    await queries.setAppSetting(db, SETTING_KEYS.CUSTOM_CLIENT_ID, updates.customClientId);
   }
 
   if (updates.autoBackupEnabled !== undefined) {
-    promises.push(
-      queries.setAppSetting(
-        db,
-        SETTING_KEYS.AUTO_BACKUP_ENABLED,
-        updates.autoBackupEnabled ? 'true' : 'false'
-      )
+    await queries.setAppSetting(
+      db,
+      SETTING_KEYS.AUTO_BACKUP_ENABLED,
+      updates.autoBackupEnabled ? 'true' : 'false'
     );
   }
 
   if (updates.autoBackupFrequency !== undefined) {
-    promises.push(queries.setAppSetting(db, SETTING_KEYS.AUTO_BACKUP_FREQ, updates.autoBackupFrequency));
+    await queries.setAppSetting(db, SETTING_KEYS.AUTO_BACKUP_FREQ, updates.autoBackupFrequency);
   }
 
   if (updates.lastBackupTime !== undefined) {
-    promises.push(queries.setAppSetting(db, SETTING_KEYS.LAST_BACKUP_TIME, updates.lastBackupTime || ''));
+    await queries.setAppSetting(db, SETTING_KEYS.LAST_BACKUP_TIME, updates.lastBackupTime || '');
   }
 
   if (updates.lastBackupFileName !== undefined) {
-    promises.push(queries.setAppSetting(db, SETTING_KEYS.LAST_BACKUP_FILE, updates.lastBackupFileName || ''));
+    await queries.setAppSetting(db, SETTING_KEYS.LAST_BACKUP_FILE, updates.lastBackupFileName || '');
   }
-
-  await Promise.all(promises);
 }
 
 /**
  * Đăng xuất / Xóa liên kết Google Drive
  */
 export async function clearCloudBackupConfig(db: SQLite.SQLiteDatabase): Promise<void> {
-  await Promise.all([
-    queries.setAppSetting(db, SETTING_KEYS.IS_LINKED, 'false'),
-    queries.setAppSetting(db, SETTING_KEYS.USER_ID, ''),
-    queries.setAppSetting(db, SETTING_KEYS.USER_EMAIL, ''),
-    queries.setAppSetting(db, SETTING_KEYS.USER_NAME, ''),
-    queries.setAppSetting(db, SETTING_KEYS.USER_PICTURE, ''),
-    queries.setAppSetting(db, SETTING_KEYS.ACCESS_TOKEN, ''),
-  ]);
+  await queries.setAppSetting(db, SETTING_KEYS.IS_LINKED, 'false');
+  await queries.setAppSetting(db, SETTING_KEYS.USER_ID, '');
+  await queries.setAppSetting(db, SETTING_KEYS.USER_EMAIL, '');
+  await queries.setAppSetting(db, SETTING_KEYS.USER_NAME, '');
+  await queries.setAppSetting(db, SETTING_KEYS.USER_PICTURE, '');
+  await queries.setAppSetting(db, SETTING_KEYS.ACCESS_TOKEN, '');
 }

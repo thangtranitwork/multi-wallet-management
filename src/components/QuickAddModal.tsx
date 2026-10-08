@@ -17,6 +17,7 @@ import { useCustomAlert } from './CustomAlertModal';
 import dayjs from 'dayjs';
 import { useWallet } from '../context/WalletContext';
 import { useSecurity } from '../context/SecurityContext';
+import { useCopilot } from '../context/CopilotContext';
 import { NeoDropdown } from './NeoDropdown';
 import { THEME, formatVND } from '../constants';
 import { Wallet, ReceiptScanResult, ReceiptItem } from '../types';
@@ -64,6 +65,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
     addCreditExpenseWithPlan,
   } = useWallet();
   const { showAlert, showConfirm, AlertModalComponent } = useCustomAlert(false);
+  const { openCopilot } = useCopilot();
 
   const [type, setType] = useState<'expense' | 'income' | 'transfer'>(defaultType);
   const [prediction, setPrediction] = useState<PredictionResult | null>(null);
@@ -2266,7 +2268,7 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                     </View>
                   </ScrollView>
 
-                  {/* Rescan Button */}
+                  {/* Rescan & Copilot Buttons */}
                   <View style={styles.receiptRescanRow}>
                     <Pressable
                       style={styles.receiptRescanBtn}
@@ -2275,6 +2277,20 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
                     >
                       <Ionicons name="sparkles" size={13} color="#4338CA" />
                       <Text style={styles.receiptRescanBtnText}>Quét lại bằng Gemini AI</Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.receiptToCopilotBtn}
+                      onPress={() => {
+                        hapticMedium();
+                        onClose();
+                        openCopilot({
+                          imageUris: receiptImages,
+                          autoSend: true,
+                        });
+                      }}
+                    >
+                      <Ionicons name="chatbubbles" size={13} color="#7E22CE" />
+                      <Text style={styles.receiptToCopilotBtnText}>Hỏi AI Copilot về ảnh này</Text>
                     </Pressable>
                   </View>
                 </View>
@@ -4076,7 +4092,10 @@ const styles = StyleSheet.create({
   },
   receiptRescanRow: {
     marginTop: 8,
-    alignItems: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
   },
   receiptRescanBtn: {
     flexDirection: 'row',
@@ -4093,6 +4112,22 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     color: '#4338CA',
+  },
+  receiptToCopilotBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#FAF5FF',
+    borderWidth: 1.5,
+    borderColor: '#A855F7',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  receiptToCopilotBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#7E22CE',
   },
   receiptScanningBanner: {
     flexDirection: 'row',

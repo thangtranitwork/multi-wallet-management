@@ -69,14 +69,20 @@ function getWelcomeMessage(p: CopilotPersonality): string {
   }
 }
 
-interface FinancialCopilotModalProps {
+export interface FinancialCopilotModalProps {
   visible: boolean;
   onClose: () => void;
+  initialImageUris?: string[];
+  initialPrompt?: string;
+  autoSend?: boolean;
 }
 
 export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
   visible,
   onClose,
+  initialImageUris,
+  initialPrompt,
+  autoSend,
 }) => {
   const db = useSQLiteContext();
   const {
@@ -112,6 +118,7 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
   const isRecordingRef = useRef(false);
   const isPreparingRef = useRef(false);
   const recordStartTimeRef = useRef(0);
+  const hasHandledInitialRef = useRef(false);
 
   // Khởi tạo AudioRecorder từ expo-audio (chuẩn Expo SDK 57)
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -137,7 +144,7 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
                 timestamp: new Date().toISOString(),
               },
             ]);
-            if (ttsOn) {
+            if (ttsOn && !(autoSend && initialImageUris && initialImageUris.length > 0)) {
               console.log('[Copilot Modal] 📢 Auto-speaking welcome message...');
               speakCopilotMessage(welcomeText, pid);
             }
@@ -159,8 +166,27 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
           recorder.stop().catch(() => {});
         }
       } catch (_) {}
+
+      // Xử lý nạp ảnh và tự động phân tích nếu được gửi từ share intent hoặc QuickAdd
+      if (initialImageUris && initialImageUris.length > 0 && !hasHandledInitialRef.current) {
+        hasHandledInitialRef.current = true;
+        if (autoSend) {
+          const prompt =
+            initialPrompt ||
+            'Phân tích hóa đơn / giao dịch này giúp mình và đề xuất ghi nhận sổ nhé';
+          setTimeout(() => {
+            handleSendText(prompt, initialImageUris);
+          }, 350);
+        } else {
+          setSelectedImageUris(initialImageUris);
+          if (initialPrompt) {
+            setInputText(initialPrompt);
+          }
+        }
+      }
     } else {
       console.log('[Copilot Modal] Modal closed, stopping TTS');
+      hasHandledInitialRef.current = false;
       stopCopilotSpeech();
       if (timerRef.current) {
         clearInterval(timerRef.current);
@@ -172,7 +198,7 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
         setIsRecording(false);
       }
     }
-  }, [visible, db]);
+  }, [visible, db, initialImageUris, initialPrompt, autoSend]);
 
   // Hiệu ứng nhịp đập khi đang giữ mic thu âm
   useEffect(() => {
@@ -256,10 +282,10 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
     setSelectedImageUris(prev => prev.filter((_, idx) => idx !== indexToRemove));
   };
 
-  const handleSendText = async (textToSend?: string) => {
+  const handleSendText = async (textToSend?: string, overrideImages?: string[]) => {
     stopCopilotSpeech(); // Dừng ngay âm thanh nếu đang phát
-    const text = (textToSend || inputText).trim();
-    const imagesToSend = [...selectedImageUris];
+    const text = (textToSend !== undefined ? textToSend : inputText).trim();
+    const imagesToSend = overrideImages !== undefined ? overrideImages : [...selectedImageUris];
     if ((!text && imagesToSend.length === 0) || isGenerating) return;
 
     hapticLight();
@@ -625,6 +651,12 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
               targetWallet,
               tx.transacted_at ? new Date(tx.transacted_at) : new Date()
             );
+            const itemPayload: any = {};
+            if (tx.items && tx.items.length > 0) itemPayload.items = tx.items;
+            if (tx.adjustments && tx.adjustments.length > 0) itemPayload.adjustments = tx.adjustments;
+            if (tx.members && tx.members.length > 0) itemPayload.members = tx.members;
+            const serializedItems = Object.keys(itemPayload).length > 0 ? JSON.stringify(itemPayload) : null;
+
             await addCreditExpenseWithPlan({
               creditWalletId: targetWalletId,
               amount: tx.amount,
@@ -633,9 +665,15 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
               transactedAt: normalizeToIsoString(tx.transacted_at),
               firstDueDate,
               image_uris: persistentUris,
-              items: tx.items && tx.items.length > 0 ? JSON.stringify({ items: tx.items }) : null,
+              items: serializedItems,
             });
           } else {
+            const itemPayload: any = {};
+            if (tx.items && tx.items.length > 0) itemPayload.items = tx.items;
+            if (tx.adjustments && tx.adjustments.length > 0) itemPayload.adjustments = tx.adjustments;
+            if (tx.members && tx.members.length > 0) itemPayload.members = tx.members;
+            const serializedItems = Object.keys(itemPayload).length > 0 ? JSON.stringify(itemPayload) : null;
+
             await addTransaction({
               wallet_id: targetWalletId,
               category_id: tx.category_id || null,
@@ -644,7 +682,7 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
               note: tx.note || 'Ghi chép từ Trợ lý Copilot',
               transacted_at: normalizeToIsoString(tx.transacted_at),
               image_uris: persistentUris,
-              items: tx.items && tx.items.length > 0 ? JSON.stringify({ items: tx.items }) : null,
+              items: serializedItems,
             });
           }
 
@@ -749,6 +787,12 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
             targetWallet,
             tx.transacted_at ? new Date(tx.transacted_at) : new Date()
           );
+          const itemPayload: any = {};
+          if (tx.items && tx.items.length > 0) itemPayload.items = tx.items;
+          if (tx.adjustments && tx.adjustments.length > 0) itemPayload.adjustments = tx.adjustments;
+          if (tx.members && tx.members.length > 0) itemPayload.members = tx.members;
+          const serializedItems = Object.keys(itemPayload).length > 0 ? JSON.stringify(itemPayload) : null;
+
           await addCreditExpenseWithPlan({
             creditWalletId: targetWalletId,
             amount: tx.amount,
@@ -757,9 +801,15 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
             transactedAt: tx.transacted_at || new Date().toISOString(),
             firstDueDate,
             image_uris: persistentUris,
-            items: tx.items && tx.items.length > 0 ? JSON.stringify({ items: tx.items }) : null,
+            items: serializedItems,
           });
         } else {
+          const itemPayload: any = {};
+          if (tx.items && tx.items.length > 0) itemPayload.items = tx.items;
+          if (tx.adjustments && tx.adjustments.length > 0) itemPayload.adjustments = tx.adjustments;
+          if (tx.members && tx.members.length > 0) itemPayload.members = tx.members;
+          const serializedItems = Object.keys(itemPayload).length > 0 ? JSON.stringify(itemPayload) : null;
+
           await addTransaction({
             wallet_id: targetWalletId,
             category_id: tx.category_id || null,
@@ -768,7 +818,7 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
             note: tx.note || 'Ghi chép từ Trợ lý Copilot',
             transacted_at: tx.transacted_at || new Date().toISOString(),
             image_uris: persistentUris,
-            items: tx.items && tx.items.length > 0 ? JSON.stringify({ items: tx.items }) : null,
+            items: serializedItems,
           });
         }
 

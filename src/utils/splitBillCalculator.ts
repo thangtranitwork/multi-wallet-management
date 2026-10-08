@@ -20,7 +20,8 @@ export function calculateItemizedBillShares(
   transactionAmount: number,
   members: BillMember[],
   items: BillItem[],
-  adjustments: BillAdjustment[]
+  adjustments: BillAdjustment[],
+  includeMeInSplit: boolean = true
 ): SplitCalculationResult {
   if (members.length === 0) {
     return {
@@ -45,9 +46,15 @@ export function calculateItemizedBillShares(
   });
   const netAdjustment = totalFees - totalDiscounts;
 
-  // Chia đều điều chỉnh theo đầu người
-  const memberCount = members.length;
-  const adjustmentPerPerson = memberCount > 0 ? netAdjustment / memberCount : 0;
+  const payerMember = members.find(m => m.isPayer) || members[0];
+  const otherMembers = members.filter(m => m.id !== payerMember.id);
+
+  // Chia đều điều chỉnh theo đầu người (nếu tôi trả hộ thì chỉ chia cho người khác)
+  const adjustmentEligibleCount =
+    !includeMeInSplit && otherMembers.length > 0
+      ? otherMembers.length
+      : members.length;
+  const adjustmentPerPerson = adjustmentEligibleCount > 0 ? netAdjustment / adjustmentEligibleCount : 0;
 
   // 2. Tính tiền món của từng người
   const memberItemTotals: Record<string, number> = {};
@@ -116,9 +123,6 @@ export function calculateItemizedBillShares(
   // 3. Tính số tiền cho từng người
   // Phân chia: làm tròn số tiền của các thành viên khác trước, phần còn lại của hóa đơn thuộc về người chi trả (Payer)
   // để đảm bảo không bị sai lệch dù chỉ 1 đồng.
-  const payerMember = members.find(m => m.isPayer) || members[0];
-  const otherMembers = members.filter(m => m.id !== payerMember.id);
-
   let totalOthersRounded = 0;
   const otherShares: BillMemberShare[] = otherMembers.map(m => {
     const subtotal = memberItemTotals[m.id] || 0;
@@ -137,15 +141,25 @@ export function calculateItemizedBillShares(
     };
   });
 
-  // Số tiền của chủ xị:
-  // Nếu calculatedTotal đã khớp tương đối hoặc lớn hơn 0, chủ xị nhận phần còn lại của transactionAmount
-  const payerSubtotal = memberItemTotals[payerMember.id] || 0;
-  const payerRawFinal = Math.max(0, payerSubtotal + adjustmentPerPerson);
+  // Nếu người chi trả chỉ trả hộ (includeMeInSplit = false) và có thành viên khác:
+  // Toàn bộ transactionAmount sẽ do các thành viên khác gánh, chủ xị 0đ.
+  if (!includeMeInSplit && otherMembers.length > 0 && transactionAmount > 0) {
+    const diff = transactionAmount - totalOthersRounded;
+    if (diff !== 0 && otherShares.length > 0) {
+      otherShares[0].finalAmount = Math.max(0, otherShares[0].finalAmount + diff);
+      totalOthersRounded += diff;
+    }
+  }
 
-  // Nếu tổng giao dịch lớn hơn 0, tiền chủ chi = transactionAmount - totalOthersRounded
-  // Nếu transactionAmount = 0 (tự nhập), tiền chủ chi = làm tròn raw
+  // Số tiền của chủ xị:
+  const payerSubtotal = memberItemTotals[payerMember.id] || 0;
+  const payerAdjShare = includeMeInSplit ? adjustmentPerPerson : 0;
+  const payerRawFinal = Math.max(0, payerSubtotal + payerAdjShare);
+
   const payerFinalAmount =
-    transactionAmount > 0
+    !includeMeInSplit && otherMembers.length > 0
+      ? 0
+      : transactionAmount > 0
       ? Math.max(0, transactionAmount - totalOthersRounded)
       : Math.round(payerRawFinal);
 
@@ -155,7 +169,7 @@ export function calculateItemizedBillShares(
     memberPhone: payerMember.phone,
     isPayer: true,
     itemsSubtotal: Math.round(payerSubtotal),
-    adjustmentShare: Math.round(adjustmentPerPerson),
+    adjustmentShare: Math.round(payerAdjShare),
     finalAmount: payerFinalAmount,
   };
 

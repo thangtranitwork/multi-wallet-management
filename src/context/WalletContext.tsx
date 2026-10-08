@@ -222,29 +222,19 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, [isBalanceHidden, summary]);
 
   const refreshData = useCallback(async () => {
+    if (!db) return;
     try {
       setIsLoading(true);
-      const [
-        fetchedWallets,
-        fetchedTxs,
-        fetchedDebts,
-        fetchedCategories,
-        fetchedPlanned,
-        fetchedSummary,
-        fetchedSpendings,
-        fetchedContacts,
-        fetchedRecentDebtPersons,
-      ] = await Promise.all([
-        queries.getWallets(db),
-        queries.getTransactions(db, { limit: 100 }),
-        queries.getDebts(db),
-        queries.getCategories(db),
-        queries.getPlannedExpenses(db),
-        queries.getFinancialSummary(db),
-        queries.getCategorySpending(db),
-        queries.getContacts(db),
-        queries.getRecentDebtPersons(db),
-      ]);
+      // Run queries sequentially to prevent multi-threaded SQLite race condition / NPE in prepareAsync
+      const fetchedWallets = await queries.getWallets(db);
+      const fetchedTxs = await queries.getTransactions(db, { limit: 100 });
+      const fetchedDebts = await queries.getDebts(db);
+      const fetchedCategories = await queries.getCategories(db);
+      const fetchedPlanned = await queries.getPlannedExpenses(db);
+      const fetchedSummary = await queries.getFinancialSummary(db);
+      const fetchedSpendings = await queries.getCategorySpending(db);
+      const fetchedContacts = await queries.getContacts(db);
+      const fetchedRecentDebtPersons = await queries.getRecentDebtPersons(db);
 
       const sortedTxs = [...fetchedTxs].sort((a, b) => {
         const timeA = new Date(a.transacted_at).getTime() || 0;

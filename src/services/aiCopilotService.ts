@@ -2,7 +2,7 @@ import * as SQLite from 'expo-sqlite';
 import dayjs from 'dayjs';
 import * as Speech from 'expo-speech';
 import * as FileSystem from 'expo-file-system/legacy';
-import { Category, Wallet, ReceiptItem } from '../types';
+import { Category, Wallet, ReceiptItem, BillAdjustment, BillMember } from '../types';
 import { normalizeToIsoString } from '../utils/dateUtils';
 import {
   getGeminiApiKey,
@@ -11,6 +11,8 @@ import {
   formatGeminiErrorMessage,
   isNetworkError,
   sanitizeReceiptItems,
+  sanitizeAdjustments,
+  sanitizeMembers,
 } from './geminiService';
 import * as queries from '../database/queries';
 
@@ -74,6 +76,8 @@ export interface CopilotParsedTransaction {
   note?: string;
   transacted_at: string;
   items?: ReceiptItem[] | null;
+  adjustments?: BillAdjustment[] | null;
+  members?: BillMember[] | null;
   recipient_name?: string | null;
 }
 
@@ -840,7 +844,32 @@ QUY TẮC NHẬN DIỆN HÌNH ẢNH & ĐA PHƯƠNG THỨC (MULTIMODAL - ẢNH / 
          { "name": "Cà phê sữa đá", "quantity": 2, "price": 30000 },
          { "name": "Bánh mì que", "quantity": 1, "price": 15000 }
        ]
-     + Ghi chú (note): Tên cửa hàng/thương hiệu + tóm tắt món (ví dụ: "Highlands Coffee - 2 Cà phê, 1 Bánh mì").
+     + BÓC TÁCH CÁC CHI PHÍ KHÁC VÀ GIẢM GIÁ (adjustments):
+       Hóa đơn ăn uống / mua sắm (ShopeeFood, GrabFood, Baemin, siêu thị, nhà hàng...) thường có thêm các phụ phí và giảm giá:
+       * Phụ phí (type: "fee"): Phí giao hàng (phí ship), Phí áp dụng, Phí dịch vụ, Phí nền tảng, Thuế VAT...
+       * Giảm giá (type: "discount"): Khuyến mãi, Voucher giảm giá, Giảm giá món, Shopee Xu, Chiết khấu...
+       -> Bóc tách vào mảng "adjustments":
+       [
+         { "id": "adj_1", "type": "fee", "name": "Phí giao hàng (2.5 km)", "amount": 16000 },
+         { "id": "adj_2", "type": "fee", "name": "Phí áp dụng", "amount": 3000 },
+         { "id": "adj_3", "type": "discount", "name": "Giảm giá", "amount": 37500 }
+       ]
+       * ⚠️ QUY TẮC TÍNH SỐ TIỀN "amount":
+         amount BẮT BUỘC là số tiền thực tế đã thanh toán cuối cùng (có con dấu "Paid", "Đã thanh toán", "Tổng cộng", "Thành tiền"):
+         Công thức kiểm tra: amount = Tổng giá món + Tổng phí (fees) - Tổng giảm giá (discounts).
+         Ví dụ: Tổng món 150.000 + Phí ship 16.000 + Phí áp dụng 3.000 - Giảm giá 37.500 = amount: 131500.
+
+     + BÓC TÁCH ĐƠN NHÓM (MEMBERS & GÁN MÓN):
+       Nếu là ảnh chụp đơn nhóm (ví dụ ShopeeFood/GrabFood có ghi rõ ai đặt món nào: "thangtran01111 (Trưởng nhóm)", "Nguyen Quyenth"):
+       * Bóc tách danh sách người đặt vào "members":
+         [
+           { "id": "me", "name": "thangtran01111 (Trưởng nhóm)", "isPayer": true },
+           { "id": "mem_1", "name": "Nguyen Quyenth", "isPayer": false }
+         ]
+       * Trong "items", gán "assignedMemberIds" cho từng món tương ứng:
+         { "name": "Bánh Tráng Tỏi Ớt", "quantity": 1, "price": 25000, "assignedMemberIds": ["me"] },
+         { "name": "Bánh tráng tỏi ớt - lớn", "quantity": 2, "price": 25000, "assignedMemberIds": ["mem_1"] }
+     + Ghi chú (note): Tên cửa hàng/thương hiệu + tóm tắt món (ví dụ: "ShopeeFood - Bánh tráng", "Highlands Coffee - 2 Cà phê, 1 Bánh mì").
    - Trường hợp B - Đồ vật / Sản phẩm / Đồ ăn / Thức uống (ví dụ: lon nước tăng lực Red Bull / bò cụng, ly cà phê, tô phở, hộp bánh, hoặc chụp mâm cơm / bàn ăn / giỏ hàng có NHIỀU món):
      + Nhận diện chính xác TẤT CẢ các món đồ/sản phẩm có trong ảnh kèm số lượng từng món (ví dụ: 1 tô phở bò, 1 đĩa quẩy, 1 ly trà đá; hoặc 2 lon bò cụng, 1 gói snack khoai tây).
      + Tự động ghép vào danh mục chi tiêu phù hợp nhất trong danh sách danh mục (ví dụ: Ăn uống, Cà phê & Đồ uống, Mua sắm...).
@@ -908,8 +937,18 @@ QUY TẮC NHẬN DIỆN HÌNH ẢNH & ĐA PHƯƠNG THỨC (MULTIMODAL - ẢNH / 
       {
         "name": "Tên món hàng/món ăn",
         "quantity": 1,
-        "price": 55000
+        "price": 55000,
+        "assignedMemberIds": ["me"]
       }
+    ],
+    "adjustments": [
+      { "id": "adj_1", "type": "fee", "name": "Phí giao hàng (2.5 km)", "amount": 16000 },
+      { "id": "adj_2", "type": "fee", "name": "Phí áp dụng", "amount": 3000 },
+      { "id": "adj_3", "type": "discount", "name": "Giảm giá voucher", "amount": 37500 }
+    ],
+    "members": [
+      { "id": "me", "name": "thangtran01111 (Trưởng nhóm)", "isPayer": true },
+      { "id": "mem_1", "name": "Nguyen Quyenth", "isPayer": false }
     ]
   },
   "transactions": [
@@ -1104,6 +1143,8 @@ export async function processCopilotTextInput(
       // Chuẩn hóa thời gian cho transaction đơn lẻ
       if (parsed.transaction) {
         parsed.transaction.transacted_at = normalizeToIsoString(parsed.transaction.transacted_at);
+        parsed.transaction.adjustments = sanitizeAdjustments(parsed.transaction.adjustments);
+        parsed.transaction.members = sanitizeMembers(parsed.transaction.members);
         if (parsed.transaction.category_id) {
           const cat = categories.find(c => c.id === parsed.transaction.category_id);
           if (cat) {
@@ -1117,6 +1158,8 @@ export async function processCopilotTextInput(
       if (Array.isArray(parsed.transactions)) {
         parsed.transactions.forEach((tx: CopilotParsedTransaction) => {
           tx.transacted_at = normalizeToIsoString(tx.transacted_at);
+          tx.adjustments = sanitizeAdjustments(tx.adjustments);
+          tx.members = sanitizeMembers(tx.members);
           if (tx.category_id) {
             const cat = categories.find(c => c.id === tx.category_id);
             if (cat) {
@@ -1393,17 +1436,23 @@ Hãy nghe đoạn âm thanh tiếng Việt này và phân tích kèm theo bất 
       const parsed = cleanAndParseJSON(rawText);
 
       // Điền thêm icon & màu danh mục cho transaction đơn lẻ
-      if (parsed.transaction && parsed.transaction.category_id) {
-        const cat = categories.find(c => c.id === parsed.transaction.category_id);
-        if (cat) {
-          parsed.transaction.category_icon = cat.icon;
-          parsed.transaction.category_color = cat.color;
+      if (parsed.transaction) {
+        parsed.transaction.adjustments = sanitizeAdjustments(parsed.transaction.adjustments);
+        parsed.transaction.members = sanitizeMembers(parsed.transaction.members);
+        if (parsed.transaction.category_id) {
+          const cat = categories.find(c => c.id === parsed.transaction.category_id);
+          if (cat) {
+            parsed.transaction.category_icon = cat.icon;
+            parsed.transaction.category_color = cat.color;
+          }
         }
       }
 
       // Điền thêm icon & màu danh mục cho mảng transactions
       if (Array.isArray(parsed.transactions)) {
         parsed.transactions.forEach((tx: CopilotParsedTransaction) => {
+          tx.adjustments = sanitizeAdjustments(tx.adjustments);
+          tx.members = sanitizeMembers(tx.members);
           if (tx.category_id) {
             const cat = categories.find(c => c.id === tx.category_id);
             if (cat) {

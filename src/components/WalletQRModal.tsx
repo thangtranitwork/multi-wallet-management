@@ -38,6 +38,7 @@ interface WalletQRModalProps {
   purpose?: string;
   title?: string;
   onConfigureWallet?: (walletId: string) => void;
+  isReadOnly?: boolean;
 }
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -51,20 +52,32 @@ export const WalletQRModal: React.FC<WalletQRModalProps> = ({
   purpose = '',
   title,
   onConfigureWallet,
+  isReadOnly = false,
 }) => {
   const { wallets, editWallet } = useWallet();
   const { temporarilyBypassLock } = useSecurity();
   const { showAlert, showConfirm, AlertModalComponent } = useCustomAlert(false);
   const db = useSQLiteContext();
 
+  const isDebtMode = Boolean(
+    isReadOnly ||
+    (amount && amount > 0 && purpose && (title?.includes('THU NỢ') || title?.includes('TRẢ NỢ') || title?.includes('TIỀN VAY')))
+  );
+
   const [selectedWalletId, setSelectedWalletId] = React.useState<string>(wallet?.id || '');
   const [amountStr, setAmountStr] = React.useState<string>(
-    amount && amount > 0 ? formatAmountInput(amount) : ''
+    amount && amount > 0 ? Math.round(amount).toString() : ''
   );
   const [debouncedAmount, setDebouncedAmount] = React.useState<number>(
     amount && amount > 0 ? Math.round(amount) : 0
   );
   const [customNote, setCustomNote] = React.useState<string>(purpose || '');
+  const [isAmountLocked, setIsAmountLocked] = React.useState<boolean>(
+    Boolean(isDebtMode || (amount && amount > 0))
+  );
+  const [isNoteLocked, setIsNoteLocked] = React.useState<boolean>(
+    Boolean(isDebtMode || (purpose && purpose.trim().length > 0))
+  );
   const [isQrLoading, setIsQrLoading] = React.useState<boolean>(false);
 
   React.useEffect(() => {
@@ -74,21 +87,24 @@ export const WalletQRModal: React.FC<WalletQRModalProps> = ({
       }
       if (amount && amount > 0) {
         const rounded = Math.round(amount);
-        setAmountStr(formatAmountInput(rounded));
+        setAmountStr(rounded.toString());
         setDebouncedAmount(rounded);
+        setIsAmountLocked(true);
       } else {
         setAmountStr('');
         setDebouncedAmount(0);
+        setIsAmountLocked(false);
       }
       setCustomNote(purpose || '');
+      setIsNoteLocked(Boolean(isDebtMode || (purpose && purpose.trim().length > 0)));
     }
-  }, [visible, wallet?.id, amount, purpose]);
+  }, [visible, wallet?.id, amount, purpose, isDebtMode]);
 
   React.useEffect(() => {
-    const num = parseAmountInput(amountStr);
+    const num = parseInt(amountStr, 10) || 0;
     const timer = setTimeout(() => {
       setDebouncedAmount(num);
-    }, 350);
+    }, 300);
     return () => clearTimeout(timer);
   }, [amountStr]);
 
@@ -118,39 +134,43 @@ export const WalletQRModal: React.FC<WalletQRModalProps> = ({
     }
   }, [hasVietQr, hasCustomImage, selectedWalletId]);
 
-  const handleAmountChange = (text: string) => {
-    const rawDigits = text.replace(/[^0-9]/g, '');
-    if (!rawDigits) {
-      setAmountStr('');
+  const handleDigitPress = (digit: string) => {
+    if (isDebtMode || isAmountLocked) {
+      hapticError();
       return;
     }
-    if (rawDigits.length > 12) return;
-    setAmountStr(formatAmountInput(rawDigits));
+    hapticLight();
+    if (digit === '000') {
+      if (!amountStr || amountStr === '0') return;
+      if (amountStr.length + 3 > 12) return;
+      setAmountStr(prev => prev + '000');
+    } else {
+      if (!amountStr || amountStr === '0') {
+        setAmountStr(digit);
+      } else {
+        if (amountStr.length >= 12) return;
+        setAmountStr(prev => prev + digit);
+      }
+    }
   };
 
-  const handleAddAmount = (delta: number) => {
+  const handleBackspace = () => {
+    if (isDebtMode || isAmountLocked) {
+      hapticError();
+      return;
+    }
     hapticLight();
-    const current = parseAmountInput(amountStr);
-    const next = current + delta;
-    if (next <= 0) {
+    if (amountStr.length <= 1) {
       setAmountStr('');
-      setDebouncedAmount(0);
     } else {
-      setAmountStr(formatAmountInput(next));
-      setDebouncedAmount(next);
+      setAmountStr(prev => prev.slice(0, -1));
     }
   };
 
   const handleClearAmount = () => {
+    if (isDebtMode || isAmountLocked) return;
     hapticLight();
     setAmountStr('');
-    setDebouncedAmount(0);
-  };
-
-  const handleNoteChange = (text: string) => {
-    if (text.length <= 25) {
-      setCustomNote(text);
-    }
   };
 
   const handlePickQRImage = async () => {
@@ -519,141 +539,203 @@ export const WalletQRModal: React.FC<WalletQRModalProps> = ({
                 </View>
               )}
 
-              {/* Amount & Transfer Note Customization Section */}
+              {/* Amount, Transfer Note & Keypad Section */}
               {(hasVietQr || hasCustomImage) && (
                 <View style={styles.amountConfigCard}>
-                  <View style={styles.amountConfigHeader}>
-                    <View style={styles.amountConfigHeaderTitleRow}>
-                      <View style={styles.amountIconSquare}>
-                        <Ionicons name="cash-outline" size={16} color="#000000" />
+                  {/* 1. Ô nhập số tiền */}
+                  <View style={styles.fieldCard}>
+                    <View style={styles.fieldHeaderRow}>
+                      <View style={styles.fieldLabelGroup}>
+                        <Ionicons name="cash-outline" size={15} color="#000000" />
+                        <Text style={styles.fieldLabel}>SỐ TIỀN</Text>
                       </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.amountConfigTitle}>TUỲ CHỈNH SỐ TIỀN & GHI CHÚ</Text>
-                        <Text style={styles.amountConfigSub}>
-                          {activeTab === 'vietqr'
-                            ? 'Mã QR tự động cập nhật khi bạn đổi số tiền'
-                            : 'Hiển thị để người nhận tiện sao chép'}
-                        </Text>
-                      </View>
+
+                      {isDebtMode ? (
+                        <View style={styles.lockBadgePermanent}>
+                          <Ionicons name="lock-closed" size={11} color="#065F46" />
+                          <Text style={styles.lockBadgePermanentText}>Đã khóa (Trả nợ)</Text>
+                        </View>
+                      ) : (
+                        <Pressable
+                          style={[
+                            styles.lockToggleBtn,
+                            isAmountLocked ? styles.lockToggleBtnActive : styles.lockToggleBtnInactive,
+                          ]}
+                          onPress={() => {
+                            if (isAmountLocked) {
+                              hapticLight();
+                              setIsAmountLocked(false);
+                            } else {
+                              hapticSuccess();
+                              setIsAmountLocked(true);
+                            }
+                          }}
+                        >
+                          <Ionicons
+                            name={isAmountLocked ? 'lock-closed' : 'lock-open-outline'}
+                            size={12}
+                            color={isAmountLocked ? '#065F46' : '#6B7280'}
+                          />
+                          <Text
+                            style={[
+                              styles.lockToggleText,
+                              isAmountLocked ? styles.lockToggleTextActive : styles.lockToggleTextInactive,
+                            ]}
+                          >
+                            {isAmountLocked ? 'Đã khóa tiền' : 'Mở khóa sửa'}
+                          </Text>
+                        </Pressable>
+                      )}
                     </View>
 
-                    {debouncedAmount > 0 ? (
-                      <View style={styles.amountFixedBadge}>
-                        <Ionicons name="lock-closed" size={10} color="#047857" />
-                        <Text style={styles.amountFixedBadgeText}>Đã khóa tiền</Text>
-                      </View>
-                    ) : (
-                      <View style={styles.amountFlexBadge}>
-                        <Ionicons name="sparkles-outline" size={10} color="#6B7280" />
-                        <Text style={styles.amountFlexBadgeText}>Tự do (0đ)</Text>
-                      </View>
-                    )}
+                    <View style={styles.fieldValueRow}>
+                      <Text
+                        style={[
+                          styles.amountDisplayText,
+                          debouncedAmount === 0 && styles.amountDisplayTextPlaceholder,
+                        ]}
+                      >
+                        {debouncedAmount > 0 ? formatVND(debouncedAmount) : '0 ₫ (Tự do)'}
+                      </Text>
+                      {!isDebtMode && !isAmountLocked && amountStr.length > 0 && (
+                        <Pressable style={styles.clearBtn} onPress={handleClearAmount}>
+                          <Ionicons name="close-circle" size={19} color="#9CA3AF" />
+                        </Pressable>
+                      )}
+                    </View>
                   </View>
 
-                  {/* Amount Input */}
-                  <View style={styles.amountInputSection}>
-                    <Text style={styles.inputFieldLabel}>Số tiền nhận (₫):</Text>
-                    <View style={styles.amountInputRow}>
-                      <TextInput
-                        style={styles.amountTextInput}
-                        value={amountStr}
-                        onChangeText={handleAmountChange}
-                        placeholder="0"
-                        placeholderTextColor="#9CA3AF"
-                        keyboardType="numeric"
-                        selectTextOnFocus
-                      />
-                      <Text style={styles.amountCurrencySuffix}>₫</Text>
-                      {amountStr ? (
-                        <Pressable style={styles.clearCircleBtn} onPress={handleClearAmount}>
+                  {/* 2. Ô nhập nội dung chuyển khoản */}
+                  <View style={styles.fieldCard}>
+                    <View style={styles.fieldHeaderRow}>
+                      <View style={styles.fieldLabelGroup}>
+                        <Ionicons name="document-text-outline" size={15} color="#000000" />
+                        <Text style={styles.fieldLabel}>NỘI DUNG</Text>
+                      </View>
+
+                      {isDebtMode ? (
+                        <View style={styles.lockBadgePermanent}>
+                          <Ionicons name="lock-closed" size={11} color="#065F46" />
+                          <Text style={styles.lockBadgePermanentText}>Đã khóa (Trả nợ)</Text>
+                        </View>
+                      ) : (
+                        <Pressable
+                          style={[
+                            styles.lockToggleBtn,
+                            isNoteLocked ? styles.lockToggleBtnActive : styles.lockToggleBtnInactive,
+                          ]}
+                          onPress={() => {
+                            if (isNoteLocked) {
+                              hapticLight();
+                              setIsNoteLocked(false);
+                            } else {
+                              hapticSuccess();
+                              setIsNoteLocked(true);
+                            }
+                          }}
+                        >
+                          <Ionicons
+                            name={isNoteLocked ? 'lock-closed' : 'lock-open-outline'}
+                            size={12}
+                            color={isNoteLocked ? '#065F46' : '#6B7280'}
+                          />
+                          <Text
+                            style={[
+                              styles.lockToggleText,
+                              isNoteLocked ? styles.lockToggleTextActive : styles.lockToggleTextInactive,
+                            ]}
+                          >
+                            {isNoteLocked ? 'Đã khóa ND' : 'Mở khóa sửa'}
+                          </Text>
+                        </Pressable>
+                      )}
+                    </View>
+
+                    <View style={styles.noteInputWrapper}>
+                      {isDebtMode || isNoteLocked ? (
+                        <Text style={styles.noteDisplayText} numberOfLines={2}>
+                          {customNote || '(Không kèm nội dung)'}
+                        </Text>
+                      ) : (
+                        <TextInput
+                          style={styles.noteTextInput}
+                          value={customNote}
+                          onChangeText={text => {
+                            if (text.length <= 25) {
+                              setCustomNote(text);
+                            }
+                          }}
+                          placeholder="Nội dung chuyển khoản (tùy chọn)..."
+                          placeholderTextColor="#9CA3AF"
+                          maxLength={25}
+                        />
+                      )}
+                      {!isDebtMode && !isNoteLocked && customNote.length > 0 && (
+                        <Pressable style={styles.clearBtn} onPress={() => setCustomNote('')}>
                           <Ionicons name="close-circle" size={18} color="#9CA3AF" />
                         </Pressable>
-                      ) : null}
+                      )}
                     </View>
-
-                    {debouncedAmount > 0 && (
-                      <View style={styles.amountPreviewRow}>
-                        <Text style={styles.amountPreviewText}>
-                          Quy đổi: <Text style={styles.amountPreviewHighlight}>{formatVND(debouncedAmount)}</Text>
-                        </Text>
-                        <Pressable
-                          style={styles.copySmallBtn}
-                          onPress={() => handleCopyText(Math.round(debouncedAmount).toString(), 'Số tiền')}
-                        >
-                          <Ionicons name="copy-outline" size={11} color="#000000" />
-                          <Text style={styles.copySmallBtnText}>Chép số</Text>
-                        </Pressable>
-                      </View>
-                    )}
                   </View>
 
-                  {/* Quick Presets */}
-                  <View style={styles.presetsRow}>
-                    {[
-                      { label: '+50k', val: 50000 },
-                      { label: '+100k', val: 100000 },
-                      { label: '+200k', val: 200000 },
-                      { label: '+500k', val: 500000 },
-                      { label: '+1M', val: 1000000 },
-                      { label: '+2M', val: 2000000 },
-                    ].map(chip => (
-                      <Pressable
-                        key={chip.label}
-                        style={styles.presetChip}
-                        onPress={() => handleAddAmount(chip.val)}
-                      >
-                        <Text style={styles.presetChipText}>{chip.label}</Text>
-                      </Pressable>
-                    ))}
-                    {debouncedAmount > 0 && (
-                      <Pressable
-                        style={[styles.presetChip, styles.resetPresetChip]}
-                        onPress={handleClearAmount}
-                      >
-                        <Ionicons name="refresh" size={11} color="#DC2626" />
-                        <Text style={[styles.presetChipText, { color: '#DC2626' }]}>Về 0đ</Text>
-                      </Pressable>
-                    )}
-                  </View>
-
-                  {/* Transfer Note / Purpose Input */}
-                  <View style={styles.noteInputSection}>
-                    <View style={styles.noteLabelRow}>
-                      <Text style={styles.inputFieldLabel}>Nội dung chuyển khoản (VietQR):</Text>
-                      <Text style={styles.charCountText}>{customNote.length}/25</Text>
+                  {/* 3. Bàn phím số hoặc thông báo khóa */}
+                  {isDebtMode ? (
+                    <View style={styles.debtNoticeCard}>
+                      <Ionicons name="shield-checkmark" size={18} color="#059669" />
+                      <Text style={styles.debtNoticeText}>
+                        Mã QR thanh toán nợ đã điền sẵn số tiền và nội dung cố định (không thể sửa).
+                      </Text>
                     </View>
-                    <View style={styles.noteInputRow}>
-                      <TextInput
-                        style={styles.noteTextInput}
-                        value={customNote}
-                        onChangeText={handleNoteChange}
-                        placeholder="VD: Tien an trua, tra no..."
-                        placeholderTextColor="#9CA3AF"
-                        maxLength={25}
-                      />
-                      {customNote ? (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <Pressable
-                            style={styles.copySmallBtn}
-                            onPress={() => handleCopyText(customNote, 'Nội dung chuyển')}
-                          >
-                            <Ionicons name="copy-outline" size={11} color="#000000" />
-                            <Text style={styles.copySmallBtnText}>Chép</Text>
-                          </Pressable>
-                          <Pressable style={styles.clearCircleBtn} onPress={() => setCustomNote('')}>
-                            <Ionicons name="close-circle" size={18} color="#9CA3AF" />
-                          </Pressable>
+                  ) : isAmountLocked ? (
+                    <View style={styles.lockedAmountBanner}>
+                      <Ionicons name="lock-closed" size={15} color="#065F46" />
+                      <Text style={styles.lockedAmountBannerText}>
+                        Số tiền đã khóa vào mã QR. Bấm <Text style={{ fontWeight: '800' }}>"Mở khóa sửa"</Text> để mở bàn phím số.
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={styles.keypadContainer}>
+                      {[
+                        ['1', '2', '3'],
+                        ['4', '5', '6'],
+                        ['7', '8', '9'],
+                        ['000', '0', 'DEL'],
+                      ].map((row, rIdx) => (
+                        <View key={rIdx} style={styles.keypadRow}>
+                          {row.map(key => (
+                            <Pressable
+                              key={key}
+                              style={({ pressed }) => [
+                                styles.keypadBtn,
+                                pressed && styles.keypadBtnPressed,
+                                key === 'DEL' && styles.keypadDeleteBtn,
+                              ]}
+                              onPress={() => {
+                                if (key === 'DEL') {
+                                  handleBackspace();
+                                } else {
+                                  handleDigitPress(key);
+                                }
+                              }}
+                            >
+                              {key === 'DEL' ? (
+                                <Ionicons name="backspace-outline" size={22} color="#EF4444" />
+                              ) : (
+                                <Text style={styles.keypadText}>{key}</Text>
+                              )}
+                            </Pressable>
+                          ))}
                         </View>
-                      ) : null}
+                      ))}
                     </View>
-                  </View>
+                  )}
 
                   {/* Warning / Hint for Custom Image Tab */}
                   {activeTab === 'custom' && (
                     <View style={styles.customNoticeBox}>
                       <Ionicons name="information-circle-outline" size={15} color="#D97706" />
                       <Text style={styles.customNoticeText}>
-                        Ảnh mã QR đã lưu là ảnh tĩnh. Để tạo mã QR tự động nhúng số tiền & nội dung khi người khác quét, hãy chuyển sang tab <Text style={{ fontWeight: '800' }}>"Mã VietQR động"</Text>.
+                        Ảnh mã QR đã lưu là ảnh tĩnh. Để tạo mã QR tự động nhúng số tiền & nội dung, hãy chuyển sang tab <Text style={{ fontWeight: '800' }}>"Mã VietQR động"</Text>.
                       </Text>
                     </View>
                   )}
@@ -930,212 +1012,201 @@ const styles = StyleSheet.create({
   },
   amountConfigCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 2,
     borderColor: '#000000',
-    padding: 14,
+    padding: 12,
     marginBottom: 16,
+    gap: 10,
     shadowColor: '#000000',
     shadowOffset: { width: 2, height: 2 },
     shadowOpacity: 1,
     shadowRadius: 0,
     elevation: 2,
   },
-  amountConfigHeader: {
+  fieldCard: {
+    backgroundColor: '#FAF8F5',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    padding: 10,
+  },
+  fieldHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 6,
   },
-  amountConfigHeaderTitleRow: {
+  fieldLabelGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    flex: 1,
-    marginRight: 6,
+    gap: 6,
   },
-  amountIconSquare: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: '#FFE600',
-    borderWidth: 1.5,
-    borderColor: '#000000',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  amountConfigTitle: {
-    fontSize: 12,
+  fieldLabel: {
+    fontSize: 11,
     fontWeight: '900',
     color: '#000000',
-    letterSpacing: 0.3,
+    letterSpacing: 0.5,
   },
-  amountConfigSub: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#64748B',
-    marginTop: 1,
-  },
-  amountFixedBadge: {
+  lockBadgePermanent: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
+    gap: 4,
     backgroundColor: '#DCFCE7',
-    paddingHorizontal: 7,
+    paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#15803D',
+    borderColor: '#065F46',
   },
-  amountFixedBadgeText: {
+  lockBadgePermanentText: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#15803D',
+    color: '#065F46',
   },
-  amountFlexBadge: {
+  lockToggleBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1.5,
+  },
+  lockToggleBtnActive: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#065F46',
+  },
+  lockToggleBtnInactive: {
     backgroundColor: '#F3F4F6',
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
     borderColor: '#9CA3AF',
   },
-  amountFlexBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#4B5563',
-  },
-  amountInputSection: {
-    marginBottom: 10,
-  },
-  inputFieldLabel: {
-    fontSize: 11,
+  lockToggleText: {
+    fontSize: 10.5,
     fontWeight: '800',
-    color: '#374151',
-    marginBottom: 4,
   },
-  amountInputRow: {
+  lockToggleTextActive: {
+    color: '#065F46',
+  },
+  lockToggleTextInactive: {
+    color: '#6B7280',
+  },
+  fieldValueRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1.5,
     borderColor: '#000000',
     borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: Platform.OS === 'ios' ? 8 : 4,
+    paddingVertical: 8,
   },
-  amountTextInput: {
-    flex: 1,
+  amountDisplayText: {
     fontSize: 18,
     fontWeight: '900',
     color: '#000000',
-    paddingVertical: 0,
   },
-  amountCurrencySuffix: {
-    fontSize: 16,
-    fontWeight: '900',
-    color: '#047857',
-    marginHorizontal: 4,
+  amountDisplayTextPlaceholder: {
+    color: '#9CA3AF',
+    fontWeight: '700',
   },
-  clearCircleBtn: {
+  clearBtn: {
     padding: 2,
   },
-  amountPreviewRow: {
+  noteInputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 5,
-    paddingHorizontal: 2,
-  },
-  amountPreviewText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  amountPreviewHighlight: {
-    fontWeight: '900',
-    color: '#047857',
-  },
-  copySmallBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: '#F1F5F9',
-    borderWidth: 1,
-    borderColor: '#000000',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 5,
-  },
-  copySmallBtnText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#000000',
-  },
-  presetsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 12,
-  },
-  presetChip: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1.5,
-    borderColor: '#000000',
-    borderRadius: 8,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    shadowColor: '#000000',
-    shadowOffset: { width: 1, height: 1 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 1,
-  },
-  presetChipText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#000000',
-  },
-  resetPresetChip: {
-    backgroundColor: '#FEE2E2',
-    borderColor: '#DC2626',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
-  noteInputSection: {
-    marginTop: 2,
-  },
-  noteLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  charCountText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#9CA3AF',
-  },
-  noteInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1.5,
     borderColor: '#000000',
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: Platform.OS === 'ios' ? 7 : 4,
+    minHeight: 40,
+  },
+  noteDisplayText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#000000',
   },
   noteTextInput: {
     flex: 1,
-    fontSize: 12.5,
+    fontSize: 13,
     fontWeight: '700',
     color: '#000000',
     paddingVertical: 0,
+  },
+  debtNoticeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1.5,
+    borderColor: '#059669',
+    borderRadius: 12,
+    padding: 10,
+  },
+  debtNoticeText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#065F46',
+    lineHeight: 16,
+  },
+  lockedAmountBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1.5,
+    borderColor: '#065F46',
+    borderRadius: 12,
+    padding: 10,
+  },
+  lockedAmountBannerText: {
+    flex: 1,
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#065F46',
+    lineHeight: 16,
+  },
+  keypadContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 6,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+  },
+  keypadRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  keypadBtn: {
+    flex: 1,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 3,
+    backgroundColor: '#FAF8F5',
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+  },
+  keypadBtnPressed: {
+    backgroundColor: THEME.popYellow,
+  },
+  keypadDeleteBtn: {
+    backgroundColor: '#FEE2E2',
+    borderColor: '#EF4444',
+  },
+  keypadText: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#000000',
   },
   customNoticeBox: {
     flexDirection: 'row',
@@ -1146,7 +1217,7 @@ const styles = StyleSheet.create({
     borderColor: '#F59E0B',
     borderRadius: 8,
     padding: 8,
-    marginTop: 10,
+    marginTop: 2,
   },
   customNoticeText: {
     flex: 1,

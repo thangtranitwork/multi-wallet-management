@@ -92,6 +92,8 @@ export interface ReceiptScanResult {
   wallet_id?: string | null;
   detected_payment_method?: string | null;
   items?: ReceiptItem[];
+  adjustments?: BillAdjustment[];
+  members?: BillMember[];
   items_sum?: number;
   has_discrepancy?: boolean;
   confidence?: number;
