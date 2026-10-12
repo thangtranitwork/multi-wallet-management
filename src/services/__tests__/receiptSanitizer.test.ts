@@ -81,4 +81,65 @@ describe('sanitizeReceiptItems', () => {
     expect(result[1].price).toBe(5000);
     expect(result[1].quantity).toBe(2);
   });
+
+  it('merges zero-price promo items into paid items with averaged price (Buy 2 Get 1 Free)', () => {
+    const rawItems = [
+      { name: 'Món A', quantity: 2, price: 1000 },
+      { name: 'Món A (KM)', quantity: 1, price: 0 },
+    ];
+
+    const result = sanitizeReceiptItems(rawItems, 2000);
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toContain('Món A');
+    expect(result[0].name).toContain('Mua 2 tặng 1');
+    expect(result[0].quantity).toBe(3); // 2 + 1
+    expect(result[0].price).toBe(667); // Math.round(2000 / 3) = 667
+  });
+
+  it('merges promo items with prefix KM or Tặng and calculates average unit price', () => {
+    const rawItems = [
+      { name: 'Trà Xanh C2', quantity: 3, price: 10000 }, // 30,000đ
+      { name: 'KM Trà Xanh C2', quantity: 1, price: 0 },
+      { name: 'Bánh snack', quantity: 1, price: 15000 },
+    ];
+
+    const result = sanitizeReceiptItems(rawItems, 45000);
+    expect(result).toHaveLength(2);
+    const c2 = result.find(i => i.name.includes('Trà Xanh C2'));
+    expect(c2).toBeDefined();
+    expect(c2?.quantity).toBe(4); // 3 + 1
+    expect(c2?.price).toBe(7500); // 30,000 / 4 = 7500
+
+    const snack = result.find(i => i.name === 'Bánh snack');
+    expect(snack?.price).toBe(15000);
+  });
+
+  it('handles line-item discount lines by adjusting preceding item unit price', () => {
+    const rawItems = [
+      // 2 * 8,500 = 17,000 with -8,500 line discount
+      { name: 'Bánh Mì Thinmax Vị Socola', quantity: 2, price: 8500 },
+      { name: 'Chiết khấu Bánh Mì', quantity: 1, price: -8500 },
+      // 2 * 23,000 = 46,000 with -5,000 line discount
+      { name: 'Xúc Xích Ponnie Vị Heo', quantity: 2, price: 23000 },
+      { name: 'Chiết khấu: -5,000', quantity: 1, price: -5000 },
+      { name: 'Mì Ly Lẩu Thái', quantity: 1, price: 11000 },
+    ];
+
+    const result = sanitizeReceiptItems(rawItems, 60500);
+    expect(result).toHaveLength(3);
+
+    const banhMi = result.find(i => i.name.includes('Bánh Mì Thinmax'));
+    expect(banhMi).toBeDefined();
+    expect(banhMi?.quantity).toBe(2);
+    expect(banhMi?.price).toBe(4250); // (17,000 - 8,500) / 2 = 4,250
+
+    const ponnie = result.find(i => i.name.includes('Ponnie'));
+    expect(ponnie).toBeDefined();
+    expect(ponnie?.quantity).toBe(2);
+    expect(ponnie?.price).toBe(20500); // (46,000 - 5,000) / 2 = 20,500
+
+    const miLy = result.find(i => i.name.includes('Mì Ly Lẩu Thái'));
+    expect(miLy?.price).toBe(11000);
+  });
 });
+

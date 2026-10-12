@@ -428,22 +428,115 @@ export async function testGeminiConnection(
   };
 }
 
+function normalizePromoItemName(name: string): string {
+  let s = name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D');
+
+  // Bỏ các tiền tố khuyến mãi: km, khuyen mai, tang, qua tang, free, hang tang, ctkm...
+  s = s.replace(/^(km|khuyen mai|tang|qua tang|free|hang tang|ctkm)[\s\-_:.]+/gi, '');
+  // Bỏ các hậu tố / đóng ngoặc khuyến mãi
+  s = s.replace(
+    /[\s\-_:.]*(km|khuyen mai|tang|qua tang|free|0d|hang tang|\(km\)|\(tang\)|\(free\)|\[km\]|\[tang\]|\[free\]|\(qua tang\))$/gi,
+    ''
+  );
+  return s.replace(/\s+/g, ' ').trim();
+}
+
 export function sanitizeReceiptItems(
   items: any[],
   targetAmount?: number
 ): ReceiptItem[] {
   if (!Array.isArray(items)) return [];
-  let list: ReceiptItem[] = items
-    .filter(it => it && typeof it === 'object' && it.name)
-    .map(it => ({
-      name: String(it.name).trim(),
-      quantity: typeof it.quantity === 'number' && it.quantity > 0 ? Math.round(it.quantity) : 1,
-      price: typeof it.price === 'number' && it.price >= 0 ? Math.round(it.price) : 0,
-    }))
-    .filter(it => it.name.length > 0);
 
-  if (list.length === 0) return [];
+  // Bước 0: Lọc hợp lệ và gộp các dòng chiết khấu âm (line-item discounts)
+  const rawList: ReceiptItem[] = [];
+  for (const it of items) {
+    if (!it || typeof it !== 'object' || !it.name) continue;
+    const name = String(it.name).trim();
+    if (!name) continue;
+    const qty = typeof it.quantity === 'number' && it.quantity > 0 ? Math.round(it.quantity) : 1;
+    const p = typeof it.price === 'number' ? Math.round(it.price) : 0;
 
+    // Nếu dòng này là dòng chiết khấu âm trực tiếp (VD: p < 0 hoặc tên chứa "Chiết khấu/Giảm giá" ngay dưới món)
+    const isDiscountLine =
+      p < 0 ||
+      /^(chiết khấu|chiet khau|giảm giá|giam gia|khuyến mại|khuyen mai|discount|ck)[\s\-_:]/i.test(name);
+    if (isDiscountLine && rawList.length > 0) {
+      const discountVal = Math.abs(p * qty);
+      const prev = rawList[rawList.length - 1];
+      const prevQty = prev.quantity || 1;
+      const prevTotal = (prev.price || 0) * prevQty;
+      const newTotal = Math.max(0, prevTotal - discountVal);
+      prev.price = Math.round(newTotal / prevQty);
+      continue;
+    }
+
+    rawList.push({
+      name,
+      quantity: qty,
+      price: Math.max(0, p),
+    });
+  }
+
+  if (rawList.length === 0) return [];
+
+  // Bước 1: Gộp các món khuyến mãi Mua X tặng Y (Buy X Get Y Free / Món 0đ)
+  let list: ReceiptItem[] = [];
+  const zeroPriceItems: ReceiptItem[] = [];
+
+  for (const it of rawList) {
+    if ((it.price || 0) === 0 && (it.quantity || 1) > 0) {
+      zeroPriceItems.push({ ...it });
+    } else {
+      list.push({ ...it });
+    }
+  }
+
+  if (zeroPriceItems.length > 0 && list.length > 0) {
+    const unmergedZeros: ReceiptItem[] = [];
+    for (const zeroIt of zeroPriceItems) {
+      const zeroNorm = normalizePromoItemName(zeroIt.name);
+      const matchIdx = list.findIndex(paidIt => {
+        if ((paidIt.price || 0) <= 0) return false;
+        const paidNorm = normalizePromoItemName(paidIt.name);
+        if (zeroNorm === paidNorm) return true;
+        if (zeroNorm.length >= 3 && paidNorm.length >= 3) {
+          if (zeroNorm.includes(paidNorm) || paidNorm.includes(zeroNorm)) return true;
+        }
+        return false;
+      });
+
+      if (matchIdx !== -1) {
+        const target = list[matchIdx];
+        const paidQty = target.quantity || 1;
+        const freeQty = zeroIt.quantity || 1;
+        const totalCost = paidQty * (target.price || 0);
+        const newQty = paidQty + freeQty;
+        const newPrice = Math.max(1, Math.round(totalCost / newQty));
+
+        target.quantity = newQty;
+        target.price = newPrice;
+        if (
+          !target.name.toLowerCase().includes('tặng') &&
+          !target.name.toLowerCase().includes('tang') &&
+          !target.name.toLowerCase().includes('mua')
+        ) {
+          target.name = `${target.name} (Mua ${paidQty} tặng ${freeQty})`;
+        }
+      } else {
+        unmergedZeros.push(zeroIt);
+      }
+    }
+    list = [...list, ...unmergedZeros];
+  } else if (list.length === 0 && zeroPriceItems.length > 0) {
+    list = zeroPriceItems;
+  }
+
+  // Bước 2: Kiểm tra Đơn giá vs Thành tiền (Unit price vs Line total)
   const finalAmount = targetAmount && targetAmount > 0 ? targetAmount : 0;
   if (finalAmount > 0) {
     const sumAssumingUnitPrice = list.reduce(
@@ -474,13 +567,13 @@ export function sanitizeReceiptItems(
         return it;
       });
     } else {
-      // Kịch bản B: Kiểm tra từng món: nếu riêng 1 món đã có (price * quantity) > finalAmount * 0.9
+      // Kịch bản B: Kiểm tra từng món: nếu riêng 1 món đã có (price * quantity) vượt quá hóa đơn (> finalAmount * 1.25)
       // nhưng price <= finalAmount (tức price thực chất là thành tiền của món đó):
       list = list.map(it => {
         const q = it.quantity || 1;
         const p = it.price || 0;
         if (q > 1 && p > 0) {
-          if (p * q > finalAmount * 0.9 && p <= finalAmount) {
+          if (p * q > finalAmount * 1.25 && p <= finalAmount) {
             return {
               ...it,
               price: Math.max(1, Math.round(p / q)),
@@ -667,16 +760,33 @@ HÌNH ẢNH ĐƯỢC TẢI LÊN CÓ THỂ THUỘC CÁC TRƯỜNG HỢP SAU:
        -> ĐIỀN: { "name": "Hảo Hảo Big 100", "quantity": 4, "price": 6500 }
        -> TUYỆT ĐỐI KHÔNG ĐIỀN { "quantity": 4, "price": 26000 } vì khi đó 4 * 26.000 = 104.000 là SAI HOÀN TOÀN!
      + Nếu hóa đơn chỉ in Thành tiền mà không in Đơn giá: tính price = Math.round(Thành_tiền / quantity).
+
+   - ⚠️ QUY TẮC CHIẾT KHẤU / GIẢM GIÁ THEO TỪNG DÒNG MÓN (LINE-ITEM DISCOUNT):
+     + Nếu dưới một món hàng có dòng thụt lề ghi "Chiết khấu: -X" hoặc "Giảm giá: -X" (Ví dụ: "Bánh Mì Thinmax | SL: 2 | Đơn giá: 8,500" và dòng dưới "Chiết khấu: -8,500" -> Thành tiền: 8,500):
+       -> "price" BẮT BUỘC là ĐƠN GIÁ THỰC TẾ SAU CHIẾT KHẤU:
+          price = Math.round((Thành_tiền_gốc - Chiết_khấu) / quantity)
+          (Ví dụ: (17000 - 8500) / 2 = 4250đ -> { "name": "Bánh Mì Thinmax Vị Socola", "quantity": 2, "price": 4250 }).
+          (Ví dụ: Xúc Xích Ponnie: 2 gói x 23000 = 46000, Chiết khấu: -5000 -> price: (46000 - 5000) / 2 = 20500đ).
+     + ⚠️ CỰC KỲ QUAN TRỌNG: Khi chiết khấu dòng đã được tính vào đơn giá của từng món rồi, TUYỆT ĐỐI KHÔNG đưa khoản chiết khấu dòng này vào mảng "adjustments" nữa để tránh trừ đúp 2 lần! Mảng "adjustments" CHỈ chứa voucher giảm giá chung của toàn đơn (Global Discount) chưa được trừ vào từng món.
+
+   - ⚠️ QUY TẮC CHƯƠNG TRÌNH MUA X TẶNG Y / MÓN 0Đ TẶNG KÈM (BUY X GET Y FREE / PROMO ITEMS):
+     + Nếu trên hóa đơn xuất hiện 2 dòng cho cùng một sản phẩm hoặc món tặng kèm 0đ (Ví dụ: Dòng 1: "Món A | SL: 2 | 2.000đ" và Dòng 2: "Món A | SL: 1 | 0đ" hoặc "KM Món A | SL: 1 | 0đ" do CTKM mua 2 tặng 1):
+       -> BẮT BUỘC GỘP LẠI THÀNH 1 MÓN DUY NHẤT VỚI ĐƠN GIÁ BÌNH QUÂN THỰC TẾ:
+          - "name": Tên món kèm chú thích ưu đãi (ví dụ: "Món A (Mua 2 tặng 1)")
+          - "quantity": Tổng số lượng thực tế nhận được = số lượng mua + số lượng tặng (Ví dụ: 2 + 1 = 3)
+          - "price": Đơn giá bình quân thực tế = Math.round(Tổng_tiền_thực_trả / Tổng_số_lượng) (Ví dụ: Math.round(2000 / 3) = 667đ)
+       -> Quy tắc này đảm bảo công bằng 100% khi chia tiền nhóm (Split Bill) và phản ánh chính xác số lượng hàng hóa thực nhận.
+
    - Hãy tính tổng thành tiền của danh sách món: sum_items = sum(quantity * price).
    - So sánh sum_items với tổng số tiền thanh toán thực tế (amount):
-     + sum_items phải khớp hoặc chỉ lệch do thuế VAT / chiết khấu giảm giá.
+     + sum_items phải khớp hoặc chỉ lệch do thuế VAT / chiết khấu giảm giá voucher toàn đơn.
      + Nếu sum_items lớn hơn bất thường so với amount, hãy kiểm tra lại ngay xem có dòng nào bị nhầm cột Thành tiền thành Đơn giá không!
      + Nếu hóa đơn có thuế VAT, phí dịch vụ hoặc giảm giá voucher: amount phải là số tiền thanh toán thực tế cuối cùng sau thuế và giảm giá.
      + Nếu trường 'amount' bị thiếu, bị mờ hoặc = 0 nhưng danh sách món (items) có đơn giá rõ ràng: hãy lấy tổng các món (sum_items) làm giá trị cho 'amount'.
 
 6. BÓC TÁCH CÁC CHI PHÍ KHÁC VÀ GIẢM GIÁ (ADJUSTMENTS):
    - Phụ phí (type: "fee"): Phí giao hàng (phí ship), Phí áp dụng, Phí dịch vụ, Phí nền tảng, Thuế VAT...
-   - Giảm giá (type: "discount"): Khuyến mãi, Voucher giảm giá, Giảm giá món, Shopee Xu, Chiết khấu...
+   - Giảm giá (type: "discount"): Khuyến mãi voucher toàn đơn, Voucher Shopee/GrabFood, Shopee Xu, Giảm giá thẻ tín dụng... (KHÔNG bao gồm chiết khấu dòng đã trừ vào price ở mục 5).
    - Bóc tách vào mảng "adjustments":
      [
        { "id": "adj_1", "type": "fee", "name": "Phí giao hàng (2.5 km)", "amount": 16000 },

@@ -848,6 +848,19 @@ QUY TẮC NHẬN DIỆN HÌNH ẢNH & ĐA PHƯƠNG THỨC (MULTIMODAL - ẢNH / 
          -> TUYỆT ĐỐI CẤM: Không được điền { "quantity": 4, "price": 26000 } vì khi đó hệ thống tính 4 x 26.000 = 104.000 là SAI HOÀN TOÀN!
          -> Luôn kiểm tra: (quantity * price) PHẢI bằng đúng cột Thành tiền của dòng đó!
        * Nếu hóa đơn chỉ in Thành tiền mà không in đơn giá: price = Math.round(Thành_tiền / quantity).
+       * ⚠️ CHIẾT KHẤU / GIẢM GIÁ THEO TỪNG DÒNG MÓN (LINE-ITEM DISCOUNT):
+         - Nếu dưới một món có dòng ghi "Chiết khấu: -X" hoặc "Giảm giá: -X" (Ví dụ: "Bánh Mì Thinmax | SL: 2 | Đơn giá: 8,500" và dòng dưới "Chiết khấu: -8,500" -> Thành tiền: 8,500):
+           -> "price" BẮT BUỘC là ĐƠN GIÁ THỰC TẾ SAU CHIẾT KHẤU:
+              price = Math.round((Thành_tiền_gốc - Chiết_khấu) / quantity)
+              (Ví dụ: (17000 - 8500) / 2 = 4250đ -> { "name": "Bánh Mì Thinmax Vị Socola", "quantity": 2, "price": 4250 }).
+         - ⚠️ Khi đã trừ chiết khấu dòng vào từng món rồi, KHÔNG đưa khoản chiết khấu dòng này vào mảng "adjustments" nữa để tránh trừ đúp 2 lần! Mảng "adjustments" chỉ chứa voucher giảm giá chung cho toàn đơn (Global Discount).
+       * ⚠️ CHƯƠNG TRÌNH MUA X TẶNG Y / MÓN 0Đ TẶNG KÈM (BUY X GET Y FREE / PROMO ITEMS):
+         - Nếu hóa đơn in 2 dòng cho cùng một sản phẩm hoặc món tặng kèm 0đ (Ví dụ: "Món A | SL: 2: 2000đ" và "Món A | SL: 1: 0đ" hoặc "KM Món A | SL: 1: 0đ"):
+           -> BẮT BUỘC GỘP LẠI THÀNH 1 MÓN DUY NHẤT VỚI ĐƠN GIÁ BÌNH QUÂN THỰC TẾ:
+              - "name": Tên món kèm chú thích ưu đãi (ví dụ: "Món A (Mua 2 tặng 1)")
+              - "quantity": Tổng số lượng thực tế = số lượng mua + số lượng tặng (Ví dụ: 2 + 1 = 3)
+              - "price": Đơn giá bình quân thực tế = Math.round(Tổng_tiền_thực_trả / Tổng_số_lượng) (Ví dụ: Math.round(2000 / 3) = 667đ)
+           -> Quy tắc này giúp khi chia tiền nhóm (Split Bill) đảm bảo công bằng 100% cho mọi người và phản ánh đúng số lượng thực nhận.
        * Đối chiếu tổng tiền: sum(quantity * price) của tất cả món phải khớp hoặc chênh lệch đúng bằng voucher giảm giá/chiết khấu/thuế so với amount.
        Ví dụ: "items": [
          { "name": "Cà phê sữa đá", "quantity": 2, "price": 30000 },
