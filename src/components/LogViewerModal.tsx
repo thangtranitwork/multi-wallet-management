@@ -158,6 +158,13 @@ export const LogViewerModal: React.FC<LogViewerModalProps> = ({ visible, onClose
     });
   };
 
+  const handleShareErrorReport = async () => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch {}
+    await logger.shareErrorReport();
+  };
+
   const handleClearLogs = () => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -207,7 +214,7 @@ export const LogViewerModal: React.FC<LogViewerModalProps> = ({ visible, onClose
 
   const renderLogItem = ({ item }: { item: LogEntry }) => {
     const isExpanded = expandedLogIds.has(item.id);
-    const hasDetails = !!item.details;
+    const hasDetails = !!item.details || !!item.stack || !!item.context;
 
     return (
       <View style={styles.logCardShadow}>
@@ -225,6 +232,12 @@ export const LogViewerModal: React.FC<LogViewerModalProps> = ({ visible, onClose
               <View style={styles.tagBadge}>
                 <Text style={styles.tagBadgeText}>{item.tag}</Text>
               </View>
+              {item.screen && (
+                <View style={styles.screenBadge}>
+                  <Ionicons name="phone-portrait-outline" size={10} color="#4338CA" />
+                  <Text style={styles.screenBadgeText}>{item.screen}</Text>
+                </View>
+              )}
             </View>
             <View style={styles.logMetaRight}>
               <Text style={styles.logTimeText}>{item.timestamp}</Text>
@@ -271,15 +284,33 @@ export const LogViewerModal: React.FC<LogViewerModalProps> = ({ visible, onClose
                   color="#4B5563"
                 />
                 <Text style={styles.detailsToggleText}>
-                  {isExpanded ? 'Thu gọn chi tiết' : 'Xem chi tiết (JSON / Stack)'}
+                  {isExpanded ? 'Thu gọn chi tiết' : 'Xem chi tiết (JSON / Context / Stack)'}
                 </Text>
               </Pressable>
 
               {isExpanded && (
                 <View style={styles.detailsBox}>
-                  <Text style={styles.detailsText} selectable>
-                    {item.details}
-                  </Text>
+                  {item.context && (
+                    <View style={styles.contextSubBox}>
+                      <Text style={styles.contextSubBoxTitle}>NGỮ CẢNH (CONTEXT):</Text>
+                      <Text style={styles.detailsText} selectable>
+                        {JSON.stringify(item.context, null, 2)}
+                      </Text>
+                    </View>
+                  )}
+                  {item.details && (
+                    <Text style={styles.detailsText} selectable>
+                      {item.details}
+                    </Text>
+                  )}
+                  {item.stack && item.details !== item.stack && (
+                    <View style={styles.stackSubBox}>
+                      <Text style={styles.stackSubBoxTitle}>MÃ THEO DÕI (STACK TRACE):</Text>
+                      <Text style={styles.detailsText} selectable>
+                        {item.stack}
+                      </Text>
+                    </View>
+                  )}
                 </View>
               )}
             </View>
@@ -431,21 +462,26 @@ export const LogViewerModal: React.FC<LogViewerModalProps> = ({ visible, onClose
         {/* Bottom Actions Bar */}
         <View style={styles.bottomBar}>
           <Pressable style={styles.bottomBtn} onPress={handleCopyLogs}>
-            <Ionicons name="copy-outline" size={16} color="#000000" />
+            <Ionicons name="copy-outline" size={15} color="#000000" />
             <Text style={styles.bottomBtnText}>Sao chép</Text>
           </Pressable>
 
           <Pressable style={styles.bottomBtn} onPress={handleShareLogs}>
-            <Ionicons name="share-social-outline" size={16} color="#000000" />
+            <Ionicons name="share-social-outline" size={15} color="#000000" />
             <Text style={styles.bottomBtnText}>Chia sẻ</Text>
+          </Pressable>
+
+          <Pressable style={[styles.bottomBtn, styles.bottomBtnPrimary]} onPress={handleShareErrorReport}>
+            <Ionicons name="bug-outline" size={15} color="#000000" />
+            <Text style={styles.bottomBtnText}>Gửi cho Dev</Text>
           </Pressable>
 
           <Pressable
             style={[styles.bottomBtn, styles.bottomBtnDanger]}
             onPress={handleClearLogs}
           >
-            <Ionicons name="trash-outline" size={16} color="#DC2626" />
-            <Text style={[styles.bottomBtnText, { color: '#DC2626' }]}>Xóa log</Text>
+            <Ionicons name="trash-outline" size={15} color="#DC2626" />
+            <Text style={[styles.bottomBtnText, { color: '#DC2626' }]}>Xóa</Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -813,9 +849,57 @@ const styles = StyleSheet.create({
     borderColor: '#FCA5A5',
     backgroundColor: '#FEF2F2',
   },
+  bottomBtnPrimary: {
+    backgroundColor: '#FEF08A',
+    borderColor: '#000000',
+  },
   bottomBtnText: {
     fontSize: 12,
     fontWeight: '900',
     color: '#000000',
+  },
+  screenBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    borderRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  screenBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#4338CA',
+  },
+  contextSubBox: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 6,
+    padding: 6,
+    marginBottom: 6,
+  },
+  contextSubBoxTitle: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#475569',
+    marginBottom: 3,
+  },
+  stackSubBox: {
+    backgroundColor: '#FFF1F2',
+    borderWidth: 1,
+    borderColor: '#FECDD3',
+    borderRadius: 6,
+    padding: 6,
+    marginTop: 6,
+  },
+  stackSubBoxTitle: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#BE123C',
+    marginBottom: 3,
   },
 });

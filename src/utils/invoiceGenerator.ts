@@ -696,12 +696,6 @@ export function generateInvoiceHTML(data: InvoiceReportData, qrImageDataUri?: st
           <span class="meta-label">Thời gian:</span>
           <span class="meta-val">${data.dateStr}</span>
         </div>
-        ${data.walletName ? `
-          <div class="meta-row">
-            <span class="meta-label">${isMember ? 'Đã chi từ:' : 'Nguồn chi trả:'}</span>
-            <span class="meta-val">${data.walletName}</span>
-          </div>
-        ` : ''}
         <div class="meta-row">
           <span class="meta-label">Người nhận bill:</span>
           <span class="meta-val" style="color: #1e40af;">${data.targetName}</span>

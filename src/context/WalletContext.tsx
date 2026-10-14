@@ -22,6 +22,7 @@ import { refreshHabitReminders } from '../services/habitNotificationService';
 import { deleteReceiptFiles, parseImageUris, purgeReceiptImagesOlderThan } from '../services/geminiService';
 import { normalizeToIsoString } from '../utils/dateUtils';
 import { findBankByName } from '../constants/banks';
+import { logger } from '../services/loggerService';
 
 interface WalletContextType {
   wallets: Wallet[];
@@ -227,7 +228,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setIsLoading(true);
       // Run queries sequentially to prevent multi-threaded SQLite race condition / NPE in prepareAsync
       const fetchedWallets = await queries.getWallets(db);
-      const fetchedTxs = await queries.getTransactions(db, { limit: 100 });
+      const fetchedTxs = await queries.getTransactions(db);
       const fetchedDebts = await queries.getDebts(db);
       const fetchedCategories = await queries.getCategories(db);
       const fetchedPlanned = await queries.getPlannedExpenses(db);
@@ -269,6 +270,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         console.warn('Lỗi cập nhật lịch nhắc nhở thói quen:', err);
       });
     } catch (error) {
+      logger.captureError('SQLITE_REFRESH_DATA', error, { action: 'refreshData' });
       console.error('Lỗi tải dữ liệu SQLite:', error);
     } finally {
       setIsLoading(false);
@@ -384,36 +386,56 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     image_uris?: string[] | null;
     items?: string | null;
   }) => {
-    const id = 'tx_' + Date.now();
-    await queries.createTransaction(db, {
-      id,
-      ...tx,
-      transacted_at: normalizeToIsoString(tx.transacted_at),
-    });
-    await refreshData();
-    triggerAutoBackup();
+    try {
+      const id = 'tx_' + Date.now();
+      await queries.createTransaction(db, {
+        id,
+        ...tx,
+        transacted_at: normalizeToIsoString(tx.transacted_at),
+      });
+      await refreshData();
+      triggerAutoBackup();
+    } catch (err) {
+      logger.captureError('ADD_TRANSACTION_FAILED', err, { tx });
+      throw err;
+    }
   };
 
   const removeTransaction = async (id: string) => {
-    const targetTx = transactions.find((t) => t.id === id);
-    if (targetTx?.image_uris) {
-      deleteReceiptFiles(parseImageUris(targetTx.image_uris));
+    try {
+      const targetTx = transactions.find((t) => t.id === id);
+      if (targetTx?.image_uris) {
+        deleteReceiptFiles(parseImageUris(targetTx.image_uris));
+      }
+      await queries.deleteTransaction(db, id);
+      await refreshData();
+      triggerAutoBackup();
+    } catch (err) {
+      logger.captureError('REMOVE_TRANSACTION_FAILED', err, { transactionId: id });
+      throw err;
     }
-    await queries.deleteTransaction(db, id);
-    await refreshData();
-    triggerAutoBackup();
   };
 
   const updateTransactionImages = async (transactionId: string, imageUris: string[]) => {
-    await queries.updateTransactionImages(db, transactionId, imageUris);
-    await refreshData();
-    triggerAutoBackup();
+    try {
+      await queries.updateTransactionImages(db, transactionId, imageUris);
+      await refreshData();
+      triggerAutoBackup();
+    } catch (err) {
+      logger.captureError('UPDATE_TX_IMAGES_FAILED', err, { transactionId });
+      throw err;
+    }
   };
 
   const updateTransactionItems = async (transactionId: string, items: string | null) => {
-    await queries.updateTransactionItems(db, transactionId, items);
-    await refreshData();
-    triggerAutoBackup();
+    try {
+      await queries.updateTransactionItems(db, transactionId, items);
+      await refreshData();
+      triggerAutoBackup();
+    } catch (err) {
+      logger.captureError('UPDATE_TX_ITEMS_FAILED', err, { transactionId });
+      throw err;
+    }
   };
 
   const purgeReceiptImages = async (olderThanDays: number) => {
@@ -424,9 +446,14 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const updateTransactionCategory = async (transactionId: string, categoryId: string | null) => {
-    await queries.updateTransactionCategory(db, transactionId, categoryId);
-    await refreshData();
-    triggerAutoBackup();
+    try {
+      await queries.updateTransactionCategory(db, transactionId, categoryId);
+      await refreshData();
+      triggerAutoBackup();
+    } catch (err) {
+      logger.captureError('UPDATE_TX_CAT_FAILED', err, { transactionId, categoryId });
+      throw err;
+    }
   };
 
   const updateTransactionWallet = async (
@@ -434,15 +461,25 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     walletId: string,
     toWalletId?: string | null
   ) => {
-    await queries.updateTransactionWallet(db, transactionId, walletId, toWalletId);
-    await refreshData();
-    triggerAutoBackup();
+    try {
+      await queries.updateTransactionWallet(db, transactionId, walletId, toWalletId);
+      await refreshData();
+      triggerAutoBackup();
+    } catch (err) {
+      logger.captureError('UPDATE_TX_WALLET_FAILED', err, { transactionId, walletId, toWalletId });
+      throw err;
+    }
   };
 
   const updateTransactionTime = async (transactionId: string, transactedAt: string) => {
-    await queries.updateTransactionTime(db, transactionId, normalizeToIsoString(transactedAt));
-    await refreshData();
-    triggerAutoBackup();
+    try {
+      await queries.updateTransactionTime(db, transactionId, normalizeToIsoString(transactedAt));
+      await refreshData();
+      triggerAutoBackup();
+    } catch (err) {
+      logger.captureError('UPDATE_TX_TIME_FAILED', err, { transactionId, transactedAt });
+      throw err;
+    }
   };
 
   const updateTransactionDetails = async (
@@ -456,13 +493,18 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       transacted_at?: string;
     }
   ) => {
-    const normalizedUpdates = {
-      ...updates,
-      ...(updates.transacted_at ? { transacted_at: normalizeToIsoString(updates.transacted_at) } : {}),
-    };
-    await queries.updateTransactionDetails(db, id, normalizedUpdates);
-    await refreshData();
-    triggerAutoBackup();
+    try {
+      const normalizedUpdates = {
+        ...updates,
+        ...(updates.transacted_at ? { transacted_at: normalizeToIsoString(updates.transacted_at) } : {}),
+      };
+      await queries.updateTransactionDetails(db, id, normalizedUpdates);
+      await refreshData();
+      triggerAutoBackup();
+    } catch (err) {
+      logger.captureError('UPDATE_TX_DETAILS_FAILED', err, { id, updates });
+      throw err;
+    }
   };
 
   const updateTransactionAmortized = async (transactionId: string, isAmortized: boolean) => {
@@ -641,19 +683,29 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const addPlannedExpense = async (
     planned: Omit<PlannedExpense, 'id' | 'created_at' | 'status'>
   ) => {
-    const id = 'pe_' + Date.now();
-    await queries.createPlannedExpense(db, {
-      id,
-      ...planned,
-    });
-    await refreshData();
+    try {
+      const id = 'pe_' + Date.now();
+      await queries.createPlannedExpense(db, {
+        id,
+        ...planned,
+      });
+      await refreshData();
+    } catch (err) {
+      logger.captureError('ADD_PLANNED_EXPENSE_FAILED', err, { planned });
+      throw err;
+    }
   };
 
   const editPlannedExpense = async (
     planned: Partial<PlannedExpense> & { id: string }
   ) => {
-    await queries.updatePlannedExpense(db, planned);
-    await refreshData();
+    try {
+      await queries.updatePlannedExpense(db, planned);
+      await refreshData();
+    } catch (err) {
+      logger.captureError('EDIT_PLANNED_EXPENSE_FAILED', err, { planned });
+      throw err;
+    }
   };
 
   const executePlannedExpense = async (params: {
@@ -663,22 +715,32 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     transactedAt?: string;
     note?: string;
   }) => {
-    const planned = plannedExpenses.find(p => p.id === params.id);
-    const actualAmount = params.actualAmount ?? (planned ? planned.amount : 0);
-    await queries.executePlannedExpense(db, {
-      id: params.id,
-      walletId: params.walletId,
-      actualAmount,
-      transactedAt: params.transactedAt,
-      note: params.note,
-    });
-    await refreshData();
-    triggerAutoBackup();
+    try {
+      const planned = plannedExpenses.find(p => p.id === params.id);
+      const actualAmount = params.actualAmount ?? (planned ? planned.amount : 0);
+      await queries.executePlannedExpense(db, {
+        id: params.id,
+        walletId: params.walletId,
+        actualAmount,
+        transactedAt: params.transactedAt,
+        note: params.note,
+      });
+      await refreshData();
+      triggerAutoBackup();
+    } catch (err) {
+      logger.captureError('EXECUTE_PLANNED_EXPENSE_FAILED', err, { params });
+      throw err;
+    }
   };
 
   const removePlannedExpense = async (id: string) => {
-    await queries.deletePlannedExpense(db, id);
-    await refreshData();
+    try {
+      await queries.deletePlannedExpense(db, id);
+      await refreshData();
+    } catch (err) {
+      logger.captureError('REMOVE_PLANNED_EXPENSE_FAILED', err, { id });
+      throw err;
+    }
   };
 
   const exportDataToJsonString = async (): Promise<string> => {

@@ -155,10 +155,96 @@ export async function deleteWallet(
 
 // ==================== TRANSACTION QUERIES ====================
 
+export interface GetTransactionsOptions {
+  walletId?: string | null;
+  type?: string;
+  searchQuery?: string;
+  limit?: number;
+  offset?: number;
+}
+
+function buildTransactionFilterSql(options?: GetTransactionsOptions): {
+  whereClause: string;
+  params: any[];
+} {
+  let whereClause = '';
+  const params: any[] = [];
+
+  if (options?.walletId) {
+    whereClause += ' AND (t.wallet_id = ? OR t.to_wallet_id = ?)';
+    params.push(options.walletId, options.walletId);
+  }
+
+  if (options?.type && options.type !== 'all') {
+    if (options.type === 'expense') {
+      whereClause += " AND (t.type = 'expense' OR t.type = 'debt_lend' OR t.type = 'debt_repay')";
+    } else if (options.type === 'income') {
+      whereClause += " AND (t.type = 'income' OR t.type = 'debt_borrow' OR t.type = 'debt_collect')";
+    } else if (options.type === 'transfer') {
+      whereClause += " AND t.type = 'transfer'";
+    } else if (options.type === 'debt') {
+      whereClause += " AND t.type LIKE 'debt_%'";
+    } else {
+      whereClause += ' AND t.type = ?';
+      params.push(options.type);
+    }
+  }
+
+  if (options?.searchQuery?.trim()) {
+    const rawQ = options.searchQuery.trim();
+    const qLower = `%${rawQ.toLowerCase()}%`;
+
+    // Chuẩn hóa tìm kiếm theo ngày tháng năm
+    const dateParts = rawQ.split(/[\/\-\.]/);
+    let datePattern: string | null = null;
+    if (dateParts.length === 3 && dateParts[0].length <= 2 && dateParts[1].length <= 2 && dateParts[2].length === 4) {
+      // DD/MM/YYYY -> YYYY-MM-DD
+      datePattern = `%${dateParts[2]}-${dateParts[1].padStart(2, '0')}-${dateParts[0].padStart(2, '0')}%`;
+    } else if (dateParts.length === 2) {
+      if (dateParts[0].length <= 2 && dateParts[1].length === 4) {
+        // MM/YYYY -> YYYY-MM
+        datePattern = `%${dateParts[1]}-${dateParts[0].padStart(2, '0')}%`;
+      } else if (dateParts[0].length <= 2 && dateParts[1].length <= 2) {
+        // DD/MM -> -MM-DD
+        datePattern = `%-${dateParts[1].padStart(2, '0')}-${dateParts[0].padStart(2, '0')}%`;
+      }
+    }
+
+    if (datePattern) {
+      whereClause += ` AND (
+        LOWER(COALESCE(t.note, '')) LIKE ? OR 
+        LOWER(COALESCE(c.name, '')) LIKE ? OR 
+        LOWER(COALESCE(w.name, '')) LIKE ? OR 
+        LOWER(COALESCE(tw.name, '')) LIKE ? OR 
+        LOWER(COALESCE(d.person_name, '')) LIKE ? OR 
+        CAST(t.amount AS TEXT) LIKE ? OR
+        t.transacted_at LIKE ? OR
+        t.transacted_at LIKE ?
+      )`;
+      params.push(qLower, qLower, qLower, qLower, qLower, qLower, qLower, datePattern);
+    } else {
+      whereClause += ` AND (
+        LOWER(COALESCE(t.note, '')) LIKE ? OR 
+        LOWER(COALESCE(c.name, '')) LIKE ? OR 
+        LOWER(COALESCE(w.name, '')) LIKE ? OR 
+        LOWER(COALESCE(tw.name, '')) LIKE ? OR 
+        LOWER(COALESCE(d.person_name, '')) LIKE ? OR 
+        CAST(t.amount AS TEXT) LIKE ? OR
+        t.transacted_at LIKE ?
+      )`;
+      params.push(qLower, qLower, qLower, qLower, qLower, qLower, qLower);
+    }
+  }
+
+  return { whereClause, params };
+}
+
 export async function getTransactions(
   db: SQLite.SQLiteDatabase,
-  options?: { walletId?: string; type?: string; limit?: number; offset?: number }
+  options?: GetTransactionsOptions
 ): Promise<Transaction[]> {
+  const { whereClause, params } = buildTransactionFilterSql(options);
+
   let query = `
     SELECT 
       t.*,
@@ -173,21 +259,9 @@ export async function getTransactions(
     LEFT JOIN wallets tw ON t.to_wallet_id = tw.id
     LEFT JOIN categories c ON t.category_id = c.id
     LEFT JOIN debts d ON t.debt_id = d.id
-    WHERE 1=1
+    WHERE 1=1 ${whereClause}
+    ORDER BY t.transacted_at DESC
   `;
-  const params: any[] = [];
-
-  if (options?.walletId) {
-    query += ' AND (t.wallet_id = ? OR t.to_wallet_id = ?)';
-    params.push(options.walletId, options.walletId);
-  }
-
-  if (options?.type) {
-    query += ' AND t.type = ?';
-    params.push(options.type);
-  }
-
-  query += ' ORDER BY t.transacted_at DESC';
 
   if (options?.limit) {
     query += ' LIMIT ?';
@@ -199,6 +273,26 @@ export async function getTransactions(
   }
 
   return await db.getAllAsync<Transaction>(query, params);
+}
+
+export async function countTransactions(
+  db: SQLite.SQLiteDatabase,
+  options?: GetTransactionsOptions
+): Promise<number> {
+  const { whereClause, params } = buildTransactionFilterSql(options);
+
+  const query = `
+    SELECT COUNT(*) as count
+    FROM transactions t
+    LEFT JOIN wallets w ON t.wallet_id = w.id
+    LEFT JOIN wallets tw ON t.to_wallet_id = tw.id
+    LEFT JOIN categories c ON t.category_id = c.id
+    LEFT JOIN debts d ON t.debt_id = d.id
+    WHERE 1=1 ${whereClause}
+  `;
+
+  const res = await db.getFirstAsync<{ count: number }>(query, params);
+  return res?.count || 0;
 }
 
 export async function createTransaction(
@@ -1095,6 +1189,12 @@ export async function getFinancialSummary(
   );
   const monthExpense = expRes?.total || 0;
 
+  // Tổng số lượng giao dịch trong database
+  const txCountRes = await db.getFirstAsync<{ count: number }>(
+    `SELECT COUNT(*) as count FROM transactions`
+  );
+  const transactionCount = txCountRes?.count || 0;
+
   return {
     totalAssets,
     totalLiabilities,
@@ -1105,7 +1205,17 @@ export async function getFinancialSummary(
     totalLent,
     totalBorrowed,
     walletCount: wallets.length,
+    transactionCount,
   };
+}
+
+export async function getTransactionCount(
+  db: SQLite.SQLiteDatabase
+): Promise<number> {
+  const res = await db.getFirstAsync<{ count: number }>(
+    'SELECT COUNT(*) as count FROM transactions'
+  );
+  return res?.count || 0;
 }
 
 export async function getCategorySpending(

@@ -20,6 +20,7 @@ import { THEME, formatVND } from '../constants';
 import { hapticLight, hapticMedium, hapticSuccess, hapticError } from '../utils/haptics';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { InvoicePrintModal } from './InvoicePrintModal';
+import { EditBillItemsModal } from './EditBillItemsModal';
 import { useCustomAlert } from './CustomAlertModal';
 import { useSecurity } from '../context/SecurityContext';
 import {
@@ -99,6 +100,40 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   const [isAttachingImages, setIsAttachingImages] = useState<boolean>(false);
   const [isScanningReceipt, setIsScanningReceipt] = useState<boolean>(false);
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
+  const [editItemsModalVisible, setEditItemsModalVisible] = useState<boolean>(false);
+
+  const handleSaveBillItems = async (
+    newItems: any[],
+    newAdjustments: any[],
+    newTotal: number
+  ) => {
+    if (!transaction) return;
+    try {
+      const payload = {
+        items: newItems,
+        adjustments: newAdjustments,
+        members: parsedBill?.members || [],
+        includeMeInSplit: parsedBill?.includeMeInSplit,
+      };
+      await updateTransactionItems(transaction.id, JSON.stringify(payload));
+      hapticSuccess();
+
+      if (newTotal > 0 && Math.abs(newTotal - transaction.amount) > 100) {
+        showConfirm(
+          'Cập nhật số tiền',
+          `Tổng hóa đơn mới sau khi chỉnh sửa là ${formatVND(newTotal)}, khác với số tiền giao dịch (${formatVND(transaction.amount)}).\n\nBạn có muốn cập nhật số tiền giao dịch thành ${formatVND(newTotal)} theo danh sách món mới không?`,
+          async () => {
+            await updateTransactionDetails(transaction.id, { amount: newTotal });
+            hapticSuccess();
+          }
+        );
+      } else {
+        showAlert('Thành công', 'Đã cập nhật danh sách món thành công!');
+      }
+    } catch (err: any) {
+      showAlert('Lỗi', err?.message || 'Không thể lưu danh sách món.');
+    }
+  };
 
   const handleScanReceipt = async (imageUris: string[]) => {
     if (!transaction || imageUris.length === 0) return;
@@ -1597,16 +1632,28 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                         Món trong đơn • {parsedBill.items.length} món
                       </Text>
                     </View>
-                    <Pressable
-                      style={styles.printBillHeaderBtn}
-                      onPress={() => {
-                        hapticLight();
-                        setShowPrintModal(true);
-                      }}
-                    >
-                      <Ionicons name="print-outline" size={13} color="#000000" />
-                      <Text style={styles.printBillHeaderBtnText}>In / Xuất bill</Text>
-                    </Pressable>
+                    <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                      <Pressable
+                        style={styles.editBillHeaderBtn}
+                        onPress={() => {
+                          hapticLight();
+                          setEditItemsModalVisible(true);
+                        }}
+                      >
+                        <Ionicons name="create-outline" size={13} color="#000000" />
+                        <Text style={styles.editBillHeaderBtnText}>Sửa món</Text>
+                      </Pressable>
+                      <Pressable
+                        style={styles.printBillHeaderBtn}
+                        onPress={() => {
+                          hapticLight();
+                          setShowPrintModal(true);
+                        }}
+                      >
+                        <Ionicons name="print-outline" size={13} color="#000000" />
+                        <Text style={styles.printBillHeaderBtnText}>In / Xuất bill</Text>
+                      </Pressable>
+                    </View>
                   </View>
                   {parsedBill.items.map((it: any, idx: number) => {
                     const memberMap = new Map<string, string>(
@@ -1785,6 +1832,22 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
               </View>
             )}
 
+            {/* Nút thêm danh sách món nếu giao dịch chưa có chi tiết bill */}
+            {(!parsedBill || !parsedBill.items || parsedBill.items.length === 0) && (
+              <View style={styles.emptyBillItemsContainer}>
+                <Pressable
+                  style={styles.addBillItemsRowBtn}
+                  onPress={() => {
+                    hapticLight();
+                    setEditItemsModalVisible(true);
+                  }}
+                >
+                  <Ionicons name="receipt-outline" size={15} color="#000000" />
+                  <Text style={styles.addBillItemsRowBtnText}>+ Thêm danh sách món & chi tiết hóa đơn</Text>
+                </Pressable>
+              </View>
+            )}
+
             {/* Actions: Split Bill & Delete */}
             <View style={styles.actionsSection}>
               {transaction.type === 'expense' && onSplit && (() => {
@@ -1869,6 +1932,15 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
         transaction={transaction}
         parsedBill={parsedBill}
         wallets={wallets}
+      />
+      {/* Edit Bill Items Modal */}
+      <EditBillItemsModal
+        visible={editItemsModalVisible}
+        onClose={() => setEditItemsModalVisible(false)}
+        initialItems={parsedBill?.items || []}
+        initialAdjustments={parsedBill?.adjustments || []}
+        targetAmount={transaction?.amount}
+        onSave={handleSaveBillItems}
       />
       {AlertModalComponent}
 
@@ -3140,6 +3212,43 @@ const styles = StyleSheet.create({
   },
   printBillHeaderBtnText: {
     fontSize: 11,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  editBillHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FEF08A',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  editBillHeaderBtnText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  emptyBillItemsContainer: {
+    marginBottom: 16,
+  },
+  addBillItemsRowBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    borderStyle: 'dashed',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  addBillItemsRowBtnText: {
+    fontSize: 12,
     fontWeight: '800',
     color: '#000000',
   },

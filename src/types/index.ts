@@ -63,9 +63,12 @@ export interface Transaction {
 }
 
 export interface ReceiptItem {
+  id?: string;
   name: string;
   quantity?: number;
   price?: number;
+  assignedMemberIds?: string[];
+  memberQuantities?: Record<string, number>;
 }
 
 export interface PayeeMapping {
@@ -191,6 +194,7 @@ export interface FinancialSummary {
   totalLent: number;         // Người khác nợ mình
   totalBorrowed: number;     // Mình nợ người khác
   walletCount: number;
+  transactionCount?: number; // Tổng số lượng giao dịch trong SQLite
 }
 
 export interface CategorySpending {

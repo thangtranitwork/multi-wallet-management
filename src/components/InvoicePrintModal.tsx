@@ -548,7 +548,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                       resizeMode="contain"
                     />
                     <Text style={styles.qrFootnote}>
-                      Đúng số tiền: <Text style={{ fontWeight: '800' }}>{formatVND(invoiceData.totalAmount)}</Text>
+                      Số tiền: <Text style={{ fontWeight: '800' }}>{formatVND(invoiceData.totalAmount)}</Text>
                     </Text>
                   </View>
                 )}

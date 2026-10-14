@@ -13,7 +13,9 @@ import {
   CopilotParsedUpdateTransaction,
 } from '../../services/aiCopilotService';
 import { THEME, formatVND } from '../../constants';
-import { hapticLight, hapticSuccess } from '../../utils/haptics';
+import { hapticLight, hapticSuccess, hapticMedium } from '../../utils/haptics';
+import { ReceiptItem, BillAdjustment } from '../../types';
+import { EditBillItemsModal } from '../EditBillItemsModal';
 
 /**
  * Hàm định dạng ngày giờ an toàn cho phản hồi Copilot AI (chống lỗi "Invalid Date")
@@ -110,6 +112,9 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
   const [saved, setSaved] = useState(isSaved);
   const [showItems, setShowItems] = useState(false);
   const [overrideAmount, setOverrideAmount] = useState<number | null>(null);
+  const [customItems, setCustomItems] = useState<ReceiptItem[] | null>(null);
+  const [customAdjustments, setCustomAdjustments] = useState<BillAdjustment[] | null>(null);
+  const [editItemsModalVisible, setEditItemsModalVisible] = useState(false);
   const isSubmittingRef = React.useRef(false);
 
   const effectiveTransaction =
@@ -144,10 +149,21 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
     hapticLight();
     setLoading(true);
     try {
+      const itemsToUse =
+        customItems !== null
+          ? customItems
+          : effectiveTransaction?.items || [];
+      const adjustmentsToUse =
+        customAdjustments !== null
+          ? customAdjustments
+          : effectiveTransaction?.adjustments || [];
+
       const finalTransaction = effectiveTransaction
         ? {
             ...effectiveTransaction,
             amount: overrideAmount !== null ? overrideAmount : effectiveTransaction.amount,
+            items: itemsToUse,
+            adjustments: adjustmentsToUse,
           }
         : undefined;
 
@@ -589,11 +605,13 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
     const isIncome = effectiveTransaction.type === 'income';
     const amountColor = isIncome ? '#15803D' : '#E11D48';
     const currentAmount = overrideAmount !== null ? overrideAmount : effectiveTransaction.amount;
-    const itemsSum = (effectiveTransaction.items || []).reduce(
+    const itemsToUse = customItems !== null ? customItems : (effectiveTransaction.items || []);
+    const adjustmentsToUse = customAdjustments !== null ? customAdjustments : (effectiveTransaction.adjustments || []);
+    const itemsSum = itemsToUse.reduce(
       (s, it) => s + (it.price || 0) * (it.quantity || 1),
       0
     );
-    const adjustments = effectiveTransaction.adjustments || [];
+    const adjustments = adjustmentsToUse;
     const members = effectiveTransaction.members || [];
     const netAdjustments = adjustments.reduce(
       (s, a) => s + (a.type === 'fee' ? a.amount : -a.amount),
@@ -676,26 +694,36 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
               </View>
             </View>
 
-            {((effectiveTransaction.items && effectiveTransaction.items.length > 0) ||
+            {((itemsToUse && itemsToUse.length > 0) ||
               adjustments.length > 0) && (
               <View style={styles.receiptItemsBox}>
-                <Pressable
-                  style={styles.receiptItemsHeader}
-                  onPress={() => setShowItems(!showItems)}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={styles.receiptItemsHeader}>
+                  <Pressable
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}
+                    onPress={() => setShowItems(!showItems)}
+                  >
                     <Ionicons name="receipt-outline" size={13} color="#000000" />
                     <Text style={styles.receiptItemsHeaderTitle}>
-                      Chi tiết hóa đơn ({effectiveTransaction.items?.length || 0} món
+                      Chi tiết hóa đơn ({itemsToUse.length || 0} món
                       {adjustments.length > 0 ? `, ${adjustments.length} phí/voucher` : ''})
                     </Text>
-                  </View>
-                  <Ionicons
-                    name={showItems ? 'chevron-up' : 'chevron-down'}
-                    size={14}
-                    color="#4B5563"
-                  />
-                </Pressable>
+                    <Ionicons
+                      name={showItems ? 'chevron-up' : 'chevron-down'}
+                      size={14}
+                      color="#4B5563"
+                    />
+                  </Pressable>
+                  <Pressable
+                    style={styles.editItemsHeaderBtn}
+                    onPress={() => {
+                      hapticLight();
+                      setEditItemsModalVisible(true);
+                    }}
+                  >
+                    <Ionicons name="create-outline" size={12} color="#000000" />
+                    <Text style={styles.editItemsHeaderBtnText}>Sửa món</Text>
+                  </Pressable>
+                </View>
 
                 {showItems && (
                   <View style={styles.receiptItemsList}>
@@ -710,12 +738,12 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
                     )}
 
                     {/* Danh sách món */}
-                    {effectiveTransaction.items?.map((it, idx) => (
+                    {itemsToUse.map((it, idx) => (
                       <View
                         key={idx}
                         style={[
                           styles.receiptItemRow,
-                          idx < (effectiveTransaction.items?.length || 0) - 1 &&
+                          idx < (itemsToUse.length || 0) - 1 &&
                             styles.receiptItemDivider,
                         ]}
                       >
@@ -798,15 +826,26 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
                         Chênh {formatVND(Math.abs(expectedTotal - currentAmount))}.
                       </Text>
                     </View>
-                    <Pressable
-                      style={styles.discrepancySyncBtn}
-                      onPress={() => {
-                        hapticSuccess();
-                        setOverrideAmount(expectedTotal);
-                      }}
-                    >
-                      <Text style={styles.discrepancySyncBtnText}>Khớp số tiền</Text>
-                    </Pressable>
+                    <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                      <Pressable
+                        style={styles.discrepancyEditBtn}
+                        onPress={() => {
+                          hapticLight();
+                          setEditItemsModalVisible(true);
+                        }}
+                      >
+                        <Text style={styles.discrepancyEditBtnText}>Sửa món</Text>
+                      </Pressable>
+                      <Pressable
+                        style={styles.discrepancySyncBtn}
+                        onPress={() => {
+                          hapticSuccess();
+                          setOverrideAmount(expectedTotal);
+                        }}
+                      >
+                        <Text style={styles.discrepancySyncBtnText}>Khớp số tiền</Text>
+                      </Pressable>
+                    </View>
                   </View>
                 )}
               </View>
@@ -844,6 +883,22 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
                 </View>
               </Pressable>
             )}
+            {/* Edit Bill Items Modal */}
+            <EditBillItemsModal
+              visible={editItemsModalVisible}
+              onClose={() => setEditItemsModalVisible(false)}
+              initialItems={itemsToUse}
+              initialAdjustments={adjustments}
+              targetAmount={currentAmount}
+              onSave={(newItems, newAdjustments, newTotal) => {
+                setCustomItems(newItems);
+                setCustomAdjustments(newAdjustments);
+                // Nếu người dùng muốn tự động đồng bộ số tiền
+                if (Math.abs(newTotal - currentAmount) > 100) {
+                  setOverrideAmount(newTotal);
+                }
+              }}
+            />
           </View>
         </View>
       </View>
@@ -1763,5 +1818,36 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#1D4ED8',
     flex: 1,
+  },
+  editItemsHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#FEF08A',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+  },
+  editItemsHeaderBtnText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  discrepancyEditBtn: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#D97706',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  discrepancyEditBtnText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#B45309',
   },
 });

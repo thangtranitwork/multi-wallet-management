@@ -3,6 +3,8 @@
 // Hỗ trợ lưu trữ vĩnh viễn trên bộ nhớ máy (disk persistence) và bắt lỗi fatal crash
 import dayjs from 'dayjs';
 import * as LegacyFileSystem from 'expo-file-system/legacy';
+import * as Clipboard from 'expo-clipboard';
+import { Platform, Share } from 'react-native';
 
 export type LogLevel = 'info' | 'warn' | 'error' | 'debug';
 
@@ -14,6 +16,9 @@ export interface LogEntry {
   tag: string;
   message: string;
   details?: string;
+  screen?: string;
+  context?: Record<string, any>;
+  stack?: string;
 }
 
 type LogListener = (logs: LogEntry[]) => void;
@@ -23,6 +28,8 @@ const MAX_DISK_LOGS = 300;
 let logs: LogEntry[] = [];
 const listeners: Set<LogListener> = new Set();
 let isInitialized = false;
+let currentScreen: string = 'Dashboard';
+let lastErrorEntry: LogEntry | null = null;
 
 function getLogFilePath(): string {
   const dir = LegacyFileSystem.documentDirectory || LegacyFileSystem.cacheDirectory || '';
@@ -107,7 +114,7 @@ function formatDetails(args: any[]): string | undefined {
         }
       })
       .join(' ');
-    return formatted.length > 2500 ? formatted.slice(0, 2500) + '... (truncated)' : formatted;
+    return formatted.length > 5000 ? formatted.slice(0, 5000) + '... (truncated)' : formatted;
   } catch {
     return undefined;
   }
@@ -133,15 +140,24 @@ function notifyListeners() {
   });
 }
 
-function addLog(level: LogLevel, tag: string, message: string, details?: any, immediatePersist = false) {
+function addLog(
+  level: LogLevel,
+  tag: string,
+  message: string,
+  details?: any,
+  immediatePersist = false,
+  extra?: { screen?: string; context?: Record<string, any>; stack?: string }
+) {
   const now = dayjs();
   let detailStr: string | undefined = undefined;
+  let stackStr: string | undefined = extra?.stack;
 
   if (details !== undefined) {
     if (typeof details === 'string') {
       detailStr = details;
     } else if (details instanceof Error) {
       detailStr = `${details.name}: ${details.message}\n${details.stack || ''}`;
+      if (!stackStr) stackStr = details.stack;
     } else {
       try {
         detailStr = JSON.stringify(details, null, 2);
@@ -151,6 +167,8 @@ function addLog(level: LogLevel, tag: string, message: string, details?: any, im
     }
   }
 
+  const activeScreen = extra?.screen || currentScreen || 'App';
+
   const newEntry: LogEntry = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     timestamp: now.format('HH:mm:ss.SSS'),
@@ -159,7 +177,14 @@ function addLog(level: LogLevel, tag: string, message: string, details?: any, im
     tag: tag.toUpperCase(),
     message: String(message),
     details: detailStr,
+    screen: activeScreen,
+    context: extra?.context,
+    stack: stackStr,
   };
+
+  if (level === 'error') {
+    lastErrorEntry = newEntry;
+  }
 
   logs.unshift(newEntry);
   if (logs.length > MAX_LOGS) {
@@ -191,7 +216,10 @@ export function initLogger() {
         const stack = error?.stack || '';
         const tag = isFatal ? 'FATAL_CRASH' : 'UNCAUGHT_ERR';
         const prefix = isFatal ? '[VĂNG APP - CRASH]' : '[LỖI BẤT NGỜ]';
-        addLog('error', tag, `${prefix} ${errorMsg}`, stack, true);
+        addLog('error', tag, `${prefix} ${errorMsg}`, stack, true, {
+          screen: currentScreen,
+          stack,
+        });
         writeLogsToDisk().catch(() => {});
       } catch {
         // safe fallback
@@ -214,7 +242,7 @@ export function initLogger() {
       const { tag, cleanMessage } = extractTag(firstArg);
       const restArgs = args.length > 1 ? args.slice(1) : (typeof args[0] !== 'string' ? [args[0]] : []);
       const details = restArgs.length > 0 ? formatDetails(restArgs) : undefined;
-      addLog('info', tag, cleanMessage || firstArg || 'Log', details);
+      addLog('info', tag, cleanMessage || firstArg || 'Log', details, false, { screen: currentScreen });
     } catch {
       // safe fallback
     }
@@ -227,7 +255,7 @@ export function initLogger() {
       const { tag, cleanMessage } = extractTag(firstArg);
       const restArgs = args.length > 1 ? args.slice(1) : (typeof args[0] !== 'string' ? [args[0]] : []);
       const details = restArgs.length > 0 ? formatDetails(restArgs) : undefined;
-      addLog('info', tag, cleanMessage || firstArg || 'Info', details);
+      addLog('info', tag, cleanMessage || firstArg || 'Info', details, false, { screen: currentScreen });
     } catch {
       // safe fallback
     }
@@ -240,7 +268,7 @@ export function initLogger() {
       const { tag, cleanMessage } = extractTag(firstArg);
       const restArgs = args.length > 1 ? args.slice(1) : (typeof args[0] !== 'string' ? [args[0]] : []);
       const details = restArgs.length > 0 ? formatDetails(restArgs) : undefined;
-      addLog('warn', tag, cleanMessage || firstArg || 'Warning', details);
+      addLog('warn', tag, cleanMessage || firstArg || 'Warning', details, false, { screen: currentScreen });
     } catch {
       // safe fallback
     }
@@ -249,28 +277,164 @@ export function initLogger() {
   console.error = (...args: any[]) => {
     originalConsoleError.apply(console, args);
     try {
-      const firstArg = typeof args[0] === 'string' ? args[0] : '';
-      const { tag, cleanMessage } = extractTag(firstArg);
-      const restArgs = args.length > 1 ? args.slice(1) : (typeof args[0] !== 'string' ? [args[0]] : []);
-      const details = restArgs.length > 0 ? formatDetails(restArgs) : undefined;
-      addLog('error', tag, cleanMessage || firstArg || 'Error', details, true);
+      if (args.length === 0) {
+        addLog('error', 'SYSTEM', 'console.error called with no arguments', undefined, true, { screen: currentScreen });
+        return;
+      }
+
+      let tag = 'SYSTEM';
+      let message = '';
+      let details: any = undefined;
+      let stack: string | undefined = undefined;
+
+      const firstArg = args[0];
+
+      if (firstArg instanceof Error) {
+        tag = 'ERROR';
+        message = `${firstArg.name}: ${firstArg.message}`;
+        stack = firstArg.stack;
+        const rest = args.slice(1);
+        details = rest.length > 0 ? formatDetails(rest) : undefined;
+      } else if (typeof firstArg === 'string') {
+        const extracted = extractTag(firstArg);
+        tag = extracted.tag;
+        message = extracted.cleanMessage || firstArg;
+
+        const restArgs = args.slice(1);
+        const errorArg = restArgs.find(a => a instanceof Error);
+        if (errorArg instanceof Error) {
+          stack = errorArg.stack;
+        }
+        details = restArgs.length > 0 ? formatDetails(restArgs) : undefined;
+      } else {
+        message = typeof firstArg === 'object' ? JSON.stringify(firstArg) : String(firstArg);
+        const restArgs = args.slice(1);
+        details = restArgs.length > 0 ? formatDetails(restArgs) : undefined;
+      }
+
+      addLog('error', tag, message || 'Lỗi không xác định', details, true, {
+        screen: currentScreen,
+        stack,
+      });
     } catch {
       // safe fallback
     }
   };
 
   // Log khởi tạo
-  addLog('info', 'APP', 'Hệ thống Logger đã khởi tạo với Disk Persistence & Global Crash Hook.', { maxBufferSize: MAX_LOGS });
+  addLog('info', 'APP', 'Hệ thống Logger đã khởi tạo với Disk Persistence & Global Crash Hook.', { maxBufferSize: MAX_LOGS }, false, { screen: currentScreen });
+}
+
+function buildFormattedErrorReport(targetError?: any, context?: Record<string, any>): string {
+  const nowStr = dayjs().format('YYYY-MM-DD HH:mm:ss');
+  const osInfo = `${Platform.OS} (Phiên bản: ${Platform.Version})`;
+  const screen = currentScreen;
+
+  let errTitle = 'Lỗi không xác định';
+  let errStack = '';
+  let errDetails = '';
+
+  if (targetError) {
+    if (targetError instanceof Error) {
+      errTitle = `${targetError.name}: ${targetError.message}`;
+      errStack = targetError.stack || '';
+    } else if (typeof targetError === 'string') {
+      errTitle = targetError;
+    } else {
+      try {
+        errTitle = JSON.stringify(targetError);
+      } catch {
+        errTitle = String(targetError);
+      }
+    }
+  } else if (lastErrorEntry) {
+    errTitle = `[${lastErrorEntry.tag}] ${lastErrorEntry.message}`;
+    errStack = lastErrorEntry.stack || '';
+    errDetails = lastErrorEntry.details || '';
+  }
+
+  // Lấy 15 bản ghi log gần nhất làm breadcrumbs
+  const breadcrumbs = logs
+    .slice(0, 15)
+    .reverse()
+    .map(l => `[${l.timestamp}] [${l.level.toUpperCase()}] [${l.tag}] ${l.screen ? `[${l.screen}] ` : ''}${l.message}${l.details ? ` -> ${l.details.slice(0, 120)}` : ''}`)
+    .join('\n');
+
+  let report = `==================== BÁO CÁO LỖI HỆ THỐNG ====================\n`;
+  report += `⏰ Thời gian: ${nowStr}\n`;
+  report += `📱 Thiết bị: ${osInfo}\n`;
+  report += `📍 Màn hình: ${screen}\n`;
+  report += `❌ Lỗi: ${errTitle}\n`;
+
+  if (context && Object.keys(context).length > 0) {
+    report += `\n-------------------- NGỮ CẢNH (CONTEXT) --------------------\n`;
+    try {
+      report += JSON.stringify(context, null, 2) + '\n';
+    } catch {
+      report += String(context) + '\n';
+    }
+  }
+
+  if (errStack) {
+    report += `\n-------------------- MÃ THEO DÕI (STACK TRACE) --------------------\n`;
+    report += errStack + '\n';
+  } else if (errDetails) {
+    report += `\n-------------------- CHI TIẾT LỖI --------------------\n`;
+    report += errDetails + '\n';
+  }
+
+  if (breadcrumbs) {
+    report += `\n-------------------- NHẬT KÝ GẦN ĐÂY (BREADCRUMBS) --------------------\n`;
+    report += breadcrumbs + '\n';
+  }
+
+  report += `==============================================================\n`;
+  return report;
 }
 
 export const logger = {
-  info: (tag: string, message: string, details?: any) => addLog('info', tag, message, details),
-  warn: (tag: string, message: string, details?: any) => addLog('warn', tag, message, details),
-  error: (tag: string, message: string, details?: any) => addLog('error', tag, message, details, true),
-  debug: (tag: string, message: string, details?: any) => addLog('debug', tag, message, details),
+  setCurrentScreen: (screen: string) => {
+    currentScreen = screen;
+  },
+  getCurrentScreen: (): string => currentScreen,
+  getLastError: (): LogEntry | null => lastErrorEntry,
+  info: (tag: string, message: string, details?: any, context?: Record<string, any>) =>
+    addLog('info', tag, message, details, false, { screen: currentScreen, context }),
+  warn: (tag: string, message: string, details?: any, context?: Record<string, any>) =>
+    addLog('warn', tag, message, details, false, { screen: currentScreen, context }),
+  error: (tag: string, messageOrError: any, detailsOrContext?: any, extraContext?: Record<string, any>) => {
+    let msg = '';
+    let details = detailsOrContext;
+    let stack: string | undefined = undefined;
+    let ctx = extraContext;
+
+    if (messageOrError instanceof Error) {
+      msg = `${messageOrError.name}: ${messageOrError.message}`;
+      stack = messageOrError.stack;
+      if (detailsOrContext && typeof detailsOrContext === 'object' && !(detailsOrContext instanceof Error) && !Array.isArray(detailsOrContext)) {
+        ctx = { ...detailsOrContext, ...extraContext };
+        details = undefined;
+      }
+    } else {
+      msg = String(messageOrError);
+      if (detailsOrContext instanceof Error) {
+        stack = detailsOrContext.stack;
+      }
+    }
+
+    addLog('error', tag, msg, details, true, { screen: currentScreen, stack, context: ctx });
+  },
+  captureError: (tag: string, error: any, context?: Record<string, any>) => {
+    const msg = error?.message ? `${error.name || 'Error'}: ${error.message}` : String(error);
+    const stack = error?.stack || undefined;
+    addLog('error', tag, msg, error, true, { screen: currentScreen, stack, context });
+  },
+  debug: (tag: string, message: string, details?: any) =>
+    addLog('debug', tag, message, details, false, { screen: currentScreen }),
   getLogs: (): LogEntry[] => [...logs],
   clearLogs: async () => {
     logs = [];
+    lastErrorEntry = null;
     notifyListeners();
     try {
       const path = getLogFilePath();
@@ -293,7 +457,28 @@ export const logger = {
   loadPersistedLogs,
   exportAsString: (): string => {
     return logs
-      .map(l => `[${l.timeFull}] [${l.level.toUpperCase()}] [${l.tag}] ${l.message}${l.details ? `\n--> Details: ${l.details}` : ''}`)
+      .map(l => `[${l.timeFull}] [${l.level.toUpperCase()}] [${l.tag}] ${l.screen ? `[${l.screen}] ` : ''}${l.message}${l.details ? `\n--> Details: ${l.details}` : ''}`)
       .join('\n\n');
+  },
+  getFormattedErrorReport: buildFormattedErrorReport,
+  copyErrorReport: async (targetError?: any, context?: Record<string, any>): Promise<boolean> => {
+    try {
+      const report = buildFormattedErrorReport(targetError, context);
+      await Clipboard.setStringAsync(report);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+  shareErrorReport: async (targetError?: any, context?: Record<string, any>): Promise<void> => {
+    try {
+      const report = buildFormattedErrorReport(targetError, context);
+      await Share.share({
+        title: 'Báo cáo lỗi ứng dụng',
+        message: report,
+      });
+    } catch {
+      // ignore
+    }
   },
 };

@@ -839,7 +839,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
               <View style={styles.accordionHeaderRight}>
                 <View style={styles.accordionBadge}>
                   <Text style={styles.accordionBadgeText}>
-                    {wallets.length} ví • {transactions.length} GD
+                    {wallets.length} ví • {summary?.transactionCount ?? transactions.length} GD
                   </Text>
                 </View>
                 <View style={styles.accordionChevronCircle}>
@@ -861,7 +861,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                   </View>
 
                   <View style={styles.statBox}>
-                    <Text style={styles.statVal}>{transactions.length}</Text>
+                    <Text style={styles.statVal}>{summary?.transactionCount ?? transactions.length}</Text>
                     <Text style={styles.statLabel}>Giao dịch</Text>
                   </View>
 
@@ -2165,16 +2165,29 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
                     </Text>
                   </View>
                 </View>
-                <Pressable
-                  style={styles.logViewerBtn}
-                  onPress={() => {
-                    hapticMedium();
-                    setLogModalVisible(true);
-                  }}
-                >
-                  <Ionicons name="document-text-outline" size={14} color="#000000" />
-                  <Text style={styles.logViewerBtnText}>Xem log</Text>
-                </Pressable>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  <Pressable
+                    style={styles.logViewerBtn}
+                    onPress={() => {
+                      hapticMedium();
+                      setLogModalVisible(true);
+                    }}
+                  >
+                    <Ionicons name="document-text-outline" size={14} color="#000000" />
+                    <Text style={styles.logViewerBtnText}>Xem log</Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={[styles.logViewerBtn, { backgroundColor: '#FEF08A' }]}
+                    onPress={async () => {
+                      hapticMedium();
+                      await logger.shareErrorReport();
+                    }}
+                  >
+                    <Ionicons name="bug-outline" size={14} color="#000000" />
+                    <Text style={styles.logViewerBtnText}>Gửi Dev</Text>
+                  </Pressable>
+                </View>
               </View>
 
               <View style={styles.divider} />
@@ -2353,7 +2366,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
         <View style={styles.footerContainer}>
           <Text style={styles.footerAppName}>Ví Của Tôi • Multi-Wallet Manager</Text>
           <Text style={styles.footerNote}>
-            Phiên bản 1.2.9(2) • SQLite Offline Local Storage
+            Phiên bản 1.3.0 • SQLite Offline Local Storage
           </Text>
           <Text style={styles.footerPrivacy}>
             100% dữ liệu được lưu trữ trên thiết bị của bạn, hoàn toàn riêng tư và không tải lên máy chủ ngoài.

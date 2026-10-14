@@ -14,6 +14,7 @@ import { CopilotProvider } from './src/context/CopilotContext';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { LockScreenOverlay } from './src/components/LockScreenOverlay';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
+import { logger } from './src/services/loggerService';
 
 export default function App() {
   return (
@@ -30,7 +31,14 @@ export default function App() {
           <SecurityProvider>
             <WalletProvider>
               <CopilotProvider>
-                <NavigationContainer>
+                <NavigationContainer
+                  onStateChange={(state) => {
+                    const route = state?.routes[state.index ?? 0]?.name;
+                    if (route) {
+                      logger.setCurrentScreen(route);
+                    }
+                  }}
+                >
                   <RootNavigator />
                   <LockScreenOverlay />
                 </NavigationContainer>

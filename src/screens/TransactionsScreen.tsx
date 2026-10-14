@@ -1,15 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   Pressable,
   TextInput,
   RefreshControl,
+  FlatList,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useSQLiteContext } from 'expo-sqlite';
 import dayjs from 'dayjs';
 import { useWallet } from '../context/WalletContext';
 import { TransactionItem } from '../components/TransactionItem';
@@ -20,12 +22,15 @@ import { NeoDropdown } from '../components/NeoDropdown';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
 import { Transaction } from '../types';
 import { THEME, formatVND } from '../constants';
+import * as queries from '../database/queries';
 
 export const TransactionsScreen: React.FC = () => {
+  const db = useSQLiteContext();
+  const PAGE_SIZE = 30;
+
   const {
     wallets,
     transactions,
-    isLoading,
     isBalanceHidden,
     toggleHideBalance,
     activeWalletFilter,
@@ -35,6 +40,7 @@ export const TransactionsScreen: React.FC = () => {
   } = useWallet();
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('all');
   const [quickAddVisible, setQuickAddVisible] = useState(false);
   const [splitTargetTx, setSplitTargetTx] = useState<Transaction | null>(null);
@@ -49,46 +55,92 @@ export const TransactionsScreen: React.FC = () => {
     date?: Date;
   } | null>(null);
 
-  // Filter transactions
-  const filteredTransactions = transactions.filter(t => {
-    // Filter by type
-    if (selectedTypeFilter === 'expense' && t.type !== 'expense' && t.type !== 'debt_lend' && t.type !== 'debt_repay') {
-      return false;
-    }
-    if (selectedTypeFilter === 'income' && t.type !== 'income' && t.type !== 'debt_borrow' && t.type !== 'debt_collect') {
-      return false;
-    }
-    if (selectedTypeFilter === 'transfer' && t.type !== 'transfer') {
-      return false;
-    }
-    if (selectedTypeFilter === 'debt' && !t.type.startsWith('debt_')) {
-      return false;
-    }
+  // Pagination & SQLite Filter States
+  const [displayedTransactions, setDisplayedTransactions] = useState<Transaction[]>([]);
+  const [totalFilteredCount, setTotalFilteredCount] = useState<number>(0);
+  const [isLoadingFirstPage, setIsLoadingFirstPage] = useState<boolean>(true);
+  const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
+  const [hasMore, setHasMore] = useState<boolean>(true);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
-    // Filter by wallet
-    if (activeWalletFilter) {
-      if (t.wallet_id !== activeWalletFilter && t.to_wallet_id !== activeWalletFilter) {
-        return false;
+  // Debounce search query to avoid frequent SQLite calls while typing
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Fetch initial page directly from SQLite database
+  const loadInitialData = useCallback(async () => {
+    try {
+      setIsLoadingFirstPage(true);
+      const filterOpts: queries.GetTransactionsOptions = {
+        walletId: activeWalletFilter,
+        type: selectedTypeFilter,
+        searchQuery: debouncedSearch,
+        limit: PAGE_SIZE,
+        offset: 0,
+      };
+
+      const [firstPage, totalCount] = await Promise.all([
+        queries.getTransactions(db, filterOpts),
+        queries.countTransactions(db, filterOpts),
+      ]);
+
+      setDisplayedTransactions(firstPage);
+      setTotalFilteredCount(totalCount);
+      setHasMore(firstPage.length < totalCount);
+    } catch (err) {
+      console.error('Error loading transactions page 0:', err);
+    } finally {
+      setIsLoadingFirstPage(false);
+    }
+  }, [db, activeWalletFilter, selectedTypeFilter, debouncedSearch]);
+
+  // Reload when filters change or when global transactions change
+  useEffect(() => {
+    loadInitialData();
+  }, [loadInitialData, transactions]);
+
+  // Load more on infinite scroll reach end
+  const handleLoadMore = async () => {
+    if (isLoadingMore || !hasMore || isLoadingFirstPage || isRefreshing) return;
+    try {
+      setIsLoadingMore(true);
+      const nextOffset = displayedTransactions.length;
+      const filterOpts: queries.GetTransactionsOptions = {
+        walletId: activeWalletFilter,
+        type: selectedTypeFilter,
+        searchQuery: debouncedSearch,
+        limit: PAGE_SIZE,
+        offset: nextOffset,
+      };
+
+      const nextPage = await queries.getTransactions(db, filterOpts);
+      if (nextPage && nextPage.length > 0) {
+        setDisplayedTransactions(prev => [...prev, ...nextPage]);
+        setHasMore(nextOffset + nextPage.length < totalFilteredCount);
+      } else {
+        setHasMore(false);
       }
+    } catch (err) {
+      console.error('Error loading more transactions:', err);
+    } finally {
+      setIsLoadingMore(false);
     }
+  };
 
-    // Filter by search query
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const matchNote = (t.note || '').toLowerCase().includes(q);
-      const matchCat = (t.category_name || '').toLowerCase().includes(q);
-      const matchPerson = (t.person_name || '').toLowerCase().includes(q);
-      const matchWallet = (t.wallet_name || '').toLowerCase().includes(q);
-      const matchAmount = t.amount.toString().includes(q);
-      return matchNote || matchCat || matchPerson || matchWallet || matchAmount;
-    }
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await refreshData();
+    await loadInitialData();
+    setIsRefreshing(false);
+  };
 
-    return true;
-  });
-
-  // Group transactions by date
+  // Group displayed transactions by date
   const groupedTransactions: { [dateStr: string]: Transaction[] } = {};
-  filteredTransactions.forEach(t => {
+  displayedTransactions.forEach(t => {
     const d = dayjs(t.transacted_at).format('YYYY-MM-DD');
     if (!groupedTransactions[d]) {
       groupedTransactions[d] = [];
@@ -96,7 +148,7 @@ export const TransactionsScreen: React.FC = () => {
     groupedTransactions[d].push(t);
   });
 
-  // Đảm bảo các giao dịch trong cùng một ngày luôn được sắp xếp theo thời gian mới nhất lên đầu
+  // Sort within same day by time desc
   Object.keys(groupedTransactions).forEach(d => {
     groupedTransactions[d].sort((a, b) => {
       const timeA = new Date(a.transacted_at).getTime() || 0;
@@ -135,12 +187,83 @@ export const TransactionsScreen: React.FC = () => {
       ? 'Tất cả ví'
       : wallets.find(w => w.id === activeWalletFilter)?.name || 'Tất cả ví';
 
+  const formatVietnameseDateHeader = (date: dayjs.Dayjs) => {
+    const raw = date.locale('vi').format('dddd, DD/MM/YYYY');
+    return raw.charAt(0).toUpperCase() + raw.slice(1);
+  };
+
+  const renderDateGroup = ({ item: dateKey }: { item: string }) => {
+    const dayTxs = groupedTransactions[dateKey];
+    if (!dayTxs || dayTxs.length === 0) return null;
+
+    const d = dayjs(dateKey);
+    const isToday = d.isSame(dayjs(), 'day');
+    const isYesterday = d.isSame(dayjs().subtract(1, 'day'), 'day');
+
+    const dateLabel = isToday
+      ? 'Hôm nay'
+      : isYesterday
+      ? 'Hôm qua'
+      : formatVietnameseDateHeader(d);
+
+    const dayTotal = dayTxs.reduce((sum, t) => {
+      if (t.type === 'expense' || t.type === 'debt_lend' || t.type === 'debt_repay') {
+        return sum - t.amount;
+      }
+      if (t.type === 'income' || t.type === 'debt_borrow' || t.type === 'debt_collect') {
+        return sum + t.amount;
+      }
+      return sum;
+    }, 0);
+
+    return (
+      <View key={dateKey} style={styles.dateGroup}>
+        <View style={styles.dateGroupHeader}>
+          <View style={styles.dateBadge}>
+            <Text style={styles.dateBadgeText} numberOfLines={1}>{dateLabel}</Text>
+          </View>
+          <Text
+            style={[
+              styles.dayTotalText,
+              dayTotal > 0
+                ? { color: '#15803D' }
+                : dayTotal < 0
+                ? { color: '#E11D48' }
+                : { color: '#6B7280' },
+            ]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+          >
+            {dayTotal !== 0
+              ? isBalanceHidden
+                ? '••••••'
+                : (dayTotal > 0 ? '+' : '') + formatVND(dayTotal)
+              : ''}
+          </Text>
+        </View>
+
+        {dayTxs.map(tx => (
+          <TransactionItem
+            key={tx.id}
+            transaction={tx}
+            isBalanceHidden={isBalanceHidden}
+            onPress={() => setSelectedDetailTx(tx)}
+            onDelete={() => setTxToDelete(tx)}
+          />
+        ))}
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       {/* Header */}
       <View style={styles.header}>
         <View>
           <Text style={styles.screenTitle}>Sổ Giao Dịch</Text>
+          <Text style={styles.screenSubtitle}>
+            {totalFilteredCount} giao dịch{transactions.length > totalFilteredCount ? ` / ${transactions.length}` : ''}
+          </Text>
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -173,7 +296,7 @@ export const TransactionsScreen: React.FC = () => {
           <Ionicons name="search-outline" size={18} color="#000000" />
           <TextInput
             style={styles.searchInput}
-            placeholder="Tìm giao dịch, danh mục, số tiền..."
+            placeholder="Tìm theo mô tả, danh mục, số tiền, ngày..."
             placeholderTextColor="#6B7280"
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -211,101 +334,63 @@ export const TransactionsScreen: React.FC = () => {
         />
       </View>
 
-      {/* Transactions List */}
-      <ScrollView
+      {/* Transactions Infinite Scroll List */}
+      <FlatList
+        data={dateKeys}
+        keyExtractor={item => item}
+        renderItem={renderDateGroup}
         style={styles.listArea}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.5}
         refreshControl={
           <RefreshControl
-            refreshing={isLoading}
-            onRefresh={refreshData}
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
             tintColor="#000000"
           />
         }
-      >
-        {dateKeys.length > 0 ? (
-          dateKeys.map(dateKey => {
-            const dayTxs = groupedTransactions[dateKey];
-            const d = dayjs(dateKey);
-            const isToday = d.isSame(dayjs(), 'day');
-            const isYesterday = d.isSame(dayjs().subtract(1, 'day'), 'day');
-
-            const formatVietnameseDateHeader = (date: dayjs.Dayjs) => {
-              const raw = date.locale('vi').format('dddd, DD/MM/YYYY');
-              return raw.charAt(0).toUpperCase() + raw.slice(1);
-            };
-
-            const dateLabel = isToday
-              ? 'Hôm nay'
-              : isYesterday
-              ? 'Hôm qua'
-              : formatVietnameseDateHeader(d);
-
-            const dayTotal = dayTxs.reduce((sum, t) => {
-              if (t.type === 'expense' || t.type === 'debt_lend' || t.type === 'debt_repay') {
-                return sum - t.amount;
-              }
-              if (t.type === 'income' || t.type === 'debt_borrow' || t.type === 'debt_collect') {
-                return sum + t.amount;
-              }
-              return sum;
-            }, 0);
-
-            return (
-              <View key={dateKey} style={styles.dateGroup}>
-                <View style={styles.dateGroupHeader}>
-                  <View style={styles.dateBadge}>
-                    <Text style={styles.dateBadgeText} numberOfLines={1}>{dateLabel}</Text>
-                  </View>
-                  <Text
-                    style={[
-                      styles.dayTotalText,
-                      dayTotal > 0
-                        ? { color: '#15803D' }
-                        : dayTotal < 0
-                        ? { color: '#E11D48' }
-                        : { color: '#6B7280' },
-                    ]}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                  >
-                    {dayTotal !== 0
-                      ? isBalanceHidden
-                        ? '••••••'
-                        : (dayTotal > 0 ? '+' : '') + formatVND(dayTotal)
-                      : ''}
-                  </Text>
-                </View>
-
-                {dayTxs.map(tx => (
-                  <TransactionItem
-                    key={tx.id}
-                    transaction={tx}
-                    isBalanceHidden={isBalanceHidden}
-                    onPress={() => setSelectedDetailTx(tx)}
-                    onDelete={() => setTxToDelete(tx)}
-                  />
-                ))}
-              </View>
-            );
-          })
-        ) : (
-          <View style={styles.emptyCardShadow}>
+        ListEmptyComponent={
+          isLoadingFirstPage ? (
             <View style={styles.emptyCardInner}>
-              <View style={styles.emptyIconCircle}>
-                <Ionicons name="receipt-outline" size={32} color="#000000" />
+              <ActivityIndicator size="large" color="#000000" style={{ marginVertical: 24 }} />
+              <Text style={styles.emptySub}>Đang tải giao dịch...</Text>
+            </View>
+          ) : (
+            <View style={styles.emptyCardShadow}>
+              <View style={styles.emptyCardInner}>
+                <View style={styles.emptyIconCircle}>
+                  <Ionicons name="receipt-outline" size={32} color="#000000" />
+                </View>
+                <Text style={styles.emptyTitle}>Chưa có giao dịch nào!</Text>
+                <Text style={styles.emptySub}>
+                  {debouncedSearch || selectedTypeFilter !== 'all' || activeWalletFilter
+                    ? 'Không tìm thấy giao dịch phù hợp với bộ lọc hiện tại.'
+                    : 'Bấm nút "Ghi chép" ở góc trên hoặc nút (+) vàng để lưu lại chi tiêu đầu tiên'}
+                </Text>
               </View>
-              <Text style={styles.emptyTitle}>Chưa có giao dịch nào!</Text>
-              <Text style={styles.emptySub}>
-                Bấm nút "Ghi chép" ở góc trên hoặc nút (+) vàng để lưu lại chi tiêu đầu tiên
+            </View>
+          )
+        }
+        ListFooterComponent={
+          isLoadingMore ? (
+            <View style={styles.listFooterLoading}>
+              <ActivityIndicator size="small" color="#000000" />
+              <Text style={styles.listFooterText}>Đang tải thêm giao dịch cũ hơn...</Text>
+            </View>
+          ) : !hasMore && displayedTransactions.length > 0 ? (
+            <View style={styles.listFooterEnd}>
+              <Ionicons name="checkmark-circle-outline" size={16} color="#6B7280" />
+              <Text style={styles.listFooterText}>
+                Đã tải hết toàn bộ {totalFilteredCount} giao dịch
               </Text>
             </View>
-          </View>
-        )}
-
-        <View style={{ height: 100 }} />
-      </ScrollView>
+          ) : (
+            <View style={{ height: 100 }} />
+          )
+        }
+      />
 
       {/* Quick Add Modal */}
       <QuickAddModal
@@ -557,5 +642,24 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: '600',
     lineHeight: 18,
+  },
+  listFooterLoading: {
+    paddingVertical: 18,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+  },
+  listFooterEnd: {
+    paddingVertical: 20,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+  },
+  listFooterText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6B7280',
   },
 });

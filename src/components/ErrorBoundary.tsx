@@ -68,12 +68,23 @@ export class ErrorBoundary extends Component<Props, State> {
 
   handleCopy = async () => {
     hapticSuccess();
-    const errorDetails = `[Lỗi] ${this.state.error?.message || 'Không rõ'}\n\n[Stack]\n${this.state.error?.stack || ''}\n\n[Component Stack]\n${this.state.errorInfo?.componentStack || ''}`;
-    await Clipboard.setStringAsync(errorDetails);
+    const errorReport = logger.getFormattedErrorReport(this.state.error, {
+      type: 'REACT_UI_CRASH',
+      componentStack: this.state.errorInfo?.componentStack,
+    });
+    await Clipboard.setStringAsync(errorReport);
     this.setState({ copied: true });
     setTimeout(() => {
       this.setState({ copied: false });
     }, 2500);
+  };
+
+  handleShare = async () => {
+    hapticLight();
+    await logger.shareErrorReport(this.state.error, {
+      type: 'REACT_UI_CRASH',
+      componentStack: this.state.errorInfo?.componentStack,
+    });
   };
 
   toggleDetails = () => {
@@ -141,16 +152,23 @@ export class ErrorBoundary extends Component<Props, State> {
                   <Text style={styles.primaryBtnText}>Thử tải lại giao diện</Text>
                 </Pressable>
 
-                <Pressable style={styles.secondaryBtn} onPress={this.handleCopy}>
-                  <Ionicons
-                    name={this.state.copied ? 'checkmark-circle' : 'copy-outline'}
-                    size={18}
-                    color={this.state.copied ? '#059669' : '#000000'}
-                  />
-                  <Text style={[styles.secondaryBtnText, this.state.copied && { color: '#059669' }]}>
-                    {this.state.copied ? 'Đã sao chép mã lỗi!' : 'Sao chép thông tin lỗi'}
-                  </Text>
-                </Pressable>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <Pressable style={[styles.secondaryBtn, { flex: 1 }]} onPress={this.handleCopy}>
+                    <Ionicons
+                      name={this.state.copied ? 'checkmark-circle' : 'copy-outline'}
+                      size={16}
+                      color={this.state.copied ? '#059669' : '#000000'}
+                    />
+                    <Text style={[styles.secondaryBtnText, this.state.copied && { color: '#059669' }]}>
+                      {this.state.copied ? 'Đã sao chép!' : 'Sao chép log'}
+                    </Text>
+                  </Pressable>
+
+                  <Pressable style={[styles.secondaryBtn, { flex: 1 }]} onPress={this.handleShare}>
+                    <Ionicons name="share-outline" size={16} color="#000000" />
+                    <Text style={styles.secondaryBtnText}>Gửi cho Dev</Text>
+                  </Pressable>
+                </View>
               </View>
             </View>
 

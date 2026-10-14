@@ -11,6 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../constants';
 import { hapticLight, hapticSuccess, hapticError, hapticMedium } from '../utils/haptics';
+import { logger } from '../services/loggerService';
 
 export interface CustomAlertButton {
   text: string;
@@ -23,6 +24,9 @@ export interface CustomAlertConfig {
   message?: string;
   type?: 'info' | 'success' | 'warning' | 'error' | 'danger';
   buttons?: CustomAlertButton[];
+  error?: any;
+  context?: Record<string, any>;
+  showSendLog?: boolean;
 }
 
 export interface CustomAlertModalProps {
@@ -39,6 +43,7 @@ export const CustomAlertModal: React.FC<CustomAlertModalProps> = ({
   useModal = true,
 }) => {
   const [loadingIndex, setLoadingIndex] = useState<number | null>(null);
+  const [copiedLog, setCopiedLog] = useState<boolean>(false);
 
   if (!visible || !config) return null;
 
@@ -118,6 +123,20 @@ export const CustomAlertModal: React.FC<CustomAlertModalProps> = ({
     }
   };
 
+  const handleCopyLog = async () => {
+    hapticLight();
+    const success = await logger.copyErrorReport(config.error || config.message, config.context);
+    if (success) {
+      setCopiedLog(true);
+      setTimeout(() => setCopiedLog(false), 2500);
+    }
+  };
+
+  const handleShareLog = async () => {
+    hapticLight();
+    await logger.shareErrorReport(config.error || config.message, config.context);
+  };
+
   const content = (
     <View style={styles.backdrop}>
       <View style={styles.sheet}>
@@ -139,6 +158,36 @@ export const CustomAlertModal: React.FC<CustomAlertModalProps> = ({
             <Text style={styles.message}>{config.message}</Text>
           </ScrollView>
         ) : null}
+
+        {/* Error log copy/share action toolbar for fast developer debugging */}
+        {(alertType === 'error' || config.showSendLog) && (
+          <View style={styles.errorLogBar}>
+            <View style={styles.errorLogBarHeader}>
+              <Ionicons name="bug-outline" size={13} color="#991B1B" />
+              <Text style={styles.errorLogBarTitle}>Dữ liệu chẩn đoán sự cố</Text>
+            </View>
+            <View style={styles.errorLogActionsRow}>
+              <Pressable
+                style={[styles.errorLogBtn, copiedLog && styles.errorLogBtnCopied]}
+                onPress={handleCopyLog}
+              >
+                <Ionicons
+                  name={copiedLog ? 'checkmark-circle' : 'copy-outline'}
+                  size={14}
+                  color={copiedLog ? '#059669' : '#000000'}
+                />
+                <Text style={[styles.errorLogBtnText, copiedLog && { color: '#059669' }]}>
+                  {copiedLog ? 'Đã chép log!' : 'Sao chép log'}
+                </Text>
+              </Pressable>
+
+              <Pressable style={styles.errorLogBtn} onPress={handleShareLog}>
+                <Ionicons name="share-outline" size={14} color="#000000" />
+                <Text style={styles.errorLogBtnText}>Gửi log lỗi</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
 
         {/* Action Buttons */}
         <View style={styles.actionsContainer}>
@@ -219,6 +268,17 @@ export function useCustomAlert(useModal: boolean = true) {
       finalButtons = [{ text: 'Đã hiểu', style: 'primary', onPress: buttons }];
     } else if (Array.isArray(buttons)) {
       finalButtons = buttons;
+    }
+
+    const isError =
+      options?.type === 'error' ||
+      (!options?.type &&
+        (title.toLowerCase().includes('lỗi') ||
+          title.toLowerCase().includes('thất bại') ||
+          title.toLowerCase().includes('không thể')));
+
+    if (isError) {
+      logger.error('ALERT_ERROR', `[${title}] ${message || ''}`, options?.error, options?.context);
     }
 
     setAlertConfig({
@@ -417,6 +477,62 @@ const styles = StyleSheet.create({
   },
   defaultBtnText: {
     fontSize: 14,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  errorLogBar: {
+    width: '100%',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1.5,
+    borderColor: '#FECACA',
+    borderRadius: 12,
+    padding: 8,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  errorLogBarHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 6,
+    justifyContent: 'center',
+  },
+  errorLogBarTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#991B1B',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  errorLogActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  errorLogBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    borderRadius: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 8,
+    shadowColor: '#000000',
+    shadowOffset: { width: 1.5, height: 1.5 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 2,
+  },
+  errorLogBtnCopied: {
+    borderColor: '#059669',
+    backgroundColor: '#F0FDF4',
+  },
+  errorLogBtnText: {
+    fontSize: 12,
     fontWeight: '800',
     color: '#000000',
   },

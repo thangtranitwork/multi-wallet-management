@@ -28,6 +28,8 @@ export type DateFilterType =
   | 'next_month'
   | 'custom';
 
+export type ExactAmountFilter = number | null;
+
 interface PlannedExpensesModalProps {
   visible: boolean;
   onClose: () => void;
@@ -65,6 +67,22 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
   const [tempStartDate, setTempStartDate] = useState<string | null>(null);
   const [tempEndDate, setTempEndDate] = useState<string | null>(null);
   const [pickerMonth, setPickerMonth] = useState<Date>(new Date());
+
+  // Lọc số tiền chính xác
+  const [exactAmountFilter, setExactAmountFilter] = useState<number | null>(null);
+  const [exactAmountInput, setExactAmountInput] = useState<string>('');
+
+  const handleExactAmountChange = (text: string) => {
+    const rawDigits = text.replace(/[^0-9]/g, '');
+    if (!rawDigits) {
+      setExactAmountInput('');
+      setExactAmountFilter(null);
+      return;
+    }
+    const val = parseInt(rawDigits, 10);
+    setExactAmountInput(val.toLocaleString('vi-VN'));
+    setExactAmountFilter(val);
+  };
 
   // Chế độ chọn nhiều & Thao tác hàng loạt
   const [isSelectMode, setIsSelectMode] = useState<boolean>(false);
@@ -131,6 +149,14 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
       }
     }
 
+    // Lọc theo số tiền chính xác
+    const getItemAmount = (item: PlannedExpense) =>
+      activeTab === 'executed' ? item.actual_amount || item.amount : item.amount;
+
+    if (exactAmountFilter !== null && exactAmountFilter > 0) {
+      list = list.filter(item => getItemAmount(item) === exactAmountFilter);
+    }
+
     // Sắp xếp: pending xếp theo target_date gần nhất; executed xếp theo mới nhất
     return list.sort((a, b) => {
       if (a.status === 'pending' && b.status === 'pending') {
@@ -144,6 +170,7 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
     dateFilter,
     customStartDate,
     customEndDate,
+    exactAmountFilter,
     todayStr,
     startOfWeek,
     endOfWeek,
@@ -304,6 +331,10 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
     else if (activeTab === 'executed') tabStr = 'Đã chi';
     else tabStr = 'Tất cả';
 
+    const amountStr = exactAmountFilter ? formatVND(exactAmountFilter) : '';
+    if (amountStr) {
+      return `${dateStr} • ${amountStr} • ${tabStr}`;
+    }
     return `${dateStr} • ${tabStr}`;
   };
 
@@ -861,6 +892,33 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
             })}
           </ScrollView>
 
+          {/* Exact Amount Filter Bar */}
+          <View style={styles.exactAmountBar}>
+            <View style={styles.exactAmountInner}>
+              <Ionicons name="calculator-outline" size={16} color="#000000" />
+              <TextInput
+                style={styles.exactAmountInput}
+                placeholder="Lọc số tiền chính xác (vd: 200.000)..."
+                placeholderTextColor="#6B7280"
+                keyboardType="numeric"
+                value={exactAmountInput}
+                onChangeText={handleExactAmountChange}
+              />
+              {exactAmountFilter !== null ? (
+                <Pressable
+                  onPress={() => {
+                    hapticLight();
+                    setExactAmountInput('');
+                    setExactAmountFilter(null);
+                  }}
+                  hitSlop={8}
+                >
+                  <Ionicons name="close-circle" size={17} color="#6B7280" />
+                </Pressable>
+              ) : null}
+            </View>
+          </View>
+
           {/* Card Thống Kê Kết Quả Lọc */}
           <View style={styles.statsCardShadow}>
             <View style={styles.statsCardInner}>
@@ -895,20 +953,38 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
                   </Text>
                 </View>
 
-                {dateFilter !== 'all' && (
-                  <Pressable
-                    style={styles.statsResetFilterBtn}
-                    onPress={() => {
-                      hapticLight();
-                      setDateFilter('all');
-                      setCustomStartDate('');
-                      setCustomEndDate('');
-                    }}
-                  >
-                    <Ionicons name="close-circle-outline" size={14} color="#4B5563" />
-                    <Text style={styles.statsResetFilterBtnText}>Bỏ lọc ngày</Text>
-                  </Pressable>
-                )}
+                <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+                  {dateFilter !== 'all' && (
+                    <Pressable
+                      style={styles.statsResetFilterBtn}
+                      onPress={() => {
+                        hapticLight();
+                        setDateFilter('all');
+                        setCustomStartDate('');
+                        setCustomEndDate('');
+                      }}
+                    >
+                      <Ionicons name="close-circle-outline" size={14} color="#4B5563" />
+                      <Text style={styles.statsResetFilterBtnText}>Bỏ lọc ngày</Text>
+                    </Pressable>
+                  )}
+
+                  {exactAmountFilter !== null && (
+                    <Pressable
+                      style={styles.statsResetFilterBtn}
+                      onPress={() => {
+                        hapticLight();
+                        setExactAmountInput('');
+                        setExactAmountFilter(null);
+                      }}
+                    >
+                      <Ionicons name="close-circle-outline" size={14} color="#4B5563" />
+                      <Text style={styles.statsResetFilterBtnText}>
+                        Bỏ lọc {formatVND(exactAmountFilter)}
+                      </Text>
+                    </Pressable>
+                  )}
+                </View>
               </View>
 
               {activeTab === 'all' && filteredExpenses.length > 0 && (
@@ -1827,6 +1903,8 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
             </View>
           </View>
         </Modal>
+
+
 
         {AlertModalComponent}
       </SafeAreaView>
@@ -3071,6 +3149,27 @@ const styles = StyleSheet.create({
   calendarApplyBtnText: {
     fontSize: 13,
     fontWeight: '900',
+    color: '#000000',
+  },
+  exactAmountBar: {
+    paddingHorizontal: 16,
+    marginBottom: 10,
+  },
+  exactAmountInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#000000',
+    height: 42,
+    paddingHorizontal: 12,
+  },
+  exactAmountInput: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
     color: '#000000',
   },
 });
