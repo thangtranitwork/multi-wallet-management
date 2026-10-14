@@ -660,6 +660,11 @@ export async function splitTransactionIntoDebts(
     const now = new Date().toISOString();
     const remainingAmount = Math.max(0, tx.amount - totalSplit);
 
+    const cleanTxNote = (tx.note || '')
+      .replace(/\s*\[(?:Trả hộ 100% - )?Đã tách cho [^\]]+\]/g, '')
+      .trim();
+    const baseNote = cleanTxNote || 'Chi tiêu';
+
     // 1. Tạo các khoản nợ (debts) cho từng người và giao dịch debt_lend tương ứng
     const splitNames: string[] = [];
     for (let i = 0; i < splits.length; i++) {
@@ -667,10 +672,6 @@ export async function splitTransactionIntoDebts(
       if (item.amount <= 0 || !item.personName.trim()) continue;
 
       const debtId = `debt_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 6)}`;
-      const cleanTxNote = (tx.note || '')
-        .replace(/\s*\[Đã tách cho [^\]]+\]/g, '')
-        .trim();
-      const baseNote = cleanTxNote || 'Chi tiêu';
 
       const debtNote = item.note?.trim()
         ? item.note.trim()
@@ -726,9 +727,7 @@ export async function splitTransactionIntoDebts(
     // 2. Cập nhật giao dịch gốc:
     if (remainingAmount > 0) {
       const splitTag = `[Đã tách cho ${splitNames.join(', ')}]`;
-      const updatedNote = tx.note?.includes(splitTag)
-        ? tx.note
-        : tx.note ? `${tx.note} ${splitTag}` : splitTag;
+      const updatedNote = cleanTxNote ? `${cleanTxNote} ${splitTag}` : splitTag;
 
       const finalItems = updatedOriginalItems !== undefined ? updatedOriginalItems : tx.items;
       await db.runAsync(
@@ -738,9 +737,7 @@ export async function splitTransactionIntoDebts(
     } else {
       // Tách hết 100% (Đơn trả hộ): Giữ lại giao dịch gốc để bảo toàn thông tin hóa đơn, danh sách món và ảnh chụp bill
       const splitTag = `[Trả hộ 100% - Đã tách cho ${splitNames.join(', ')}]`;
-      const updatedNote = tx.note?.includes(splitTag)
-        ? tx.note
-        : tx.note ? `${tx.note} ${splitTag}` : splitTag;
+      const updatedNote = cleanTxNote ? `${cleanTxNote} ${splitTag}` : splitTag;
 
       const finalItems = updatedOriginalItems !== undefined ? updatedOriginalItems : tx.items;
       await db.runAsync(

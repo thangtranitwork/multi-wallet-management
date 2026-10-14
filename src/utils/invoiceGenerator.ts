@@ -33,6 +33,14 @@ export interface InvoiceQrOption {
   qrUrl?: string; // remote or local uri
 }
 
+export interface InvoiceMemberQrItem {
+  memberId?: string;
+  name: string;
+  amount: number;
+  qrUrl?: string;
+  transferNote?: string;
+}
+
 export interface InvoiceReportData {
   title: string;
   subtitle: string;
@@ -53,6 +61,7 @@ export interface InvoiceReportData {
     accountNumber?: string;
     qrUrl?: string;
   };
+  memberPaymentQrs?: InvoiceMemberQrItem[];
 }
 
 const formatCurrency = (val: number): string => {
@@ -98,7 +107,7 @@ export function getInvoiceOptions(
     : 0;
   const fullSum = rawSum + netAdj;
 
-  const splitMatch = transaction.note?.match(/\[Đã tách cho ([^\]]+)\]/i);
+  const splitMatch = transaction.note?.match(/\[(?:Trả hộ 100% - )?Đã tách cho ([^\]]+)\]/i);
   const hasMembers = Array.isArray(parsedBill.members) && parsedBill.members.length > 1;
 
   const options: InvoiceMemberOption[] = [
@@ -255,9 +264,9 @@ export function buildInvoiceData(
   const members = parsedBill?.members || [];
   const dateFormatted = dayjs(transaction.transacted_at).format('DD/MM/YYYY • HH:mm');
 
-  // Làm sạch ghi chú (bỏ tag [Đã tách cho...])
+  // Làm sạch ghi chú (bỏ tag [Đã tách cho...] hoặc [Trả hộ 100% - Đã tách cho...])
   const cleanNote = (transaction.note || 'Chi tiêu')
-    .replace(/\[Đã tách cho [^\]]+\]/gi, '')
+    .replace(/\[(?:Trả hộ 100% - )?Đã tách cho [^\]]+\]/gi, '')
     .trim();
 
   let calculatedAmount = option.totalAmount;
@@ -313,7 +322,7 @@ export function buildInvoiceData(
       0
     );
 
-    let memberAllocations: { name: string; amount: number; isPayer?: boolean }[] | undefined;
+    let memberAllocations: { name: string; amount: number; isPayer?: boolean; memberId?: string }[] | undefined;
     if (members.length > 1) {
       const calcResult = calculateItemizedBillShares(
         transaction.amount,
@@ -326,15 +335,59 @@ export function buildInvoiceData(
         name: s.memberName,
         amount: s.finalAmount,
         isPayer: s.isPayer,
+        memberId: s.memberId,
       }));
     } else {
-      const splitMatch = transaction.note?.match(/\[Đã tách cho ([^\]]+)\]/i);
+      const splitMatch = transaction.note?.match(/\[(?:Trả hộ 100% - )?Đã tách cho ([^\]]+)\]/i);
       if (splitMatch) {
-        const othersName = splitMatch[1];
+        const names = splitMatch[1].split(',').map((s) => s.trim()).filter(Boolean);
+        const othersTotal = Math.max(0, rawSum + netAdj - transaction.amount);
+        const splitPerPerson = names.length > 0 ? othersTotal / names.length : othersTotal;
         memberAllocations = [
-          { name: 'Bạn (Thực chi)', amount: transaction.amount, isPayer: true },
-          { name: othersName, amount: Math.max(0, rawSum + netAdj - transaction.amount) },
+          { name: 'Bạn (Thực chi)', amount: transaction.amount, isPayer: true, memberId: 'me' },
+          ...names.map((n, idx) => ({
+            name: n,
+            amount: splitPerPerson,
+            memberId: `split_${idx}`,
+          })),
         ];
+      }
+    }
+
+    // Tạo danh sách mã QR thanh toán theo từng người khi chia đơn
+    let memberPaymentQrs: InvoiceMemberQrItem[] | undefined;
+    const owingMembers = (memberAllocations || []).filter((m) => !m.isPayer && m.amount > 0);
+    if (owingMembers.length > 0 && selectedQr?.type !== 'none') {
+      const isVietQr =
+        (selectedQr?.type === 'vietqr' && selectedQr.bankBin && selectedQr.accountNumber) ||
+        (!selectedQr && defaultWallet?.bank_bin && defaultWallet?.bank_account) ||
+        (!selectedQr?.qrUrl?.startsWith('file://') && (selectedQr?.bankBin || defaultWallet?.bank_bin) && (selectedQr?.accountNumber || defaultWallet?.bank_account));
+
+      const bankBin = selectedQr?.bankBin || defaultWallet?.bank_bin;
+      const bankAccount = selectedQr?.accountNumber || defaultWallet?.bank_account;
+
+      if (isVietQr && bankBin && bankAccount) {
+        memberPaymentQrs = owingMembers.map((m) => {
+          const transferNote = `${m.name} tra tien ${cleanNote.slice(0, 15)}`.trim();
+          const qrUrl = `https://img.vietqr.io/image/${bankBin}-${bankAccount}-compact2.png?amount=${Math.round(
+            m.amount
+          )}&addInfo=${encodeURIComponent(transferNote)}`;
+          return {
+            memberId: m.memberId,
+            name: m.name,
+            amount: m.amount,
+            qrUrl,
+            transferNote,
+          };
+        });
+      } else if (selectedQr?.qrUrl) {
+        memberPaymentQrs = owingMembers.map((m) => ({
+          memberId: m.memberId,
+          name: m.name,
+          amount: m.amount,
+          qrUrl: selectedQr.qrUrl,
+          transferNote: `${m.name} chuyen khoan ${formatCurrency(m.amount)}`,
+        }));
       }
     }
 
@@ -353,6 +406,7 @@ export function buildInvoiceData(
       totalAmount: rawSum + netAdj,
       memberAllocations,
       paymentInfo,
+      memberPaymentQrs,
     };
   }
 
@@ -471,7 +525,11 @@ export function buildInvoiceData(
 /**
  * Tạo mã HTML cho hóa đơn để in hoặc xuất file PDF (Chuyên nghiệp, không emoji)
  */
-export function generateInvoiceHTML(data: InvoiceReportData, qrImageDataUri?: string): string {
+export function generateInvoiceHTML(
+  data: InvoiceReportData,
+  qrImageDataUri?: string,
+  qrDisplayMode?: 'members' | 'total'
+): string {
   const isMember = data.targetType === 'member_share';
   const isMyShare = data.targetType === 'my_share';
 
@@ -531,6 +589,51 @@ export function generateInvoiceHTML(data: InvoiceReportData, qrImageDataUri?: st
 
   const activeQrSrc = qrImageDataUri || data.paymentInfo?.qrUrl;
 
+  const isShowMemberQrs =
+    qrDisplayMode !== 'total' &&
+    Array.isArray(data.memberPaymentQrs) &&
+    data.memberPaymentQrs.length > 0;
+
+  const memberQrsHtml = isShowMemberQrs
+    ? `
+      <div style="margin-top: 18px; padding: 14px; background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px;">
+        <div style="font-weight: 800; font-size: 11px; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px; text-align: center; margin-bottom: 4px;">
+          MÃ QR THANH TOÁN THEO TỪNG NGƯỜI
+        </div>
+        ${data.paymentInfo?.bankName ? `
+          <div style="font-size: 11px; color: #334155; margin-bottom: 12px; text-align: center;">
+            <b>${data.paymentInfo.bankName}</b> ${data.paymentInfo.accountNumber ? `• STK: <b>${data.paymentInfo.accountNumber}</b>` : ''}
+          </div>
+        ` : ''}
+        <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;">
+          ${data.memberPaymentQrs!.map((mqr) => {
+            const mSrc = (qrImageDataUri && mqr.qrUrl?.startsWith('file://')) ? qrImageDataUri : (mqr.qrUrl || qrImageDataUri);
+            return `
+              <div style="flex: 1 1 130px; max-width: 190px; background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 10px 6px; text-align: center; box-sizing: border-box;">
+                <div style="display: inline-block; background: #fef08a; border: 1px solid #000000; border-radius: 4px; padding: 2px 8px; font-weight: 800; font-size: 11px; color: #000000; margin-bottom: 6px;">
+                  ${mqr.name}
+                </div>
+                ${mSrc ? `
+                  <div style="margin: 2px 0;">
+                    <img src="${mSrc}" alt="${mqr.name}" style="width: 115px; height: 115px; border-radius: 4px; border: 1px solid #e2e8f0; object-fit: contain; background: #ffffff;" />
+                  </div>
+                ` : ''}
+                <div style="font-weight: 800; font-size: 12px; color: #059669; margin-top: 4px;">
+                  ${formatCurrency(mqr.amount)}
+                </div>
+                ${mqr.transferNote ? `
+                  <div style="font-size: 9px; color: #64748b; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    ${mqr.transferNote}
+                  </div>
+                ` : ''}
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `
+    : '';
+
   const paymentQrHtml = activeQrSrc
     ? `
       <div style="margin-top: 18px; padding: 14px; background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px; text-align: center;">
@@ -561,6 +664,8 @@ export function generateInvoiceHTML(data: InvoiceReportData, qrImageDataUri?: st
       </div>
     `
     : '';
+
+  const finalQrSectionHtml = isShowMemberQrs ? memberQrsHtml : paymentQrHtml;
 
   return `
     <!DOCTYPE html>
@@ -739,7 +844,7 @@ export function generateInvoiceHTML(data: InvoiceReportData, qrImageDataUri?: st
         </div>
 
         ${memberAllocationsHtml}
-        ${paymentQrHtml}
+        ${finalQrSectionHtml}
 
         <div class="footer">
           <div>Thời điểm tạo: ${dayjs().format('DD/MM/YYYY HH:mm')}</div>
@@ -791,6 +896,13 @@ export function generateInvoiceText(data: InvoiceReportData): string {
     if (data.paymentInfo.accountNumber) {
       text += `• Số tài khoản: ${data.paymentInfo.accountNumber}\n`;
     }
+  }
+
+  if (data.memberPaymentQrs && data.memberPaymentQrs.length > 0) {
+    text += `\nCú pháp chuyển khoản từng người:\n`;
+    data.memberPaymentQrs.forEach((m) => {
+      text += `• ${m.name}: ${formatCurrency(m.amount)}${m.transferNote ? ` (Nội dung: ${m.transferNote})` : ''}\n`;
+    });
   }
 
   return text.trimEnd();

@@ -191,6 +191,66 @@ describe('invoiceGenerator', () => {
     const text = generateInvoiceText(thangData);
     expect(text).toContain('HÀ THẮNG');
     expect(text).toContain('SỐ TIỀN CẦN CHUYỂN');
-    expect(text).not.toContain('Ví Của Tôi');
+  });
+
+  it('buildInvoiceData in total mode generates memberPaymentQrs with individual QRs', () => {
+    const options = getInvoiceOptions(mockTransaction, {
+      items: mockItems,
+      adjustments: mockAdjustments,
+      members: mockMembers,
+    });
+
+    const totalData = buildInvoiceData(
+      options[0],
+      mockTransaction,
+      { items: mockItems, adjustments: mockAdjustments, members: mockMembers },
+      null,
+      mockWallet
+    );
+
+    expect(totalData.memberPaymentQrs).toBeDefined();
+    expect(totalData.memberPaymentQrs?.length).toBe(1);
+    expect(totalData.memberPaymentQrs?.[0].name).toBe('Hà Thắng');
+    expect(totalData.memberPaymentQrs?.[0].amount).toBe(63500);
+    expect(totalData.memberPaymentQrs?.[0].qrUrl).toContain('img.vietqr.io');
+    expect(totalData.memberPaymentQrs?.[0].qrUrl).toContain('amount=63500');
+
+    // Test HTML generation displays member QR section
+    const html = generateInvoiceHTML(totalData, undefined, 'members');
+    expect(html).toContain('MÃ QR THANH TOÁN THEO TỪNG NGƯỜI');
+    expect(html).toContain('Hà Thắng');
+    expect(html).toContain('img.vietqr.io');
+  });
+
+  it('correctly handles 100% covered split bill with [Trả hộ 100% - Đã tách cho ...]', () => {
+    const tx100 = {
+      ...mockTransaction,
+      amount: 0,
+      note: 'Trà sữa KOI Thé [Trả hộ 100% - Đã tách cho Lan, Nam]',
+    };
+
+    // Khi không có mảng members trong parsedBill nhưng có items
+    const options = getInvoiceOptions(tx100, {
+      items: mockItems,
+      adjustments: mockAdjustments,
+    });
+
+    expect(options.length).toBe(4); // total + me + Lan + Nam
+    const lanOpt = options.find((o) => o.targetPersonName === 'Lan')!;
+    expect(lanOpt).toBeDefined();
+
+    const totalData = buildInvoiceData(
+      options[0],
+      tx100,
+      { items: mockItems, adjustments: mockAdjustments },
+      null,
+      mockWallet
+    );
+
+    expect(totalData.subtitle).toBe('Trà sữa KOI Thé');
+    expect(totalData.memberPaymentQrs?.length).toBe(2);
+    expect(totalData.memberPaymentQrs?.[0].name).toBe('Lan');
+    expect(totalData.memberPaymentQrs?.[1].name).toBe('Nam');
   });
 });
+

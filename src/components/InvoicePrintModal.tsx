@@ -49,6 +49,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
   const [selectedQrId, setSelectedQrId] = useState<string>('');
   const [customQrUri, setCustomQrUri] = useState<string | null>(null);
   const [resolvedQrDataUri, setResolvedQrDataUri] = useState<string | null>(null);
+  const [qrDisplayMode, setQrDisplayMode] = useState<'members' | 'total'>('members');
 
   const [isPrinting, setIsPrinting] = useState<boolean>(false);
   const [isSharingPdf, setIsSharingPdf] = useState<boolean>(false);
@@ -95,6 +96,14 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
     if (!transaction || !activeOption) return null;
     return buildInvoiceData(activeOption, transaction, parsedBill, activeQrOption, defaultWallet);
   }, [transaction, activeOption, parsedBill, activeQrOption, defaultWallet]);
+
+  const hasMemberQrs = useMemo(() => {
+    return (
+      activeOption?.type === 'total' &&
+      Array.isArray(invoiceData?.memberPaymentQrs) &&
+      invoiceData.memberPaymentQrs.length > 0
+    );
+  }, [activeOption?.type, invoiceData?.memberPaymentQrs]);
 
   // Chuyển đổi mã QR cục bộ (file://) sang base64 để expo-print render chuẩn xác 100% trong PDF/Print
   useEffect(() => {
@@ -164,7 +173,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
     hapticMedium();
     setIsPrinting(true);
     try {
-      const html = generateInvoiceHTML(invoiceData, resolvedQrDataUri || undefined);
+      const html = generateInvoiceHTML(invoiceData, resolvedQrDataUri || undefined, qrDisplayMode);
       await Print.printAsync({ html });
       hapticSuccess();
     } catch (err: any) {
@@ -183,7 +192,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
     hapticMedium();
     setIsSharingPdf(true);
     try {
-      const html = generateInvoiceHTML(invoiceData, resolvedQrDataUri || undefined);
+      const html = generateInvoiceHTML(invoiceData, resolvedQrDataUri || undefined, qrDisplayMode);
       const { uri } = await Print.printToFileAsync({ html });
 
       const isAvailable = await Sharing.isAvailableAsync();
@@ -421,6 +430,61 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
               </ScrollView>
             </View>
 
+            {/* Chế độ mã QR khi hóa đơn tổng có nhiều người */}
+            {hasMemberQrs && (
+              <View style={styles.qrModeToggleContainer}>
+                <Pressable
+                  style={[
+                    styles.qrModeToggleBtn,
+                    qrDisplayMode === 'members' && styles.qrModeToggleBtnActive,
+                  ]}
+                  onPress={() => {
+                    hapticLight();
+                    setQrDisplayMode('members');
+                  }}
+                >
+                  <Ionicons
+                    name="people"
+                    size={14}
+                    color={qrDisplayMode === 'members' ? '#000000' : '#4B5563'}
+                  />
+                  <Text
+                    style={[
+                      styles.qrModeToggleBtnText,
+                      qrDisplayMode === 'members' && styles.qrModeToggleBtnTextActive,
+                    ]}
+                  >
+                    Mã từng người ({invoiceData.memberPaymentQrs!.length})
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={[
+                    styles.qrModeToggleBtn,
+                    qrDisplayMode === 'total' && styles.qrModeToggleBtnActive,
+                  ]}
+                  onPress={() => {
+                    hapticLight();
+                    setQrDisplayMode('total');
+                  }}
+                >
+                  <Ionicons
+                    name="qr-code"
+                    size={14}
+                    color={qrDisplayMode === 'total' ? '#000000' : '#4B5563'}
+                  />
+                  <Text
+                    style={[
+                      styles.qrModeToggleBtnText,
+                      qrDisplayMode === 'total' && styles.qrModeToggleBtnTextActive,
+                    ]}
+                  >
+                    Mã tổng bill
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+
             {/* Live Paper Receipt Preview */}
             <ScrollView
               style={styles.previewScroll}
@@ -529,7 +593,50 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                 )}
 
                 {/* VietQR or Custom QR code preview */}
-                {invoiceData.paymentInfo?.qrUrl && activeQrOption?.type !== 'none' && (
+                {hasMemberQrs && qrDisplayMode === 'members' ? (
+                  <View style={styles.memberQrsPaperBox}>
+                    <View style={styles.qrHeaderRow}>
+                      <Ionicons name="people-outline" size={14} color="#065F46" />
+                      <Text style={styles.qrTitle}>Mã QR thanh toán theo từng người</Text>
+                    </View>
+                    {!!invoiceData.paymentInfo?.bankName && (
+                      <Text style={styles.qrSub}>
+                        {invoiceData.paymentInfo.bankName}
+                        {invoiceData.paymentInfo.accountNumber
+                          ? ` • STK: ${invoiceData.paymentInfo.accountNumber}`
+                          : ''}
+                      </Text>
+                    )}
+                    <View style={styles.memberQrsGrid}>
+                      {invoiceData.memberPaymentQrs!.map((mqr, idx) => (
+                        <View key={idx} style={styles.memberQrCard}>
+                          <View style={styles.memberQrNameBadge}>
+                            <Text style={styles.memberQrNameText} numberOfLines={1}>
+                              {mqr.name}
+                            </Text>
+                          </View>
+                          {mqr.qrUrl ? (
+                            <Image
+                              source={{ uri: mqr.qrUrl }}
+                              style={styles.memberQrImage}
+                              resizeMode="contain"
+                            />
+                          ) : (
+                            <View style={styles.memberQrPlaceholder}>
+                              <Text style={styles.memberQrPlaceholderText}>Không có QR</Text>
+                            </View>
+                          )}
+                          <Text style={styles.memberQrAmount}>{formatVND(mqr.amount)}</Text>
+                          {!!mqr.transferNote && (
+                            <Text style={styles.memberQrNote} numberOfLines={1}>
+                              {mqr.transferNote}
+                            </Text>
+                          )}
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                ) : invoiceData.paymentInfo?.qrUrl && activeQrOption?.type !== 'none' ? (
                   <View style={styles.qrBox}>
                     <View style={styles.qrHeaderRow}>
                       <Ionicons name="qr-code-outline" size={13} color="#065F46" />
@@ -550,7 +657,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                       Số tiền: <Text style={{ fontWeight: '800' }}>{formatVND(invoiceData.totalAmount)}</Text>
                     </Text>
                   </View>
-                )}
+                ) : null}
               </View>
             </ScrollView>
 
@@ -1056,5 +1163,127 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     fontWeight: '900',
     color: '#000000',
+  },
+  qrModeToggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 6,
+    paddingHorizontal: 16,
+    marginBottom: 4,
+  },
+  qrModeToggleBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 7,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+  },
+  qrModeToggleBtnActive: {
+    backgroundColor: '#FEF08A',
+    borderColor: '#000000',
+    shadowColor: '#000000',
+    shadowOffset: { width: 1.5, height: 1.5 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 2,
+  },
+  qrModeToggleBtnText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#4B5563',
+  },
+  qrModeToggleBtnTextActive: {
+    color: '#000000',
+    fontWeight: '900',
+  },
+  memberQrsPaperBox: {
+    marginTop: 18,
+    padding: 12,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
+  },
+  memberQrsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 10,
+  },
+  memberQrCard: {
+    width: '48%',
+    minWidth: 130,
+    maxWidth: 200,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    borderRadius: 8,
+    padding: 8,
+    alignItems: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 2, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 2,
+  },
+  memberQrNameBadge: {
+    backgroundColor: '#FEF08A',
+    borderWidth: 1,
+    borderColor: '#000000',
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 4,
+    marginBottom: 6,
+    maxWidth: '100%',
+  },
+  memberQrNameText: {
+    fontSize: 11.5,
+    fontWeight: '900',
+    color: '#000000',
+    textAlign: 'center',
+  },
+  memberQrImage: {
+    width: 115,
+    height: 115,
+    borderRadius: 4,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  memberQrPlaceholder: {
+    width: 115,
+    height: 115,
+    borderRadius: 4,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  memberQrPlaceholderText: {
+    fontSize: 10,
+    color: '#9CA3AF',
+    fontStyle: 'italic',
+  },
+  memberQrAmount: {
+    fontSize: 12.5,
+    fontWeight: '900',
+    color: '#059669',
+    marginTop: 5,
+    textAlign: 'center',
+  },
+  memberQrNote: {
+    fontSize: 9.5,
+    color: '#6B7280',
+    marginTop: 2,
+    textAlign: 'center',
   },
 });

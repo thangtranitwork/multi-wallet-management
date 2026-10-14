@@ -624,10 +624,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
 
       showConfirm(
         'Xác nhận khôi phục',
-        `Phát hiện dữ liệu gồm:\n• ${wCount} ví tiền\n• ${tCount} giao dịch\n• ${dCount} khoản nợ${cCount ? `\n• ${cCount} người liên hệ` : ''}\n\nChế độ: ${
-          importMode === 'replace'
-            ? 'GHI ĐÈ TOÀN BỘ • Xóa dữ liệu hiện tại'
-            : 'HỢP NHẤT • Bổ sung dữ liệu'
+        `Phát hiện dữ liệu gồm:\n• ${wCount} ví tiền\n• ${tCount} giao dịch\n• ${dCount} khoản nợ${cCount ? `\n• ${cCount} người liên hệ` : ''}\n\nChế độ: ${importMode === 'replace'
+          ? 'GHI ĐÈ TOÀN BỘ • Xóa dữ liệu hiện tại'
+          : 'HỢP NHẤT • Bổ sung dữ liệu'
         }\n\nBạn có muốn tiếp tục?`,
         async () => {
           try {
@@ -920,134 +919,133 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
 
             {expandedSections.security && (
               <View style={styles.cardBody}>
-              {/* App Lock Switch */}
-              <View style={styles.settingRow}>
-                <View style={styles.settingRowLeft}>
-                  <View style={[styles.settingRowIconBox, { backgroundColor: '#FEE2E2' }]}>
-                    <Ionicons name="lock-closed" size={18} color="#EF4444" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.settingRowTitle}>Khóa ứng dụng khi mở</Text>
-                    <Text style={styles.settingRowDesc}>
-                      {isAppLockEnabled
-                        ? 'Đang bật • Yêu cầu xác thực khi mở app'
-                        : 'Đang tắt • Không yêu cầu mã khóa'}
-                    </Text>
-                  </View>
-                </View>
-                <Switch
-                  value={isAppLockEnabled}
-                  onValueChange={handleToggleAppLock}
-                  trackColor={{ false: '#D1D5DB', true: '#10B981' }}
-                  thumbColor="#FFFFFF"
-                />
-              </View>
-
-              <View style={styles.divider} />
-
-              {/* Fingerprint Lock Switch */}
-              <View style={styles.settingRow}>
-                <View style={styles.settingRowLeft}>
-                  <View style={[styles.settingRowIconBox, { backgroundColor: THEME.primaryLight }]}>
-                    <Ionicons name="finger-print" size={18} color="#000000" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.settingRowTitle}>Mở khóa bằng Vân tay</Text>
-                    <Text style={styles.settingRowDesc}>
-                      {isHardwareSupported
-                        ? useFingerprint
-                          ? 'Đang bật • Tự động quét vân tay khi mở'
-                          : 'Đang tắt • Chỉ sử dụng mã PIN 4 số'
-                        : 'Thiết bị không hỗ trợ cảm biến vân tay'}
-                    </Text>
-                  </View>
-                </View>
-                <Switch
-                  value={useFingerprint}
-                  disabled={!isHardwareSupported}
-                  onValueChange={(val) => {
-                    hapticMedium();
-                    toggleFingerprint(val);
-                  }}
-                  trackColor={{ false: '#D1D5DB', true: '#10B981' }}
-                  thumbColor="#FFFFFF"
-                />
-              </View>
-
-              <View style={styles.divider} />
-
-              {/* Set / Change PIN Button */}
-              <Pressable
-                style={styles.actionBtnSecondary}
-                onPress={handleOpenSetPin}
-              >
-                <Ionicons name="keypad-outline" size={18} color="#000000" />
-                <Text style={styles.actionBtnTextSecondary}>
-                  {hasPinCode ? 'Đổi mã PIN 4 số' : 'Thiết lập mã PIN 4 số'}
-                </Text>
-              </Pressable>
-
-              {/* Auto Lock Timeout options when App Lock is enabled */}
-              {isAppLockEnabled && (
-                <>
-                  <View style={styles.divider} />
-                  <View style={{ marginTop: 2 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                      <Ionicons name="timer-outline" size={16} color="#4B5563" />
-                      <Text style={{ fontSize: 13, fontWeight: '800', color: '#1F2937' }}>
-                        Thời gian tự động khóa
+                {/* App Lock Switch */}
+                <View style={styles.settingRow}>
+                  <View style={styles.settingRowLeft}>
+                    <View style={[styles.settingRowIconBox, { backgroundColor: '#FEE2E2' }]}>
+                      <Ionicons name="lock-closed" size={18} color="#EF4444" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.settingRowTitle}>Khóa ứng dụng khi mở</Text>
+                      <Text style={styles.settingRowDesc}>
+                        {isAppLockEnabled
+                          ? 'Đang bật • Yêu cầu xác thực khi mở app'
+                          : 'Đang tắt • Không yêu cầu mã khóa'}
                       </Text>
                     </View>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={{ flexDirection: 'row', gap: 6, paddingVertical: 4 }}
-                    >
-                      {[
-                        { label: 'Ngay lập tức', value: 0 },
-                        { label: '15 giây', value: 15 },
-                        { label: '30 giây (Chuẩn)', value: 30 },
-                        { label: '1 phút', value: 60 },
-                        { label: '5 phút', value: 300 },
-                      ].map((item) => {
-                        const isSelected = autoLockTimeout === item.value;
-                        return (
-                          <Pressable
-                            key={item.value}
-                            style={[
-                              styles.timeoutPill,
-                              isSelected && styles.timeoutPillActive,
-                            ]}
-                            onPress={() => {
-                              hapticLight();
-                              updateAutoLockTimeout(item.value);
-                            }}
-                          >
-                            <Text
-                              style={[
-                                styles.timeoutPillText,
-                                isSelected && styles.timeoutPillTextActive,
-                              ]}
-                            >
-                              {item.label}
-                            </Text>
-                          </Pressable>
-                        );
-                      })}
-                    </ScrollView>
-                    <Text style={{ fontSize: 11, color: '#6B7280', marginTop: 6 }}>
-                      {autoLockTimeout === 0
-                        ? 'Khóa ngay khi bạn rời khỏi app.'
-                        : `Không yêu cầu xác thực lại nếu quay lại app trong vòng ${
-                            autoLockTimeout < 60
-                              ? `${autoLockTimeout} giây`
-                              : `${Math.round(autoLockTimeout / 60)} phút`
-                          }.`}
-                    </Text>
                   </View>
-                </>
-              )}
-            </View>
+                  <Switch
+                    value={isAppLockEnabled}
+                    onValueChange={handleToggleAppLock}
+                    trackColor={{ false: '#D1D5DB', true: '#10B981' }}
+                    thumbColor="#FFFFFF"
+                  />
+                </View>
+
+                <View style={styles.divider} />
+
+                {/* Fingerprint Lock Switch */}
+                <View style={styles.settingRow}>
+                  <View style={styles.settingRowLeft}>
+                    <View style={[styles.settingRowIconBox, { backgroundColor: THEME.primaryLight }]}>
+                      <Ionicons name="finger-print" size={18} color="#000000" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.settingRowTitle}>Mở khóa bằng Vân tay</Text>
+                      <Text style={styles.settingRowDesc}>
+                        {isHardwareSupported
+                          ? useFingerprint
+                            ? 'Đang bật • Tự động quét vân tay khi mở'
+                            : 'Đang tắt • Chỉ sử dụng mã PIN 4 số'
+                          : 'Thiết bị không hỗ trợ cảm biến vân tay'}
+                      </Text>
+                    </View>
+                  </View>
+                  <Switch
+                    value={useFingerprint}
+                    disabled={!isHardwareSupported}
+                    onValueChange={(val) => {
+                      hapticMedium();
+                      toggleFingerprint(val);
+                    }}
+                    trackColor={{ false: '#D1D5DB', true: '#10B981' }}
+                    thumbColor="#FFFFFF"
+                  />
+                </View>
+
+                <View style={styles.divider} />
+
+                {/* Set / Change PIN Button */}
+                <Pressable
+                  style={styles.actionBtnSecondary}
+                  onPress={handleOpenSetPin}
+                >
+                  <Ionicons name="keypad-outline" size={18} color="#000000" />
+                  <Text style={styles.actionBtnTextSecondary}>
+                    {hasPinCode ? 'Đổi mã PIN 4 số' : 'Thiết lập mã PIN 4 số'}
+                  </Text>
+                </Pressable>
+
+                {/* Auto Lock Timeout options when App Lock is enabled */}
+                {isAppLockEnabled && (
+                  <>
+                    <View style={styles.divider} />
+                    <View style={{ marginTop: 2 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                        <Ionicons name="timer-outline" size={16} color="#4B5563" />
+                        <Text style={{ fontSize: 13, fontWeight: '800', color: '#1F2937' }}>
+                          Thời gian tự động khóa
+                        </Text>
+                      </View>
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={{ flexDirection: 'row', gap: 6, paddingVertical: 4 }}
+                      >
+                        {[
+                          { label: 'Ngay lập tức', value: 0 },
+                          { label: '15 giây', value: 15 },
+                          { label: '30 giây (Chuẩn)', value: 30 },
+                          { label: '1 phút', value: 60 },
+                          { label: '5 phút', value: 300 },
+                        ].map((item) => {
+                          const isSelected = autoLockTimeout === item.value;
+                          return (
+                            <Pressable
+                              key={item.value}
+                              style={[
+                                styles.timeoutPill,
+                                isSelected && styles.timeoutPillActive,
+                              ]}
+                              onPress={() => {
+                                hapticLight();
+                                updateAutoLockTimeout(item.value);
+                              }}
+                            >
+                              <Text
+                                style={[
+                                  styles.timeoutPillText,
+                                  isSelected && styles.timeoutPillTextActive,
+                                ]}
+                              >
+                                {item.label}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </ScrollView>
+                      <Text style={{ fontSize: 11, color: '#6B7280', marginTop: 6 }}>
+                        {autoLockTimeout === 0
+                          ? 'Khóa ngay khi bạn rời khỏi app.'
+                          : `Không yêu cầu xác thực lại nếu quay lại app trong vòng ${autoLockTimeout < 60
+                            ? `${autoLockTimeout} giây`
+                            : `${Math.round(autoLockTimeout / 60)} phút`
+                          }.`}
+                      </Text>
+                    </View>
+                  </>
+                )}
+              </View>
             )}
           </View>
         </View>
@@ -1227,298 +1225,298 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
 
             {expandedSections.gemini && (
               <View style={styles.cardBody}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, marginRight: 8 }}>
-                  <Text style={[styles.cardSectionTitle, { marginBottom: 0 }]} numberOfLines={1}>
-                    Nhận diện hóa đơn AI
-                  </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, marginRight: 8 }}>
+                    <Text style={[styles.cardSectionTitle, { marginBottom: 0 }]} numberOfLines={1}>
+                      Nhận diện hóa đơn AI
+                    </Text>
+                    <Pressable
+                      hitSlop={8}
+                      onPress={() => {
+                        hapticLight();
+                        showAlert(
+                          'Nhận diện hóa đơn AI (Gemini)',
+                          'Tự động đọc hóa đơn & chứng từ nhiều ảnh, tự động trích xuất số tiền, ngày giờ, danh mục và bóc tách chi tiết từng món hàng.\n\n• Nhận API Key miễn phí tại: aistudio.google.com/app/apikey\n• Hệ thống tự động chuyển model dự phòng chống nghẽn: gemini-2.0-flash -> gemini-1.5-flash -> gemini-1.5-flash-8b'
+                        );
+                      }}
+                    >
+                      <Ionicons name="help-circle-outline" size={18} color="#6B7280" />
+                    </Pressable>
+                  </View>
+                  <View style={[
+                    styles.gdriveBadge,
+                    { backgroundColor: geminiStatus.success ? '#DCFCE7' : '#F3F4F6' }
+                  ]}>
+                    <View style={[
+                      styles.gdriveDot,
+                      { backgroundColor: geminiStatus.success ? '#15803D' : '#9CA3AF' }
+                    ]} />
+                    <Text style={[
+                      styles.gdriveBadgeText,
+                      { color: geminiStatus.success ? '#15803D' : '#6B7280' }
+                    ]}>
+                      {geminiStatus.success ? 'Đã kết nối' : 'Chưa kết nối'}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* API Key Input */}
+                <View style={styles.geminiInputContainer}>
+                  <TextInput
+                    style={styles.geminiInput}
+                    placeholder="Dán Gemini API Key tại đây..."
+                    placeholderTextColor={THEME.textMuted}
+                    value={geminiApiKey}
+                    onChangeText={setGeminiApiKey}
+                    secureTextEntry={!showApiKey}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
                   <Pressable
-                    hitSlop={8}
-                    onPress={() => {
-                      hapticLight();
-                      showAlert(
-                        'Nhận diện hóa đơn AI (Gemini)',
-                        'Tự động đọc hóa đơn & chứng từ nhiều ảnh, tự động trích xuất số tiền, ngày giờ, danh mục và bóc tách chi tiết từng món hàng.\n\n• Nhận API Key miễn phí tại: aistudio.google.com/app/apikey\n• Hệ thống tự động chuyển model dự phòng chống nghẽn: gemini-2.0-flash -> gemini-1.5-flash -> gemini-1.5-flash-8b'
-                      );
-                    }}
+                    style={styles.geminiEyeBtn}
+                    onPress={() => setShowApiKey(!showApiKey)}
                   >
-                    <Ionicons name="help-circle-outline" size={18} color="#6B7280" />
+                    <Ionicons
+                      name={showApiKey ? 'eye-off-outline' : 'eye-outline'}
+                      size={20}
+                      color="#6B7280"
+                    />
                   </Pressable>
                 </View>
-                <View style={[
-                  styles.gdriveBadge,
-                  { backgroundColor: geminiStatus.success ? '#DCFCE7' : '#F3F4F6' }
-                ]}>
-                  <View style={[
-                    styles.gdriveDot,
-                    { backgroundColor: geminiStatus.success ? '#15803D' : '#9CA3AF' }
-                  ]} />
-                  <Text style={[
-                    styles.gdriveBadgeText,
-                    { color: geminiStatus.success ? '#15803D' : '#6B7280' }
-                  ]}>
-                    {geminiStatus.success ? 'Đã kết nối' : 'Chưa kết nối'}
-                  </Text>
-                </View>
-              </View>
 
-              {/* API Key Input */}
-              <View style={styles.geminiInputContainer}>
-                <TextInput
-                  style={styles.geminiInput}
-                  placeholder="Dán Gemini API Key tại đây..."
-                  placeholderTextColor={THEME.textMuted}
-                  value={geminiApiKey}
-                  onChangeText={setGeminiApiKey}
-                  secureTextEntry={!showApiKey}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-                <Pressable
-                  style={styles.geminiEyeBtn}
-                  onPress={() => setShowApiKey(!showApiKey)}
-                >
-                  <Ionicons
-                    name={showApiKey ? 'eye-off-outline' : 'eye-outline'}
-                    size={20}
-                    color="#6B7280"
+                {/* Preferred Model Selection */}
+                <View style={styles.geminiModelSection}>
+                  <View style={styles.geminiModelHeaderRow}>
+                    <Text style={styles.geminiModelHeaderTitle}>
+                      Mô hình AI ưu tiên
+                    </Text>
+                    {currentModelInfo?.badge && (
+                      <View style={styles.modelBadge}>
+                        <Text style={styles.modelBadgeText}>{currentModelInfo.badge}</Text>
+                      </View>
+                    )}
+                  </View>
+                  <NeoDropdown
+                    title="Chọn mô hình Gemini"
+                    triggerLabel={currentModelInfo?.name || selectedGeminiModel}
+                    isActive={true}
+                    options={geminiModelDropdownOptions}
+                    selectedValue={selectedGeminiModel}
+                    onSelect={handleSelectModel}
                   />
-                </Pressable>
-              </View>
-
-              {/* Preferred Model Selection */}
-              <View style={styles.geminiModelSection}>
-                <View style={styles.geminiModelHeaderRow}>
-                  <Text style={styles.geminiModelHeaderTitle}>
-                    Mô hình AI ưu tiên
-                  </Text>
-                  {currentModelInfo?.badge && (
-                    <View style={styles.modelBadge}>
-                      <Text style={styles.modelBadgeText}>{currentModelInfo.badge}</Text>
-                    </View>
-                  )}
-                </View>
-                <NeoDropdown
-                  title="Chọn mô hình Gemini"
-                  triggerLabel={currentModelInfo?.name || selectedGeminiModel}
-                  isActive={true}
-                  options={geminiModelDropdownOptions}
-                  selectedValue={selectedGeminiModel}
-                  onSelect={handleSelectModel}
-                />
-                <Text style={styles.geminiModelDesc}>
-                  {currentModelInfo?.desc || 'Tự động chuyển mô hình dự phòng khi gặp sự cố mạng hoặc hết Quota.'}
-                </Text>
-              </View>
-
-              {/* Action Buttons Row */}
-              <View style={[styles.geminiButtonsRow, { marginBottom: 0 }]}>
-                <Pressable
-                  style={[styles.geminiBtn, styles.geminiBtnPrimary]}
-                  onPress={handleSaveGeminiKey}
-                >
-                  <Ionicons name="save-outline" size={16} color="#000000" />
-                  <Text style={styles.geminiBtnPrimaryText}>Lưu Key</Text>
-                </Pressable>
-
-                <Pressable
-                  style={[styles.geminiBtn, styles.geminiBtnSecondary]}
-                  onPress={handleTestGeminiConnection}
-                  disabled={isTestingGemini}
-                >
-                  {isTestingGemini ? (
-                    <ActivityIndicator size="small" color="#000000" />
-                  ) : (
-                    <>
-                      <Ionicons name="flash-outline" size={16} color="#000000" />
-                      <Text style={styles.geminiBtnSecondaryText}>Kiểm tra kết nối</Text>
-                    </>
-                  )}
-                </Pressable>
-              </View>
-
-              {/* Divider */}
-              <View style={{ height: 1.5, backgroundColor: '#E5E7EB', marginVertical: 14 }} />
-
-              {/* In-App Voice Mic Setting (Gemini Audio) */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <View style={{ flex: 1, marginRight: 12 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Ionicons name="mic" size={17} color="#000000" />
-                    <Text style={{ fontSize: 13, fontWeight: '800', color: '#000000' }}>
-                      Nút Micro trong App (Gemini Audio)
-                    </Text>
-                  </View>
-                  <Text style={{ fontSize: 11, color: '#6B7280', marginTop: 3, lineHeight: 15 }}>
-                    Nhấn giữ nút Micro trong Trợ lý Copilot để ghi âm và gửi thẳng lên Gemini 2.0 Flash (~1.2s). Tắt để dùng mic bàn phím (~0.3s).
+                  <Text style={styles.geminiModelDesc}>
+                    {currentModelInfo?.desc || 'Tự động chuyển mô hình dự phòng khi gặp sự cố mạng hoặc hết Quota.'}
                   </Text>
                 </View>
 
-                <Switch
-                  value={inAppMicEnabled}
-                  onValueChange={handleToggleInAppMic}
-                  trackColor={{ false: '#D1D5DB', true: '#86EFAC' }}
-                  thumbColor={inAppMicEnabled ? '#15803D' : '#9CA3AF'}
-                />
-              </View>
-
-              {/* Divider */}
-              <View style={{ height: 1.5, backgroundColor: '#E5E7EB', marginVertical: 14 }} />
-
-              {/* Copilot Text-to-Speech (TTS) Setting */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <View style={{ flex: 1, marginRight: 12 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Ionicons name="volume-high" size={17} color="#000000" />
-                    <Text style={{ fontSize: 13, fontWeight: '800', color: '#000000' }}>
-                      Đọc thành tiếng câu trả lời (TTS)
-                    </Text>
-                  </View>
-                  <Text style={{ fontSize: 11, color: '#6B7280', marginTop: 3, lineHeight: 15 }}>
-                    Tự động đọc phản hồi của Trợ lý AI bằng giọng đọc tiếng Việt mượt mà theo tính cách đã chọn.
-                  </Text>
-                </View>
-
-                <Switch
-                  value={copilotTtsEnabled}
-                  onValueChange={handleToggleCopilotTts}
-                  trackColor={{ false: '#D1D5DB', true: '#86EFAC' }}
-                  thumbColor={copilotTtsEnabled ? '#15803D' : '#9CA3AF'}
-                />
-              </View>
-
-              {/* Divider */}
-              <View style={{ height: 1.5, backgroundColor: '#E5E7EB', marginVertical: 14 }} />
-
-              {/* AI Personality Setting (NeoDropdown gọn gàng, không tràn layout) */}
-              <View style={styles.geminiModelSection}>
-                <View style={styles.geminiModelHeaderRow}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, marginRight: 8 }}>
-                    <Ionicons name="sparkles" size={15} color="#6D28D9" />
-                    <Text style={[styles.geminiModelHeaderTitle, { flexShrink: 1 }]} numberOfLines={1}>
-                      Tính cách Trợ lý AI
-                    </Text>
-                  </View>
-                  <View
-                    style={{
-                      backgroundColor: (COPILOT_PERSONALITIES[copilotPersonality] || COPILOT_PERSONALITIES.cheerful).color,
-                      borderWidth: 1.5,
-                      borderColor: '#000000',
-                      borderRadius: 6,
-                      paddingHorizontal: 7,
-                      paddingVertical: 1.5,
-                    }}
+                {/* Action Buttons Row */}
+                <View style={[styles.geminiButtonsRow, { marginBottom: 0 }]}>
+                  <Pressable
+                    style={[styles.geminiBtn, styles.geminiBtnPrimary]}
+                    onPress={handleSaveGeminiKey}
                   >
-                    <Text style={{ fontSize: 10, fontWeight: '900', color: '#000000' }}>
-                      {(COPILOT_PERSONALITIES[copilotPersonality] || COPILOT_PERSONALITIES.cheerful).badge}
-                    </Text>
-                  </View>
+                    <Ionicons name="save-outline" size={16} color="#000000" />
+                    <Text style={styles.geminiBtnPrimaryText}>Lưu Key</Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={[styles.geminiBtn, styles.geminiBtnSecondary]}
+                    onPress={handleTestGeminiConnection}
+                    disabled={isTestingGemini}
+                  >
+                    {isTestingGemini ? (
+                      <ActivityIndicator size="small" color="#000000" />
+                    ) : (
+                      <>
+                        <Ionicons name="flash-outline" size={16} color="#000000" />
+                        <Text style={styles.geminiBtnSecondaryText}>Kiểm tra kết nối</Text>
+                      </>
+                    )}
+                  </Pressable>
                 </View>
 
-                <NeoDropdown
-                  title="Chọn tính cách Trợ lý AI"
-                  triggerLabel={(COPILOT_PERSONALITIES[copilotPersonality] || COPILOT_PERSONALITIES.cheerful).name}
-                  triggerIcon={(COPILOT_PERSONALITIES[copilotPersonality] || COPILOT_PERSONALITIES.cheerful).icon}
-                  isActive={true}
-                  options={personalityDropdownOptions}
-                  selectedValue={copilotPersonality}
-                  onSelect={val => {
-                    if (val) handleSelectPersonality(val as CopilotPersonalityId);
-                  }}
-                />
+                {/* Divider */}
+                <View style={{ height: 1.5, backgroundColor: '#E5E7EB', marginVertical: 14 }} />
 
-                <Text style={styles.geminiModelDesc}>
-                  {(COPILOT_PERSONALITIES[copilotPersonality] || COPILOT_PERSONALITIES.cheerful).desc}
-                </Text>
-
-                <View
-                  style={{
-                    backgroundColor: '#FFFFFF',
-                    borderWidth: 1.5,
-                    borderColor: '#000000',
-                    borderRadius: 8,
-                    paddingHorizontal: 10,
-                    paddingVertical: 6,
-                    marginTop: 6,
-                  }}
-                >
-                  <Text style={{ fontSize: 11, fontStyle: 'italic', color: '#1F2937' }}>
-                    💬 "{(COPILOT_PERSONALITIES[copilotPersonality] || COPILOT_PERSONALITIES.cheerful).sampleQuote}"
-                  </Text>
-                </View>
-              </View>
-
-              {/* Divider */}
-              <View style={{ height: 1.5, backgroundColor: '#E5E7EB', marginVertical: 14 }} />
-
-              {/* Smart Payee Mapping Setting */}
-              <View>
+                {/* In-App Voice Mic Setting (Gemini Audio) */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                   <View style={{ flex: 1, marginRight: 12 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Ionicons name="repeat" size={17} color="#000000" />
+                      <Ionicons name="mic" size={17} color="#000000" />
                       <Text style={{ fontSize: 13, fontWeight: '800', color: '#000000' }}>
-                        Tự động học thói quen người nhận
+                        Nút Micro trong App (Gemini Audio)
                       </Text>
                     </View>
                     <Text style={{ fontSize: 11, color: '#6B7280', marginTop: 3, lineHeight: 15 }}>
-                      Tự động nhớ và điền nội dung & danh mục khi quét bill chuyển khoản cho cùng người nhận (ví dụ: chuyển khoản cho Nguyễn Văn A tự điền "Bò cụng", danh mục "Cà phê & Đồ uống").
+                      Nhấn giữ nút Micro trong Trợ lý Copilot để ghi âm và gửi thẳng lên Gemini 2.0 Flash (~1.2s). Tắt để dùng mic bàn phím (~0.3s).
                     </Text>
                   </View>
 
                   <Switch
-                    value={smartPayeeEnabled}
-                    onValueChange={handleToggleSmartPayee}
+                    value={inAppMicEnabled}
+                    onValueChange={handleToggleInAppMic}
                     trackColor={{ false: '#D1D5DB', true: '#86EFAC' }}
-                    thumbColor={smartPayeeEnabled ? '#15803D' : '#9CA3AF'}
+                    thumbColor={inAppMicEnabled ? '#15803D' : '#9CA3AF'}
                   />
                 </View>
 
-                {smartPayeeEnabled && (
+                {/* Divider */}
+                <View style={{ height: 1.5, backgroundColor: '#E5E7EB', marginVertical: 14 }} />
+
+                {/* Copilot Text-to-Speech (TTS) Setting */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <View style={{ flex: 1, marginRight: 12 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Ionicons name="volume-high" size={17} color="#000000" />
+                      <Text style={{ fontSize: 13, fontWeight: '800', color: '#000000' }}>
+                        Đọc thành tiếng câu trả lời (TTS)
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 11, color: '#6B7280', marginTop: 3, lineHeight: 15 }}>
+                      Tự động đọc phản hồi của Trợ lý AI bằng giọng đọc tiếng Việt mượt mà theo tính cách đã chọn.
+                    </Text>
+                  </View>
+
+                  <Switch
+                    value={copilotTtsEnabled}
+                    onValueChange={handleToggleCopilotTts}
+                    trackColor={{ false: '#D1D5DB', true: '#86EFAC' }}
+                    thumbColor={copilotTtsEnabled ? '#15803D' : '#9CA3AF'}
+                  />
+                </View>
+
+                {/* Divider */}
+                <View style={{ height: 1.5, backgroundColor: '#E5E7EB', marginVertical: 14 }} />
+
+                {/* AI Personality Setting (NeoDropdown gọn gàng, không tràn layout) */}
+                <View style={styles.geminiModelSection}>
+                  <View style={styles.geminiModelHeaderRow}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, marginRight: 8 }}>
+                      <Ionicons name="sparkles" size={15} color="#6D28D9" />
+                      <Text style={[styles.geminiModelHeaderTitle, { flexShrink: 1 }]} numberOfLines={1}>
+                        Tính cách Trợ lý AI
+                      </Text>
+                    </View>
+                    <View
+                      style={{
+                        backgroundColor: (COPILOT_PERSONALITIES[copilotPersonality] || COPILOT_PERSONALITIES.cheerful).color,
+                        borderWidth: 1.5,
+                        borderColor: '#000000',
+                        borderRadius: 6,
+                        paddingHorizontal: 7,
+                        paddingVertical: 1.5,
+                      }}
+                    >
+                      <Text style={{ fontSize: 10, fontWeight: '900', color: '#000000' }}>
+                        {(COPILOT_PERSONALITIES[copilotPersonality] || COPILOT_PERSONALITIES.cheerful).badge}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <NeoDropdown
+                    title="Chọn tính cách Trợ lý AI"
+                    triggerLabel={(COPILOT_PERSONALITIES[copilotPersonality] || COPILOT_PERSONALITIES.cheerful).name}
+                    triggerIcon={(COPILOT_PERSONALITIES[copilotPersonality] || COPILOT_PERSONALITIES.cheerful).icon}
+                    isActive={true}
+                    options={personalityDropdownOptions}
+                    selectedValue={copilotPersonality}
+                    onSelect={val => {
+                      if (val) handleSelectPersonality(val as CopilotPersonalityId);
+                    }}
+                  />
+
+                  <Text style={styles.geminiModelDesc}>
+                    {(COPILOT_PERSONALITIES[copilotPersonality] || COPILOT_PERSONALITIES.cheerful).desc}
+                  </Text>
+
                   <View
                     style={{
-                      marginTop: 10,
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      backgroundColor: '#F3F4F6',
+                      backgroundColor: '#FFFFFF',
                       borderWidth: 1.5,
                       borderColor: '#000000',
                       borderRadius: 8,
                       paddingHorizontal: 10,
-                      paddingVertical: 7,
+                      paddingVertical: 6,
+                      marginTop: 6,
                     }}
                   >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-                      <Ionicons name="sparkles" size={15} color="#D97706" />
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#1F2937' }}>
-                        {payeeMappings.length > 0
-                          ? `Đã ghi nhớ ${payeeMappings.length} người nhận`
-                          : 'Chưa có dữ liệu thói quen người nhận'}
+                    <Text style={{ fontSize: 11, fontStyle: 'italic', color: '#1F2937' }}>
+                      💬 "{(COPILOT_PERSONALITIES[copilotPersonality] || COPILOT_PERSONALITIES.cheerful).sampleQuote}"
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Divider */}
+                <View style={{ height: 1.5, backgroundColor: '#E5E7EB', marginVertical: 14 }} />
+
+                {/* Smart Payee Mapping Setting */}
+                <View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <View style={{ flex: 1, marginRight: 12 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Ionicons name="repeat" size={17} color="#000000" />
+                        <Text style={{ fontSize: 13, fontWeight: '800', color: '#000000' }}>
+                          Tự động học thói quen người nhận
+                        </Text>
+                      </View>
+                      <Text style={{ fontSize: 11, color: '#6B7280', marginTop: 3, lineHeight: 15 }}>
+                        Tự động nhớ và điền nội dung & danh mục khi quét bill chuyển khoản cho cùng người nhận (ví dụ: chuyển khoản cho Nguyễn Văn A tự điền "Bò cụng", danh mục "Cà phê & Đồ uống").
                       </Text>
                     </View>
-                    {payeeMappings.length > 0 && (
-                      <Pressable
-                        style={{
-                          backgroundColor: '#FEF08A',
-                          borderWidth: 1.5,
-                          borderColor: '#000000',
-                          borderRadius: 6,
-                          paddingHorizontal: 8,
-                          paddingVertical: 4,
-                        }}
-                        onPress={() => {
-                          hapticLight();
-                          setShowPayeeModal(true);
-                        }}
-                      >
-                        <Text style={{ fontSize: 11, fontWeight: '900', color: '#000000' }}>Xem & Quản lý</Text>
-                      </Pressable>
-                    )}
+
+                    <Switch
+                      value={smartPayeeEnabled}
+                      onValueChange={handleToggleSmartPayee}
+                      trackColor={{ false: '#D1D5DB', true: '#86EFAC' }}
+                      thumbColor={smartPayeeEnabled ? '#15803D' : '#9CA3AF'}
+                    />
                   </View>
-                )}
+
+                  {smartPayeeEnabled && (
+                    <View
+                      style={{
+                        marginTop: 10,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        backgroundColor: '#F3F4F6',
+                        borderWidth: 1.5,
+                        borderColor: '#000000',
+                        borderRadius: 8,
+                        paddingHorizontal: 10,
+                        paddingVertical: 7,
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                        <Ionicons name="sparkles" size={15} color="#D97706" />
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: '#1F2937' }}>
+                          {payeeMappings.length > 0
+                            ? `Đã ghi nhớ ${payeeMappings.length} người nhận`
+                            : 'Chưa có dữ liệu thói quen người nhận'}
+                        </Text>
+                      </View>
+                      {payeeMappings.length > 0 && (
+                        <Pressable
+                          style={{
+                            backgroundColor: '#FEF08A',
+                            borderWidth: 1.5,
+                            borderColor: '#000000',
+                            borderRadius: 6,
+                            paddingHorizontal: 8,
+                            paddingVertical: 4,
+                          }}
+                          onPress={() => {
+                            hapticLight();
+                            setShowPayeeModal(true);
+                          }}
+                        >
+                          <Text style={{ fontSize: 11, fontWeight: '900', color: '#000000' }}>Xem & Quản lý</Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  )}
+                </View>
               </View>
-            </View>
             )}
           </View>
         </View>
@@ -1563,180 +1561,180 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
 
             {expandedSections.receipt_storage && (
               <View style={styles.cardBody}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-                  <Text style={[styles.cardSectionTitle, { marginBottom: 0 }]}>Dọn dẹp ảnh cũ</Text>
-                  <Pressable
-                    hitSlop={8}
-                    onPress={() => {
-                      hapticLight();
-                      showAlert(
-                        'Dọn dẹp ảnh hóa đơn',
-                        'Giải phóng dung lượng bộ nhớ máy bằng cách xóa các ảnh hóa đơn chụp từ lâu. Số tiền, ghi chú và danh mục của giao dịch vẫn được lưu giữ an toàn 100%.'
-                      );
-                    }}
-                  >
-                    <Ionicons name="help-circle-outline" size={18} color="#6B7280" />
-                  </Pressable>
-                </View>
-              </View>
-
-              {/* Day presets chips - 4 equal-width buttons on 1 row */}
-              <View style={styles.purgeChipsRow}>
-                {[30, 60, 90].map((d) => {
-                  const isSelected = !isCustomDays && selectedPurgeDays === d;
-                  return (
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                    <Text style={[styles.cardSectionTitle, { marginBottom: 0 }]}>Dọn dẹp ảnh cũ</Text>
                     <Pressable
-                      key={d}
-                      style={[
-                        styles.purgeChip,
-                        isSelected && styles.purgeChipActive,
-                      ]}
+                      hitSlop={8}
                       onPress={() => {
                         hapticLight();
-                        setIsCustomDays(false);
-                        setSelectedPurgeDays(d);
+                        showAlert(
+                          'Dọn dẹp ảnh hóa đơn',
+                          'Giải phóng dung lượng bộ nhớ máy bằng cách xóa các ảnh hóa đơn chụp từ lâu. Số tiền, ghi chú và danh mục của giao dịch vẫn được lưu giữ an toàn 100%.'
+                        );
                       }}
                     >
-                      <Text
-                        style={[
-                          styles.purgeChipText,
-                          isSelected && styles.purgeChipTextActive,
-                        ]}
-                      >
-                        {d} ngày
-                      </Text>
+                      <Ionicons name="help-circle-outline" size={18} color="#6B7280" />
                     </Pressable>
-                  );
-                })}
-
-                <Pressable
-                  style={[
-                    styles.purgeChip,
-                    isCustomDays && styles.purgeChipActive,
-                  ]}
-                  onPress={() => {
-                    hapticLight();
-                    setIsCustomDays(true);
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.purgeChipText,
-                      isCustomDays && styles.purgeChipTextActive,
-                    ]}
-                  >
-                    Tùy chọn
-                  </Text>
-                </Pressable>
-              </View>
-
-              {/* Custom days input if selected */}
-              {isCustomDays && (
-                <View style={styles.customDaysInputContainer}>
-                  <Text style={styles.customDaysLabel}>Xóa ảnh của giao dịch cũ hơn:</Text>
-                  <View style={styles.customDaysInputRow}>
-                    <TextInput
-                      style={styles.customDaysInput}
-                      keyboardType="number-pad"
-                      value={customPurgeDays}
-                      onChangeText={(val) => {
-                        setCustomPurgeDays(val);
-                        const n = parseInt(val, 10);
-                        if (!isNaN(n) && n > 0) {
-                          refreshStorageStats(n);
-                        }
-                      }}
-                      placeholder="Số ngày"
-                      placeholderTextColor={THEME.textMuted}
-                    />
-                    <Text style={styles.customDaysSuffix}>ngày</Text>
                   </View>
                 </View>
-              )}
 
-              {/* Cutoff Date Info & Refresh */}
-              <View style={styles.storageCutoffRow}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                  <Ionicons name="calendar-outline" size={13} color="#6B7280" />
-                  <Text style={styles.storageCutoffText}>
-                    Giao dịch trước: {storageStats?.cutoffDateStr || '...'}
-                  </Text>
+                {/* Day presets chips - 4 equal-width buttons on 1 row */}
+                <View style={styles.purgeChipsRow}>
+                  {[30, 60, 90].map((d) => {
+                    const isSelected = !isCustomDays && selectedPurgeDays === d;
+                    return (
+                      <Pressable
+                        key={d}
+                        style={[
+                          styles.purgeChip,
+                          isSelected && styles.purgeChipActive,
+                        ]}
+                        onPress={() => {
+                          hapticLight();
+                          setIsCustomDays(false);
+                          setSelectedPurgeDays(d);
+                        }}
+                      >
+                        <Text
+                          style={[
+                            styles.purgeChipText,
+                            isSelected && styles.purgeChipTextActive,
+                          ]}
+                        >
+                          {d} ngày
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+
+                  <Pressable
+                    style={[
+                      styles.purgeChip,
+                      isCustomDays && styles.purgeChipActive,
+                    ]}
+                    onPress={() => {
+                      hapticLight();
+                      setIsCustomDays(true);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.purgeChipText,
+                        isCustomDays && styles.purgeChipTextActive,
+                      ]}
+                    >
+                      Tùy chọn
+                    </Text>
+                  </Pressable>
                 </View>
+
+                {/* Custom days input if selected */}
+                {isCustomDays && (
+                  <View style={styles.customDaysInputContainer}>
+                    <Text style={styles.customDaysLabel}>Xóa ảnh của giao dịch cũ hơn:</Text>
+                    <View style={styles.customDaysInputRow}>
+                      <TextInput
+                        style={styles.customDaysInput}
+                        keyboardType="number-pad"
+                        value={customPurgeDays}
+                        onChangeText={(val) => {
+                          setCustomPurgeDays(val);
+                          const n = parseInt(val, 10);
+                          if (!isNaN(n) && n > 0) {
+                            refreshStorageStats(n);
+                          }
+                        }}
+                        placeholder="Số ngày"
+                        placeholderTextColor={THEME.textMuted}
+                      />
+                      <Text style={styles.customDaysSuffix}>ngày</Text>
+                    </View>
+                  </View>
+                )}
+
+                {/* Cutoff Date Info & Refresh */}
+                <View style={styles.storageCutoffRow}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                    <Ionicons name="calendar-outline" size={13} color="#6B7280" />
+                    <Text style={styles.storageCutoffText}>
+                      Giao dịch trước: {storageStats?.cutoffDateStr || '...'}
+                    </Text>
+                  </View>
+                  <Pressable
+                    hitSlop={8}
+                    style={styles.storageRefreshBtn}
+                    onPress={() => {
+                      hapticLight();
+                      const d = isCustomDays ? parseInt(customPurgeDays, 10) : selectedPurgeDays;
+                      if (!isNaN(d) && d > 0) refreshStorageStats(d);
+                    }}
+                    disabled={isScanningStorage}
+                  >
+                    {isScanningStorage ? (
+                      <ActivityIndicator size="small" color="#000000" />
+                    ) : (
+                      <Ionicons name="refresh" size={13} color="#000000" />
+                    )}
+                  </Pressable>
+                </View>
+
+                {/* 3 Neo-brutalism Stat Boxes */}
+                <View style={styles.storageStatsGrid}>
+                  <View style={styles.storageStatBox}>
+                    <Text style={styles.storageStatVal}>
+                      {storageStats?.transactionCount ?? 0}
+                    </Text>
+                    <Text style={styles.storageStatLabel}>GIAO DỊCH</Text>
+                  </View>
+
+                  <View style={styles.storageStatBox}>
+                    <Text style={styles.storageStatVal}>
+                      {storageStats?.imageCount ?? 0}
+                    </Text>
+                    <Text style={styles.storageStatLabel}>HÌNH ẢNH</Text>
+                  </View>
+
+                  <View style={styles.storageStatBox}>
+                    <Text style={[styles.storageStatVal, { color: '#E11D48' }]}>
+                      {storageStats?.totalFormatted || '0 B'}
+                    </Text>
+                    <Text style={styles.storageStatLabel}>DUNG LƯỢNG</Text>
+                  </View>
+                </View>
+
+                {/* Action Button */}
                 <Pressable
-                  hitSlop={8}
-                  style={styles.storageRefreshBtn}
-                  onPress={() => {
-                    hapticLight();
-                    const d = isCustomDays ? parseInt(customPurgeDays, 10) : selectedPurgeDays;
-                    if (!isNaN(d) && d > 0) refreshStorageStats(d);
-                  }}
-                  disabled={isScanningStorage}
+                  style={[
+                    styles.purgeActionBtn,
+                    (!storageStats || storageStats.imageCount === 0 || isPurging) && styles.purgeActionBtnDisabled,
+                  ]}
+                  onPress={handleExecutePurge}
+                  disabled={!storageStats || storageStats.imageCount === 0 || isPurging}
                 >
-                  {isScanningStorage ? (
-                    <ActivityIndicator size="small" color="#000000" />
+                  {isPurging ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
                   ) : (
-                    <Ionicons name="refresh" size={13} color="#000000" />
+                    <>
+                      <Ionicons
+                        name="trash-outline"
+                        size={16}
+                        color={storageStats && storageStats.imageCount > 0 ? '#FFFFFF' : '#9CA3AF'}
+                      />
+                      <Text
+                        style={[
+                          styles.purgeActionBtnText,
+                          (!storageStats || storageStats.imageCount === 0) && styles.purgeActionBtnTextDisabled,
+                        ]}
+                      >
+                        {storageStats && storageStats.imageCount > 0
+                          ? `Dọn dẹp ${storageStats.imageCount} ảnh (${storageStats.totalFormatted})`
+                          : 'Không có ảnh nào cần dọn dẹp'}
+                      </Text>
+                    </>
                   )}
                 </Pressable>
               </View>
-
-              {/* 3 Neo-brutalism Stat Boxes */}
-              <View style={styles.storageStatsGrid}>
-                <View style={styles.storageStatBox}>
-                  <Text style={styles.storageStatVal}>
-                    {storageStats?.transactionCount ?? 0}
-                  </Text>
-                  <Text style={styles.storageStatLabel}>GIAO DỊCH</Text>
-                </View>
-
-                <View style={styles.storageStatBox}>
-                  <Text style={styles.storageStatVal}>
-                    {storageStats?.imageCount ?? 0}
-                  </Text>
-                  <Text style={styles.storageStatLabel}>HÌNH ẢNH</Text>
-                </View>
-
-                <View style={styles.storageStatBox}>
-                  <Text style={[styles.storageStatVal, { color: '#E11D48' }]}>
-                    {storageStats?.totalFormatted || '0 B'}
-                  </Text>
-                  <Text style={styles.storageStatLabel}>DUNG LƯỢNG</Text>
-                </View>
-              </View>
-
-              {/* Action Button */}
-              <Pressable
-                style={[
-                  styles.purgeActionBtn,
-                  (!storageStats || storageStats.imageCount === 0 || isPurging) && styles.purgeActionBtnDisabled,
-                ]}
-                onPress={handleExecutePurge}
-                disabled={!storageStats || storageStats.imageCount === 0 || isPurging}
-              >
-                {isPurging ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <>
-                    <Ionicons
-                      name="trash-outline"
-                      size={16}
-                      color={storageStats && storageStats.imageCount > 0 ? '#FFFFFF' : '#9CA3AF'}
-                    />
-                    <Text
-                      style={[
-                        styles.purgeActionBtnText,
-                        (!storageStats || storageStats.imageCount === 0) && styles.purgeActionBtnTextDisabled,
-                      ]}
-                    >
-                      {storageStats && storageStats.imageCount > 0
-                        ? `Dọn dẹp ${storageStats.imageCount} ảnh (${storageStats.totalFormatted})`
-                        : 'Không có ảnh nào cần dọn dẹp'}
-                    </Text>
-                  </>
-                )}
-              </Pressable>
-            </View>
             )}
           </View>
         </View>
@@ -1931,81 +1929,81 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
 
             {expandedSections.import && (
               <View style={styles.cardBody}>
-              {/* Mode Switcher */}
-              <View style={styles.importModeContainer}>
-                <Text style={styles.importModeTitle}>Chế độ khôi phục:</Text>
-                <View style={styles.modeTabsRow}>
-                  <Pressable
-                    style={[
-                      styles.modeTab,
-                      importMode === 'replace' && styles.modeTabActiveReplace,
-                    ]}
-                    onPress={() => setImportMode('replace')}
-                  >
-                    <Ionicons
-                      name="refresh-circle-outline"
-                      size={16}
-                      color={importMode === 'replace' ? '#000000' : '#6B7280'}
-                    />
-                    <Text
+                {/* Mode Switcher */}
+                <View style={styles.importModeContainer}>
+                  <Text style={styles.importModeTitle}>Chế độ khôi phục:</Text>
+                  <View style={styles.modeTabsRow}>
+                    <Pressable
                       style={[
-                        styles.modeTabText,
-                        importMode === 'replace' && styles.modeTabTextActive,
+                        styles.modeTab,
+                        importMode === 'replace' && styles.modeTabActiveReplace,
                       ]}
+                      onPress={() => setImportMode('replace')}
                     >
-                      Ghi đè toàn bộ
-                    </Text>
+                      <Ionicons
+                        name="refresh-circle-outline"
+                        size={16}
+                        color={importMode === 'replace' ? '#000000' : '#6B7280'}
+                      />
+                      <Text
+                        style={[
+                          styles.modeTabText,
+                          importMode === 'replace' && styles.modeTabTextActive,
+                        ]}
+                      >
+                        Ghi đè toàn bộ
+                      </Text>
+                    </Pressable>
+
+                    <Pressable
+                      style={[
+                        styles.modeTab,
+                        importMode === 'merge' && styles.modeTabActiveMerge,
+                      ]}
+                      onPress={() => setImportMode('merge')}
+                    >
+                      <Ionicons
+                        name="git-merge-outline"
+                        size={16}
+                        color={importMode === 'merge' ? '#000000' : '#6B7280'}
+                      />
+                      <Text
+                        style={[
+                          styles.modeTabText,
+                          importMode === 'merge' && styles.modeTabTextActive,
+                        ]}
+                      >
+                        Hợp nhất thêm
+                      </Text>
+                    </Pressable>
+                  </View>
+                  <Text style={styles.modeNoticeText}>
+                    {importMode === 'replace'
+                      ? 'Ghi đè: Thay thế toàn bộ dữ liệu hiện tại bằng dữ liệu trong bản sao lưu.'
+                      : 'Hợp nhất: Thêm các ví và giao dịch mới, giữ nguyên dữ liệu hiện có.'}
+                  </Text>
+                </View>
+
+                <View style={styles.actionButtonsCol}>
+                  <Pressable
+                    style={styles.actionBtnPrimary}
+                    onPress={handlePickFileToImport}
+                    disabled={isProcessing}
+                  >
+                    <Ionicons name="document-attach-outline" size={18} color="#000000" />
+                    <Text style={styles.actionBtnText}>Chọn file sao lưu từ máy</Text>
                   </Pressable>
 
                   <Pressable
-                    style={[
-                      styles.modeTab,
-                      importMode === 'merge' && styles.modeTabActiveMerge,
-                    ]}
-                    onPress={() => setImportMode('merge')}
+                    style={styles.actionBtnSecondary}
+                    onPress={() => setJsonPasteModalVisible(true)}
+                    disabled={isProcessing}
                   >
-                    <Ionicons
-                      name="git-merge-outline"
-                      size={16}
-                      color={importMode === 'merge' ? '#000000' : '#6B7280'}
-                    />
-                    <Text
-                      style={[
-                        styles.modeTabText,
-                        importMode === 'merge' && styles.modeTabTextActive,
-                      ]}
-                    >
-                      Hợp nhất thêm
-                    </Text>
+                    <Ionicons name="clipboard-outline" size={18} color="#000000" />
+                    <Text style={styles.actionBtnTextSecondary}>Dán mã JSON trực tiếp</Text>
                   </Pressable>
                 </View>
-                <Text style={styles.modeNoticeText}>
-                  {importMode === 'replace'
-                    ? 'Ghi đè: Thay thế toàn bộ dữ liệu hiện tại bằng dữ liệu trong bản sao lưu.'
-                    : 'Hợp nhất: Thêm các ví và giao dịch mới, giữ nguyên dữ liệu hiện có.'}
-                </Text>
               </View>
-
-              <View style={styles.actionButtonsCol}>
-                <Pressable
-                  style={styles.actionBtnPrimary}
-                  onPress={handlePickFileToImport}
-                  disabled={isProcessing}
-                >
-                  <Ionicons name="document-attach-outline" size={18} color="#000000" />
-                  <Text style={styles.actionBtnText}>Chọn file sao lưu từ máy</Text>
-                </Pressable>
-
-                <Pressable
-                  style={styles.actionBtnSecondary}
-                  onPress={() => setJsonPasteModalVisible(true)}
-                  disabled={isProcessing}
-                >
-                  <Ionicons name="clipboard-outline" size={18} color="#000000" />
-                  <Text style={styles.actionBtnTextSecondary}>Dán mã JSON trực tiếp</Text>
-                </Pressable>
-              </View>
-            </View>
             )}
           </View>
         </View>
@@ -2048,160 +2046,160 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
 
             {expandedSections.system && (
               <View style={styles.cardBody}>
-              {/* Toggle Haptic Feedback */}
-              <View style={styles.settingRow}>
-                <View style={styles.settingRowLeft}>
-                  <View style={[styles.settingRowIconBox, { backgroundColor: THEME.popYellow }]}>
-                    <Ionicons name="hardware-chip-outline" size={18} color="#000000" />
+                {/* Toggle Haptic Feedback */}
+                <View style={styles.settingRow}>
+                  <View style={styles.settingRowLeft}>
+                    <View style={[styles.settingRowIconBox, { backgroundColor: THEME.popYellow }]}>
+                      <Ionicons name="hardware-chip-outline" size={18} color="#000000" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.settingRowTitle}>Rung phản hồi</Text>
+                      <Text style={styles.settingRowDesc}>
+                        {hapticsEnabled
+                          ? 'Đang bật • Rung nhẹ khi bấm phím & thao tác'
+                          : 'Đang tắt • Không rung'}
+                      </Text>
+                    </View>
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.settingRowTitle}>Rung phản hồi</Text>
-                    <Text style={styles.settingRowDesc}>
-                      {hapticsEnabled
-                        ? 'Đang bật • Rung nhẹ khi bấm phím & thao tác'
-                        : 'Đang tắt • Không rung'}
-                    </Text>
-                  </View>
-                </View>
-                <Switch
-                  value={hapticsEnabled}
-                  onValueChange={(val) => {
-                    hapticLight();
-                    toggleHaptics(val);
-                  }}
-                  trackColor={{ false: '#D1D5DB', true: '#10B981' }}
-                  thumbColor="#FFFFFF"
-                />
-              </View>
-
-              <View style={styles.divider} />
-
-              {/* Toggle Balance Visibility */}
-              <Pressable
-                style={styles.settingRow}
-                onPress={toggleHideBalance}
-              >
-                <View style={styles.settingRowLeft}>
-                  <View style={styles.settingRowIconBox}>
-                    <Ionicons
-                      name={isBalanceHidden ? 'eye-off-outline' : 'eye-outline'}
-                      size={18}
-                      color="#000000"
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.settingRowTitle}>Ẩn số dư nhạy cảm</Text>
-                    <Text style={styles.settingRowDesc}>
-                      {isBalanceHidden ? 'Đang ẩn số dư với ký tự ••••••' : 'Đang hiển thị số tiền đầy đủ'}
-                    </Text>
-                  </View>
-                </View>
-                <View
-                  style={[
-                    styles.toggleSwitch,
-                    isBalanceHidden && styles.toggleSwitchActive,
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.toggleKnob,
-                      isBalanceHidden && styles.toggleKnobActive,
-                    ]}
+                  <Switch
+                    value={hapticsEnabled}
+                    onValueChange={(val) => {
+                      hapticLight();
+                      toggleHaptics(val);
+                    }}
+                    trackColor={{ false: '#D1D5DB', true: '#10B981' }}
+                    thumbColor="#FFFFFF"
                   />
                 </View>
-              </Pressable>
 
-              <View style={styles.divider} />
+                <View style={styles.divider} />
 
-              {/* Home Screen Widget Settings */}
-              <View style={styles.settingRow}>
-                <View style={styles.settingRowLeft}>
-                  <View style={[styles.settingRowIconBox, { backgroundColor: THEME.popYellow }]}>
-                    <Ionicons name="apps-outline" size={18} color="#000000" />
+                {/* Toggle Balance Visibility */}
+                <Pressable
+                  style={styles.settingRow}
+                  onPress={toggleHideBalance}
+                >
+                  <View style={styles.settingRowLeft}>
+                    <View style={styles.settingRowIconBox}>
+                      <Ionicons
+                        name={isBalanceHidden ? 'eye-off-outline' : 'eye-outline'}
+                        size={18}
+                        color="#000000"
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.settingRowTitle}>Ẩn số dư nhạy cảm</Text>
+                      <Text style={styles.settingRowDesc}>
+                        {isBalanceHidden ? 'Đang ẩn số dư với ký tự ••••••' : 'Đang hiển thị số tiền đầy đủ'}
+                      </Text>
+                    </View>
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.settingRowTitle}>Tiện ích màn hình chính</Text>
-                    <Text style={styles.settingRowDesc}>
-                      Xem nhanh số dư, thu/chi tháng, bấm mắt ẩn/hiện và tạo nhanh giao dịch (+/-).
-                    </Text>
+                  <View
+                    style={[
+                      styles.toggleSwitch,
+                      isBalanceHidden && styles.toggleSwitchActive,
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.toggleKnob,
+                        isBalanceHidden && styles.toggleKnobActive,
+                      ]}
+                    />
+                  </View>
+                </Pressable>
+
+                <View style={styles.divider} />
+
+                {/* Home Screen Widget Settings */}
+                <View style={styles.settingRow}>
+                  <View style={styles.settingRowLeft}>
+                    <View style={[styles.settingRowIconBox, { backgroundColor: THEME.popYellow }]}>
+                      <Ionicons name="apps-outline" size={18} color="#000000" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.settingRowTitle}>Tiện ích màn hình chính</Text>
+                      <Text style={styles.settingRowDesc}>
+                        Xem nhanh số dư, thu/chi tháng, bấm mắt ẩn/hiện và tạo nhanh giao dịch (+/-).
+                      </Text>
+                    </View>
+                  </View>
+                  <Pressable
+                    style={styles.widgetSyncBtn}
+                    onPress={async () => {
+                      hapticSuccess();
+                      if (summary) {
+                        await syncWidgetData({
+                          totalAssets: summary.totalAssets,
+                          monthlyIncome: summary.monthIncome,
+                          monthlyExpense: summary.monthExpense,
+                          isAppLockEnabled,
+                          walletCount: wallets.length,
+                        });
+                        showAlert(
+                          'Đã đồng bộ Widget',
+                          'Dữ liệu tài chính mới nhất đã được gửi ra tiện ích ngoài màn hình chính.'
+                        );
+                      }
+                    }}
+                  >
+                    <Ionicons name="refresh-outline" size={14} color="#000000" />
+                    <Text style={styles.widgetSyncBtnText}>Đồng bộ</Text>
+                  </Pressable>
+                </View>
+
+                <View style={styles.divider} />
+
+                {/* View System Logs */}
+                <View style={styles.settingRow}>
+                  <View style={styles.settingRowLeft}>
+                    <View style={[styles.settingRowIconBox, { backgroundColor: THEME.primary }]}>
+                      <Ionicons name="terminal-outline" size={18} color="#000000" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.settingRowTitle}>Nhật ký hoạt động</Text>
+                      <Text style={styles.settingRowDesc}>
+                        Xem lịch sử database, gọi Gemini AI, đồng bộ Cloud & lỗi hệ thống.
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: 6 }}>
+                    <Pressable
+                      style={styles.logViewerBtn}
+                      onPress={() => {
+                        hapticMedium();
+                        setLogModalVisible(true);
+                      }}
+                    >
+                      <Ionicons name="document-text-outline" size={14} color="#000000" />
+                      <Text style={styles.logViewerBtnText}>Xem log</Text>
+                    </Pressable>
+
+                    <Pressable
+                      style={[styles.logViewerBtn, { backgroundColor: '#FEF08A' }]}
+                      onPress={async () => {
+                        hapticMedium();
+                        await logger.shareErrorReport();
+                      }}
+                    >
+                      <Ionicons name="bug-outline" size={14} color="#000000" />
+                      <Text style={styles.logViewerBtnText}>Gửi Dev</Text>
+                    </Pressable>
                   </View>
                 </View>
+
+                <View style={styles.divider} />
+
+                {/* Reset Data Button */}
                 <Pressable
-                  style={styles.widgetSyncBtn}
-                  onPress={async () => {
-                    hapticSuccess();
-                    if (summary) {
-                      await syncWidgetData({
-                        totalAssets: summary.totalAssets,
-                        monthlyIncome: summary.monthIncome,
-                        monthlyExpense: summary.monthExpense,
-                        isAppLockEnabled,
-                        walletCount: wallets.length,
-                      });
-                      showAlert(
-                        'Đã đồng bộ Widget',
-                        'Dữ liệu tài chính mới nhất đã được gửi ra tiện ích ngoài màn hình chính.'
-                      );
-                    }
-                  }}
+                  style={styles.dangerResetBtn}
+                  onPress={handleResetApp}
+                  disabled={isProcessing}
                 >
-                  <Ionicons name="refresh-outline" size={14} color="#000000" />
-                  <Text style={styles.widgetSyncBtnText}>Đồng bộ</Text>
+                  <Ionicons name="trash-outline" size={18} color="#E11D48" />
+                  <Text style={styles.dangerResetText}>Đặt lại ứng dụng ban đầu</Text>
                 </Pressable>
               </View>
-
-              <View style={styles.divider} />
-
-              {/* View System Logs */}
-              <View style={styles.settingRow}>
-                <View style={styles.settingRowLeft}>
-                  <View style={[styles.settingRowIconBox, { backgroundColor: THEME.primary }]}>
-                    <Ionicons name="terminal-outline" size={18} color="#000000" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.settingRowTitle}>Nhật ký hoạt động</Text>
-                    <Text style={styles.settingRowDesc}>
-                      Xem lịch sử database, gọi Gemini AI, đồng bộ Cloud & lỗi hệ thống.
-                    </Text>
-                  </View>
-                </View>
-                <View style={{ flexDirection: 'row', gap: 6 }}>
-                  <Pressable
-                    style={styles.logViewerBtn}
-                    onPress={() => {
-                      hapticMedium();
-                      setLogModalVisible(true);
-                    }}
-                  >
-                    <Ionicons name="document-text-outline" size={14} color="#000000" />
-                    <Text style={styles.logViewerBtnText}>Xem log</Text>
-                  </Pressable>
-
-                  <Pressable
-                    style={[styles.logViewerBtn, { backgroundColor: '#FEF08A' }]}
-                    onPress={async () => {
-                      hapticMedium();
-                      await logger.shareErrorReport();
-                    }}
-                  >
-                    <Ionicons name="bug-outline" size={14} color="#000000" />
-                    <Text style={styles.logViewerBtnText}>Gửi Dev</Text>
-                  </Pressable>
-                </View>
-              </View>
-
-              <View style={styles.divider} />
-
-              {/* Reset Data Button */}
-              <Pressable
-                style={styles.dangerResetBtn}
-                onPress={handleResetApp}
-                disabled={isProcessing}
-              >
-                <Ionicons name="trash-outline" size={18} color="#E11D48" />
-                <Text style={styles.dangerResetText}>Đặt lại ứng dụng ban đầu</Text>
-              </Pressable>
-            </View>
             )}
           </View>
         </View>
@@ -2246,118 +2244,118 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
 
             {expandedSections.reminders && (
               <View style={styles.cardBody}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <Text style={styles.cardSectionTitle}>Nhắc theo thói quen sinh hoạt</Text>
-                <Switch
-                  value={habitConfig.enabled}
-                  onValueChange={handleToggleHabitEnabled}
-                  trackColor={{ false: '#E5E7EB', true: THEME.primary }}
-                  thumbColor="#000000"
-                />
-              </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <Text style={styles.cardSectionTitle}>Nhắc theo thói quen sinh hoạt</Text>
+                  <Switch
+                    value={habitConfig.enabled}
+                    onValueChange={handleToggleHabitEnabled}
+                    trackColor={{ false: '#E5E7EB', true: THEME.primary }}
+                    thumbColor="#000000"
+                  />
+                </View>
 
-              <Text style={styles.cardDescText}>
-                Tự động phân tích giờ ăn uống, sinh hoạt từ SQLite để nhắc bạn ghi chép chi tiêu. Nếu hôm nay bạn đã ghi chép rồi, ứng dụng sẽ hoàn toàn im lặng, không làm phiền.
-              </Text>
+                <Text style={styles.cardDescText}>
+                  Tự động phân tích giờ ăn uống, sinh hoạt từ SQLite để nhắc bạn ghi chép chi tiêu. Nếu hôm nay bạn đã ghi chép rồi, ứng dụng sẽ hoàn toàn im lặng, không làm phiền.
+                </Text>
 
-              {habitConfig.enabled && (
-                <>
-                  <View style={styles.divider} />
+                {habitConfig.enabled && (
+                  <>
+                    <View style={styles.divider} />
 
-                  {/* Sub-toggle: Auto Learn */}
-                  <View style={styles.settingRow}>
-                    <View style={styles.settingRowLeft}>
-                      <View style={[styles.settingRowIconBox, { backgroundColor: '#DCFCE7' }]}>
-                        <Ionicons name="sparkles-outline" size={18} color="#15803D" />
+                    {/* Sub-toggle: Auto Learn */}
+                    <View style={styles.settingRow}>
+                      <View style={styles.settingRowLeft}>
+                        <View style={[styles.settingRowIconBox, { backgroundColor: '#DCFCE7' }]}>
+                          <Ionicons name="sparkles-outline" size={18} color="#15803D" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.settingRowTitle}>Tự động học thói quen</Text>
+                          <Text style={styles.settingRowDesc}>
+                            Học giờ đỉnh từ lịch sử giao dịch để căn chỉnh mốc giờ nhắc phù hợp nhịp sống.
+                          </Text>
+                        </View>
                       </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.settingRowTitle}>Tự động học thói quen</Text>
-                        <Text style={styles.settingRowDesc}>
-                          Học giờ đỉnh từ lịch sử giao dịch để căn chỉnh mốc giờ nhắc phù hợp nhịp sống.
-                        </Text>
-                      </View>
+                      <Switch
+                        value={habitConfig.autoLearn}
+                        onValueChange={handleToggleAutoLearn}
+                        trackColor={{ false: '#E5E7EB', true: '#22C55E' }}
+                        thumbColor="#000000"
+                      />
                     </View>
-                    <Switch
-                      value={habitConfig.autoLearn}
-                      onValueChange={handleToggleAutoLearn}
-                      trackColor={{ false: '#E5E7EB', true: '#22C55E' }}
-                      thumbColor="#000000"
-                    />
-                  </View>
 
-                  {/* Dynamic Discovered Habits List */}
-                  <View style={styles.habitRoutineBox}>
-                    <Text style={styles.habitRoutineTitle}>
-                      THÓI QUEN ĐÃ NHẬN DIỆN TỰ ĐỘNG ({discoveredHabits.length})
-                    </Text>
+                    {/* Dynamic Discovered Habits List */}
+                    <View style={styles.habitRoutineBox}>
+                      <Text style={styles.habitRoutineTitle}>
+                        THÓI QUEN ĐÃ NHẬN DIỆN TỰ ĐỘNG ({discoveredHabits.length})
+                      </Text>
 
-                    {discoveredHabits.map((habit, index) => (
-                      <View
-                        key={habit.id}
-                        style={[
-                          styles.habitItemContainer,
-                          index === discoveredHabits.length - 1 && { borderBottomWidth: 0 },
-                        ]}
-                      >
+                      {discoveredHabits.map((habit, index) => (
                         <View
+                          key={habit.id}
                           style={[
-                            styles.habitItemIconBox,
-                            { backgroundColor: habit.categoryColor || THEME.primary },
+                            styles.habitItemContainer,
+                            index === discoveredHabits.length - 1 && { borderBottomWidth: 0 },
                           ]}
                         >
-                          <Ionicons
-                            name={(habit.categoryIcon as any) || 'alarm-outline'}
-                            size={16}
-                            color="#000000"
-                          />
-                        </View>
-                        <View style={{ flex: 1, marginRight: 8 }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-                            <Text style={styles.habitItemTitle}>{habit.title}</Text>
-                            {habit.scheduleBadge ? (
-                              <View
-                                style={[
-                                  styles.habitBadgeChip,
-                                  {
-                                    backgroundColor: (habit.scheduleBadgeColor || '#6B7280') + '20',
-                                    borderColor: (habit.scheduleBadgeColor || '#6B7280') + '60',
-                                  },
-                                ]}
-                              >
-                                <Text
+                          <View
+                            style={[
+                              styles.habitItemIconBox,
+                              { backgroundColor: habit.categoryColor || THEME.primary },
+                            ]}
+                          >
+                            <Ionicons
+                              name={(habit.categoryIcon as any) || 'alarm-outline'}
+                              size={16}
+                              color="#000000"
+                            />
+                          </View>
+                          <View style={{ flex: 1, marginRight: 8 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                              <Text style={styles.habitItemTitle}>{habit.title}</Text>
+                              {habit.scheduleBadge ? (
+                                <View
                                   style={[
-                                    styles.habitBadgeChipText,
-                                    { color: habit.scheduleBadgeColor || '#6B7280' },
+                                    styles.habitBadgeChip,
+                                    {
+                                      backgroundColor: (habit.scheduleBadgeColor || '#6B7280') + '20',
+                                      borderColor: (habit.scheduleBadgeColor || '#6B7280') + '60',
+                                    },
                                   ]}
                                 >
-                                  {habit.scheduleBadge}
-                                </Text>
-                              </View>
-                            ) : null}
+                                  <Text
+                                    style={[
+                                      styles.habitBadgeChipText,
+                                      { color: habit.scheduleBadgeColor || '#6B7280' },
+                                    ]}
+                                  >
+                                    {habit.scheduleBadge}
+                                  </Text>
+                                </View>
+                              ) : null}
+                            </View>
+                            <Text style={styles.habitItemSubtitle}>{habit.subtitle}</Text>
                           </View>
-                          <Text style={styles.habitItemSubtitle}>{habit.subtitle}</Text>
+                          <Switch
+                            value={habit.isEnabled}
+                            onValueChange={() => handleToggleSingleHabit(habit.id, habit.isEnabled)}
+                            trackColor={{ false: '#E5E7EB', true: THEME.primary }}
+                            thumbColor="#000000"
+                          />
                         </View>
-                        <Switch
-                          value={habit.isEnabled}
-                          onValueChange={() => handleToggleSingleHabit(habit.id, habit.isEnabled)}
-                          trackColor={{ false: '#E5E7EB', true: THEME.primary }}
-                          thumbColor="#000000"
-                        />
-                      </View>
-                    ))}
-                  </View>
+                      ))}
+                    </View>
 
-                  {/* Test Notification Button */}
-                  <Pressable
-                    style={styles.actionBtnTestNotification}
-                    onPress={handleTestNotification}
-                  >
-                    <Ionicons name="paper-plane-outline" size={18} color="#000000" />
-                    <Text style={styles.actionBtnText}>Gửi thông báo thử nghiệm ngay</Text>
-                  </Pressable>
-                </>
-              )}
-            </View>
+                    {/* Test Notification Button */}
+                    <Pressable
+                      style={styles.actionBtnTestNotification}
+                      onPress={handleTestNotification}
+                    >
+                      <Ionicons name="paper-plane-outline" size={18} color="#000000" />
+                      <Text style={styles.actionBtnText}>Gửi thông báo thử nghiệm ngay</Text>
+                    </Pressable>
+                  </>
+                )}
+              </View>
             )}
           </View>
         </View>
@@ -2366,7 +2364,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
         <View style={styles.footerContainer}>
           <Text style={styles.footerAppName}>Ví Của Tôi • Multi-Wallet Manager</Text>
           <Text style={styles.footerNote}>
-            Phiên bản 1.3.0(1) • SQLite Offline Local Storage
+            Phiên bản 1.3.0(2) • SQLite Offline Local Storage
           </Text>
           <Text style={styles.footerPrivacy}>
             100% dữ liệu được lưu trữ trên thiết bị của bạn, hoàn toàn riêng tư và không tải lên máy chủ ngoài.

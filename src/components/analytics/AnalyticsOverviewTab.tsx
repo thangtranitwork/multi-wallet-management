@@ -308,9 +308,9 @@ export const AnalyticsOverviewTab: React.FC<AnalyticsOverviewTabProps> = ({
               {/* Largest transaction */}
               {advancedData.largestExpense && (() => {
                 const rawNote = advancedData.largestExpense.note || '';
-                const splitMatch = rawNote.match(/\[Đã tách cho ([^\]]+)\]/);
+                const splitMatch = rawNote.match(/\[(?:Trả hộ 100% - )?Đã tách cho ([^\]]+)\]/);
                 const cleanNote = rawNote
-                  .replace(/\[Đã tách cho [^\]]+\]/, '')
+                  .replace(/\[(?:Trả hộ 100% - )?Đã tách cho [^\]]+\]/, '')
                   .trim();
                 const displayTitle =
                   cleanNote ||

@@ -177,7 +177,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
         hapticSuccess();
 
         const calculatedSum = res.items_sum || res.items.reduce((s, it) => s + ((it.price || 0) * (it.quantity || 1)), 0);
-        const splitMatch = transaction.note?.match(/\[Đã tách cho ([^\]]+)\]/i);
+        const splitMatch = transaction.note?.match(/\[(?:Trả hộ 100% - )?Đã tách cho ([^\]]+)\]/i);
 
         if (calculatedSum > 0 && Math.abs(calculatedSum - transaction.amount) > 100) {
           if (splitMatch) {
@@ -1664,7 +1664,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
                       <Ionicons name="receipt-outline" size={17} color="#000000" />
                       <Text style={styles.billItemsTitle} numberOfLines={1}>
-                        Món trong đơn ({parsedBill.items.length})
+                        Món trong đơn
                       </Text>
                     </View>
                     <View style={{ flexDirection: 'row', gap: 5, alignItems: 'center', flexShrink: 0 }}>
@@ -1677,16 +1677,6 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                       >
                         <Ionicons name="create-outline" size={12} color="#000000" />
                         <Text style={styles.editBillHeaderBtnText}>Sửa món</Text>
-                      </Pressable>
-                      <Pressable
-                        style={styles.printBillHeaderBtn}
-                        onPress={() => {
-                          hapticLight();
-                          setShowPrintModal(true);
-                        }}
-                      >
-                        <Ionicons name="print-outline" size={12} color="#000000" />
-                        <Text style={styles.printBillHeaderBtnText}>In / Xuất</Text>
                       </Pressable>
                     </View>
                   </View>
@@ -1878,7 +1868,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
             {/* Actions: Split Bill & Delete */}
             <View style={styles.actionsSection}>
               {transaction.type === 'expense' && onSplit && (() => {
-                const splitMatch = transaction.note?.match(/\[Đã tách cho ([^\]]+)\]/i);
+                const splitMatch = transaction.note?.match(/\[(?:Trả hộ 100% - )?Đã tách cho ([^\]]+)\]/i);
                 return (
                   <Pressable
                     style={styles.splitActionBtn}
