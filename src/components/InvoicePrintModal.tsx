@@ -430,7 +430,6 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
               <View ref={receiptRef} collapsable={false} style={styles.receiptPaper}>
                 {/* Paper Header */}
                 <View style={styles.receiptHeader}>
-                  <Text style={styles.receiptBrand}>VÍ CỦA TÔI</Text>
                   <View
                     style={[
                       styles.receiptBadge,

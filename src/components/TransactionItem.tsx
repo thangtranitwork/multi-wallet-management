@@ -116,6 +116,13 @@ export const TransactionItem: React.FC<TransactionItemProps> = ({
                 </Text>
               </View>
             )}
+            {transaction.amount === 0 && (
+              <View style={[styles.walletBadge, { backgroundColor: '#FEF3C7', borderColor: '#F59E0B' }]}>
+                <Text style={[styles.walletBadgeText, { color: '#B45309' }]}>
+                  Trả hộ 100%
+                </Text>
+              </View>
+            )}
             {imageCount > 0 && (
               <View style={styles.imageBadge}>
                 <Ionicons name="images-outline" size={11} color="#000000" style={{ marginRight: 2.5 }} />
@@ -133,16 +140,25 @@ export const TransactionItem: React.FC<TransactionItemProps> = ({
           <Text
             style={[
               styles.amount,
-              isIncome && styles.incomeColor,
-              isExpense && styles.expenseColor,
-              isTransfer && styles.transferColor,
-              transaction.type === 'adjustment' && { color: '#6B7280' },
+              transaction.amount === 0
+                ? { color: '#6B7280' }
+                : isIncome
+                ? styles.incomeColor
+                : isExpense
+                ? styles.expenseColor
+                : isTransfer
+                ? styles.transferColor
+                : transaction.type === 'adjustment'
+                ? { color: '#6B7280' }
+                : undefined,
             ]}
             numberOfLines={1}
             adjustsFontSizeToFit
           >
             {isBalanceHidden
               ? '••••••'
+              : transaction.amount === 0
+              ? '0 ₫'
               : `${isIncome ? '+' : isExpense ? '-' : ''}${formatVND(transaction.amount)}`}
           </Text>
           <Text style={styles.timeCaption}>{txDate.format('HH:mm')}</Text>

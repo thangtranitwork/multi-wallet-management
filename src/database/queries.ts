@@ -736,8 +736,17 @@ export async function splitTransactionIntoDebts(
         [remainingAmount, updatedNote, finalItems || null, transactionId]
       );
     } else {
-      // Nếu tách hết 100%, xóa giao dịch chi tiêu gốc (vì toàn bộ đã chuyển thành debt_lend)
-      await db.runAsync('DELETE FROM transactions WHERE id = ?', [transactionId]);
+      // Tách hết 100% (Đơn trả hộ): Giữ lại giao dịch gốc để bảo toàn thông tin hóa đơn, danh sách món và ảnh chụp bill
+      const splitTag = `[Trả hộ 100% - Đã tách cho ${splitNames.join(', ')}]`;
+      const updatedNote = tx.note?.includes(splitTag)
+        ? tx.note
+        : tx.note ? `${tx.note} ${splitTag}` : splitTag;
+
+      const finalItems = updatedOriginalItems !== undefined ? updatedOriginalItems : tx.items;
+      await db.runAsync(
+        'UPDATE transactions SET amount = 0, note = ?, items = ? WHERE id = ?',
+        [updatedNote, finalItems || null, transactionId]
+      );
     }
   });
 }

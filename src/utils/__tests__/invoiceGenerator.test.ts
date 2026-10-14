@@ -167,7 +167,7 @@ describe('invoiceGenerator', () => {
 
     const html = generateInvoiceHTML(thangData);
     expect(html).toContain('<!DOCTYPE html>');
-    expect(html).toContain('VÍ CỦA TÔI');
+    expect(html).not.toContain('VÍ CỦA TÔI');
     expect(html).toContain('HÀ THẮNG');
     expect(html).toContain('img.vietqr.io');
   });
@@ -191,6 +191,6 @@ describe('invoiceGenerator', () => {
     const text = generateInvoiceText(thangData);
     expect(text).toContain('HÀ THẮNG');
     expect(text).toContain('SỐ TIỀN CẦN CHUYỂN');
-    expect(text).toContain('Ví Của Tôi');
+    expect(text).not.toContain('Ví Của Tôi');
   });
 });

@@ -102,6 +102,24 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
   const [editItemsModalVisible, setEditItemsModalVisible] = useState<boolean>(false);
 
+  const splitInfo = useMemo(() => {
+    if (!transaction) return { isSplit: false, fullSum: 0, splitNames: '' };
+    const rawItemsSum = (parsedBill?.items || []).reduce((s: number, it: any) => s + ((it.price || 0) * (it.quantity || 1)), 0);
+    const netAdj = Array.isArray(parsedBill?.adjustments)
+      ? parsedBill.adjustments.reduce((sum: number, adj: any) => sum + (adj.type === 'fee' ? (adj.amount || 0) : -(adj.amount || 0)), 0)
+      : 0;
+    const fullSum = Math.max(0, rawItemsSum + netAdj);
+    const splitMatch = transaction.note?.match(/\[(?:Trả hộ 100% - )?Đã tách cho ([^\]]+)\]/i);
+    const isSplit = Boolean(splitMatch || (parsedBill?.members && parsedBill.members.length > 1));
+    const splitNames = splitMatch
+      ? splitMatch[1]
+      : (parsedBill?.members
+          ?.filter((m: any) => m.id !== 'me')
+          ?.map((m: any) => m.name)
+          ?.join(', ') || 'bạn bè');
+    return { isSplit, fullSum, splitNames };
+  }, [transaction, parsedBill]);
+
   const handleSaveBillItems = async (
     newItems: any[],
     newAdjustments: any[],
@@ -118,7 +136,9 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
       await updateTransactionItems(transaction.id, JSON.stringify(payload));
       hapticSuccess();
 
-      if (newTotal > 0 && Math.abs(newTotal - transaction.amount) > 100) {
+      if (splitInfo.isSplit) {
+        showAlert('Thành công', 'Đã cập nhật danh sách món của hóa đơn tách tiền thành công!');
+      } else if (newTotal > 0 && Math.abs(newTotal - transaction.amount) > 100) {
         showConfirm(
           'Cập nhật số tiền',
           `Tổng hóa đơn mới sau khi chỉnh sửa là ${formatVND(newTotal)}, khác với số tiền giao dịch (${formatVND(transaction.amount)}).\n\nBạn có muốn cập nhật số tiền giao dịch thành ${formatVND(newTotal)} theo danh sách món mới không?`,
@@ -382,10 +402,17 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   let typeIcon: any = 'receipt-outline';
 
   if (transaction.type === 'expense') {
-    typeLabel = 'Khoản chi tiêu';
-    typeBadgeBg = '#FFE4E6';
-    typeColor = '#E11D48';
-    typeIcon = 'arrow-down-circle';
+    if (transaction.amount === 0) {
+      typeLabel = 'Chi tiêu (Trả hộ 100%)';
+      typeBadgeBg = '#FEF3C7';
+      typeColor = '#B45309';
+      typeIcon = 'people-outline';
+    } else {
+      typeLabel = 'Khoản chi tiêu';
+      typeBadgeBg = '#FFE4E6';
+      typeColor = '#E11D48';
+      typeIcon = 'arrow-down-circle';
+    }
   } else if (transaction.type === 'income') {
     typeLabel = 'Khoản thu nhập';
     typeBadgeBg = '#DCFCE7';
@@ -693,15 +720,23 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
               <Text
                 style={[
                   styles.heroAmount,
-                  isIncome && styles.incomeColor,
-                  isExpense && styles.expenseColor,
-                  isTransfer && styles.transferColor,
+                  transaction.amount === 0
+                    ? { color: '#6B7280' }
+                    : isIncome
+                    ? styles.incomeColor
+                    : isExpense
+                    ? styles.expenseColor
+                    : isTransfer
+                    ? styles.transferColor
+                    : undefined,
                 ]}
                 numberOfLines={1}
                 adjustsFontSizeToFit
               >
                 {isBalanceHidden
                   ? '••••••'
+                  : transaction.amount === 0
+                  ? '0 ₫'
                   : `${isIncome ? '+' : isExpense ? '-' : ''}${formatVND(transaction.amount)}`}
               </Text>
 
@@ -1626,13 +1661,13 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                 <View style={styles.cardShadowBlock} />
                 <View style={styles.billItemsCardInner}>
                   <View style={styles.billItemsHeader}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-                      <Ionicons name="receipt-outline" size={18} color="#000000" />
-                      <Text style={styles.billItemsTitle}>
-                        Món trong đơn • {parsedBill.items.length} món
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+                      <Ionicons name="receipt-outline" size={17} color="#000000" />
+                      <Text style={styles.billItemsTitle} numberOfLines={1}>
+                        Món trong đơn ({parsedBill.items.length})
                       </Text>
                     </View>
-                    <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                    <View style={{ flexDirection: 'row', gap: 5, alignItems: 'center', flexShrink: 0 }}>
                       <Pressable
                         style={styles.editBillHeaderBtn}
                         onPress={() => {
@@ -1640,7 +1675,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                           setEditItemsModalVisible(true);
                         }}
                       >
-                        <Ionicons name="create-outline" size={13} color="#000000" />
+                        <Ionicons name="create-outline" size={12} color="#000000" />
                         <Text style={styles.editBillHeaderBtnText}>Sửa món</Text>
                       </Pressable>
                       <Pressable
@@ -1650,8 +1685,8 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                           setShowPrintModal(true);
                         }}
                       >
-                        <Ionicons name="print-outline" size={13} color="#000000" />
-                        <Text style={styles.printBillHeaderBtnText}>In / Xuất bill</Text>
+                        <Ionicons name="print-outline" size={12} color="#000000" />
+                        <Text style={styles.printBillHeaderBtnText}>In / Xuất</Text>
                       </Pressable>
                     </View>
                   </View>
@@ -1723,19 +1758,9 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
 
                   {/* Summary of items & discrepancy or split breakdown */}
                   {(() => {
-                    const rawItemsSum = parsedBill.items.reduce((s: number, it: any) => s + ((it.price || 0) * (it.quantity || 1)), 0);
-                    const netAdj = Array.isArray(parsedBill.adjustments)
-                      ? parsedBill.adjustments.reduce((sum: number, adj: any) => sum + (adj.type === 'fee' ? (adj.amount || 0) : -(adj.amount || 0)), 0)
-                      : 0;
-                    const fullSum = rawItemsSum + netAdj;
-                    const splitMatch = transaction.note?.match(/\[Đã tách cho ([^\]]+)\]/i);
-                    const isSplit = Boolean(splitMatch || (parsedBill?.members && parsedBill.members.length > 1));
-                    const splitTargetName = splitMatch
-                      ? splitMatch[1]
-                      : (parsedBill?.members
-                          ?.filter((m: any) => m.id !== 'me')
-                          ?.map((m: any) => m.name)
-                          ?.join(', ') || 'bạn bè');
+                    const fullSum = splitInfo.fullSum;
+                    const isSplit = splitInfo.isSplit;
+                    const splitTargetName = splitInfo.splitNames;
                     const diff = Math.abs(fullSum - transaction.amount);
                     const splitAmount = Math.max(0, fullSum - transaction.amount);
 
@@ -1771,12 +1796,14 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                               Phần bạn chi trả:
                             </Text>
                             <Text style={[styles.splitBillVal, { fontWeight: '900', color: '#000000', fontSize: 13.5 }]}>
-                              {formatVND(transaction.amount)}
+                              {transaction.amount === 0 ? '0 ₫ (Trả hộ 100%)' : formatVND(transaction.amount)}
                             </Text>
                           </View>
 
                           <Text style={styles.splitBillHelpText}>
-                            Khoản chia đã được tự động ghi nhận vào Sổ Nợ. Số tiền của giao dịch này được giữ đúng theo phần bạn thực chi.
+                            {transaction.amount === 0
+                              ? 'Bạn đã trả hộ 100% hóa đơn này cho bạn bè. Toàn bộ các phần chia đã được tự động ghi nhận vào Sổ Nợ.'
+                              : 'Khoản chia đã được tự động ghi nhận vào Sổ Nợ. Số tiền của giao dịch này được giữ đúng theo phần bạn thực chi.'}
                           </Text>
 
                           <Pressable
@@ -1939,7 +1966,9 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
         onClose={() => setEditItemsModalVisible(false)}
         initialItems={parsedBill?.items || []}
         initialAdjustments={parsedBill?.adjustments || []}
-        targetAmount={transaction?.amount}
+        targetAmount={splitInfo.isSplit && splitInfo.fullSum > 0 ? splitInfo.fullSum : transaction?.amount}
+        isSplitBill={splitInfo.isSplit}
+        myShareAmount={splitInfo.isSplit ? transaction?.amount : undefined}
         onSave={handleSaveBillItems}
       />
       {AlertModalComponent}
@@ -3180,17 +3209,21 @@ const styles = StyleSheet.create({
   splitBillRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    gap: 8,
   },
   splitBillLabel: {
+    flex: 1,
     fontSize: 12,
     fontWeight: '600',
     color: '#374151',
   },
   splitBillVal: {
+    flexShrink: 0,
     fontSize: 12.5,
     fontWeight: '800',
     color: '#111827',
+    textAlign: 'right',
   },
   splitBillHelpText: {
     fontSize: 11,
@@ -3202,12 +3235,12 @@ const styles = StyleSheet.create({
   printBillHeaderBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 3.5,
     backgroundColor: '#F3F4F6',
     borderWidth: 1.5,
     borderColor: '#000000',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3.5,
     borderRadius: 6,
   },
   printBillHeaderBtnText: {
@@ -3218,12 +3251,12 @@ const styles = StyleSheet.create({
   editBillHeaderBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 3.5,
     backgroundColor: '#FEF08A',
     borderWidth: 1.5,
     borderColor: '#000000',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3.5,
     borderRadius: 6,
   },
   editBillHeaderBtnText: {

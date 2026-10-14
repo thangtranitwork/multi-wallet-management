@@ -40,6 +40,8 @@ export interface EditBillItemsModalProps {
   initialItems?: ReceiptItem[] | null;
   initialAdjustments?: BillAdjustment[] | null;
   targetAmount?: number;
+  isSplitBill?: boolean;
+  myShareAmount?: number;
   onSave: (
     newItems: ReceiptItem[],
     newAdjustments: BillAdjustment[],
@@ -53,6 +55,8 @@ export const EditBillItemsModal: React.FC<EditBillItemsModalProps> = ({
   initialItems,
   initialAdjustments,
   targetAmount,
+  isSplitBill,
+  myShareAmount,
   onSave,
 }) => {
   const [items, setItems] = useState<EditableItem[]>([]);
@@ -269,15 +273,19 @@ export const EditBillItemsModal: React.FC<EditBillItemsModalProps> = ({
               {Math.abs(diffWithTarget) <= 100 ? (
                 <View style={[styles.diffBadge, styles.diffBadgeMatch]}>
                   <Ionicons name="checkmark-circle" size={14} color="#15803D" />
-                  <Text style={styles.diffBadgeTextMatch}>
-                    Khớp 100% với số tiền thanh toán ({formatVND(targetAmount)})
+                  <Text style={styles.diffBadgeTextMatch} numberOfLines={1}>
+                    {isSplitBill
+                      ? `Khớp hóa đơn gốc (${formatVND(targetAmount)}${myShareAmount !== undefined ? ` • Bạn trả: ${formatVND(myShareAmount)}` : ''})`
+                      : `Khớp 100% với số tiền thanh toán (${formatVND(targetAmount)})`}
                   </Text>
                 </View>
               ) : (
                 <View style={[styles.diffBadge, styles.diffBadgeMismatch]}>
                   <Ionicons name="alert-circle" size={14} color="#92400E" />
                   <Text style={styles.diffBadgeTextMismatch} numberOfLines={1}>
-                    Lệch {formatVND(Math.abs(diffWithTarget))} (GD: {formatVND(targetAmount)})
+                    {isSplitBill
+                      ? `Lệch ${formatVND(Math.abs(diffWithTarget))} (Hóa đơn gốc: ${formatVND(targetAmount)})`
+                      : `Lệch ${formatVND(Math.abs(diffWithTarget))} (GD: ${formatVND(targetAmount)})`}
                   </Text>
                 </View>
               )}
@@ -714,6 +722,7 @@ const styles = StyleSheet.create({
   },
   itemNameInput: {
     flex: 1,
+    height: 38,
     fontSize: 13,
     fontWeight: '800',
     color: '#000000',
@@ -722,7 +731,9 @@ const styles = StyleSheet.create({
     borderColor: '#D1D5DB',
     borderRadius: 8,
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 0,
+    textAlignVertical: 'center',
+    includeFontPadding: false,
   },
   deleteItemBtn: {
     padding: 4,
@@ -749,34 +760,38 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1.5,
     borderColor: '#000000',
-    height: 34,
+    height: 38,
   },
   qtyStepBtn: {
     width: 26,
-    height: 32,
+    height: 35,
     alignItems: 'center',
     justifyContent: 'center',
   },
   qtyValText: {
     flex: 1,
     textAlign: 'center',
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '900',
     color: '#000000',
+    includeFontPadding: false,
   },
   priceContainer: {
     flex: 1,
   },
   priceInput: {
-    height: 34,
+    height: 38,
     backgroundColor: '#FFFFFF',
     borderWidth: 1.5,
     borderColor: '#000000',
     borderRadius: 8,
     paddingHorizontal: 8,
-    fontSize: 13,
+    paddingVertical: 0,
+    fontSize: 13.5,
     fontWeight: '800',
     color: '#000000',
+    textAlignVertical: 'center',
+    includeFontPadding: false,
   },
   totalItemContainer: {
     width: 85,
@@ -786,7 +801,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '900',
     color: '#000000',
-    lineHeight: 34,
+    lineHeight: 38,
   },
   adjCard: {
     flexDirection: 'row',
@@ -812,6 +827,7 @@ const styles = StyleSheet.create({
   },
   adjNameInput: {
     flex: 1,
+    height: 36,
     fontSize: 12,
     fontWeight: '700',
     color: '#000000',
@@ -820,10 +836,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#D1D5DB',
     paddingHorizontal: 8,
-    paddingVertical: 5,
+    paddingVertical: 0,
+    textAlignVertical: 'center',
+    includeFontPadding: false,
   },
   adjAmountInput: {
     width: 85,
+    height: 36,
     fontSize: 12,
     fontWeight: '800',
     backgroundColor: '#FFFFFF',
@@ -831,8 +850,10 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: '#000000',
     paddingHorizontal: 8,
-    paddingVertical: 5,
+    paddingVertical: 0,
     textAlign: 'right',
+    textAlignVertical: 'center',
+    includeFontPadding: false,
   },
   deleteAdjBtn: {
     padding: 4,

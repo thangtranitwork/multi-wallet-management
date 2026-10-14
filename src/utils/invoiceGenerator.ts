@@ -685,7 +685,6 @@ export function generateInvoiceHTML(data: InvoiceReportData, qrImageDataUri?: st
     <body>
       <div class="receipt-container">
         <div class="header">
-          <div class="brand-title">VÍ CỦA TÔI</div>
           <div class="invoice-type">${data.title}</div>
           <div style="font-size: 13px; font-weight: 800; color: #111827; margin-top: 6px;">
             ${data.subtitle || data.note || 'Chi tiết giao dịch'}
@@ -743,8 +742,7 @@ export function generateInvoiceHTML(data: InvoiceReportData, qrImageDataUri?: st
         ${paymentQrHtml}
 
         <div class="footer">
-          <div>Ứng dụng quản lý tài chính Ví Của Tôi</div>
-          <div style="margin-top: 2px;">Thời điểm tạo: ${dayjs().format('DD/MM/YYYY HH:mm')}</div>
+          <div>Thời điểm tạo: ${dayjs().format('DD/MM/YYYY HH:mm')}</div>
         </div>
       </div>
     </body>
@@ -795,6 +793,5 @@ export function generateInvoiceText(data: InvoiceReportData): string {
     }
   }
 
-  text += `\n(Gửi từ Ví Của Tôi)`;
-  return text;
+  return text.trimEnd();
 }
