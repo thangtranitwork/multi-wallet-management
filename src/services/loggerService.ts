@@ -99,18 +99,63 @@ export async function loadPersistedLogs(): Promise<LogEntry[]> {
   return logs;
 }
 
+/**
+ * Sanitizes sensitive data such as API keys, OAuth tokens, PINs, and passwords from logs.
+ */
+export function sanitizeSecretString(str: string): string {
+  if (!str || typeof str !== 'string') return str;
+  return str
+    // Google API Keys (e.g. Gemini AIzaSy...)
+    .replace(/AIza[0-9A-Za-z-_]{35}/g, '[REDACTED_GEMINI_KEY]')
+    // Google OAuth access tokens (ya29...)
+    .replace(/ya29\.[0-9A-Za-z-_]+/g, '[REDACTED_OAUTH_TOKEN]')
+    // Bearer tokens
+    .replace(/Bearer\s+[a-zA-Z0-9_\-\.]+/gi, 'Bearer [REDACTED_TOKEN]')
+    // PIN hashes / salt / PIN patterns
+    .replace(/(pin(_code|_hash)?["']?\s*[:=]\s*["']?)[^"',\s}]+/gi, '$1[REDACTED_PIN]')
+    // Generic tokens/passwords/api keys in json or query strings
+    .replace(/(token|secret|password|api[_-]?key)["']?\s*[:=]\s*["']?([^"',\s}]+)/gi, '$1: "[REDACTED]"');
+}
+
+export function sanitizeSecrets(obj: any): any {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj === 'string') return sanitizeSecretString(obj);
+  if (typeof obj === 'number' || typeof obj === 'boolean') return obj;
+  if (Array.isArray(obj)) return obj.map(sanitizeSecrets);
+  if (typeof obj === 'object') {
+    const sanitized: Record<string, any> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      const lowerKey = k.toLowerCase();
+      if (
+        lowerKey.includes('pin') ||
+        lowerKey.includes('password') ||
+        lowerKey.includes('secret') ||
+        lowerKey.includes('token') ||
+        lowerKey.includes('api_key') ||
+        lowerKey.includes('apikey')
+      ) {
+        sanitized[k] = '[REDACTED]';
+      } else {
+        sanitized[k] = sanitizeSecrets(v);
+      }
+    }
+    return sanitized;
+  }
+  return obj;
+}
+
 // Format data or objects safely into string
 function formatDetails(args: any[]): string | undefined {
   if (!args || args.length === 0) return undefined;
   try {
     const formatted = args
       .map(arg => {
-        if (typeof arg === 'string') return arg;
-        if (arg instanceof Error) return `${arg.name}: ${arg.message}\n${arg.stack || ''}`;
+        if (typeof arg === 'string') return sanitizeSecretString(arg);
+        if (arg instanceof Error) return sanitizeSecretString(`${arg.name}: ${arg.message}\n${arg.stack || ''}`);
         try {
-          return JSON.stringify(arg, null, 2);
+          return sanitizeSecretString(JSON.stringify(sanitizeSecrets(arg), null, 2));
         } catch {
-          return String(arg);
+          return sanitizeSecretString(String(arg));
         }
       })
       .join(' ');
@@ -150,24 +195,26 @@ function addLog(
 ) {
   const now = dayjs();
   let detailStr: string | undefined = undefined;
-  let stackStr: string | undefined = extra?.stack;
+  let stackStr: string | undefined = extra?.stack ? sanitizeSecretString(extra.stack) : undefined;
 
   if (details !== undefined) {
     if (typeof details === 'string') {
-      detailStr = details;
+      detailStr = sanitizeSecretString(details);
     } else if (details instanceof Error) {
-      detailStr = `${details.name}: ${details.message}\n${details.stack || ''}`;
-      if (!stackStr) stackStr = details.stack;
+      detailStr = sanitizeSecretString(`${details.name}: ${details.message}\n${details.stack || ''}`);
+      if (!stackStr) stackStr = sanitizeSecretString(details.stack || '');
     } else {
       try {
-        detailStr = JSON.stringify(details, null, 2);
+        const sanitizedDetails = sanitizeSecrets(details);
+        detailStr = sanitizeSecretString(JSON.stringify(sanitizedDetails, null, 2));
       } catch {
-        detailStr = String(details);
+        detailStr = sanitizeSecretString(String(details));
       }
     }
   }
 
   const activeScreen = extra?.screen || currentScreen || 'App';
+  const sanitizedContext = extra?.context ? sanitizeSecrets(extra.context) : undefined;
 
   const newEntry: LogEntry = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -175,10 +222,10 @@ function addLog(
     timeFull: now.format('YYYY-MM-DD HH:mm:ss'),
     level,
     tag: tag.toUpperCase(),
-    message: String(message),
+    message: sanitizeSecretString(String(message)),
     details: detailStr,
     screen: activeScreen,
-    context: extra?.context,
+    context: sanitizedContext,
     stack: stackStr,
   };
 
@@ -369,9 +416,9 @@ function buildFormattedErrorReport(targetError?: any, context?: Record<string, a
   if (context && Object.keys(context).length > 0) {
     report += `\n-------------------- NGỮ CẢNH (CONTEXT) --------------------\n`;
     try {
-      report += JSON.stringify(context, null, 2) + '\n';
+      report += sanitizeSecretString(JSON.stringify(sanitizeSecrets(context), null, 2)) + '\n';
     } catch {
-      report += String(context) + '\n';
+      report += sanitizeSecretString(String(context)) + '\n';
     }
   }
 

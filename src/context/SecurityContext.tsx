@@ -12,6 +12,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import * as queries from '../database/queries';
 import { setHapticsEnabled as setGlobalHaptics } from '../utils/haptics';
 import { saveWidgetData, syncWidgetData } from '../services/widgetSyncService';
+import { hashPin, verifyPinHash } from '../utils/security';
 
 interface SecurityContextType {
   isLocked: boolean;
@@ -46,7 +47,7 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [hapticsEnabled, setHapticsEnabled] = useState<boolean>(true);
   const [autoLockTimeout, setAutoLockTimeout] = useState<number>(30);
 
-  const storedPinRef = useRef<string>('');
+  const storedPinHashRef = useRef<string>('');
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const isAppLockEnabledRef = useRef<boolean>(false);
   const autoLockTimeoutRef = useRef<number>(30);
@@ -62,7 +63,17 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       try {
         const lockVal = await queries.getAppSetting(db, 'is_app_lock_enabled', 'false');
         const fpVal = await queries.getAppSetting(db, 'use_fingerprint', 'false');
-        const pinVal = await queries.getAppSetting(db, 'pin_code', '');
+        let pinHash = await queries.getAppSetting(db, 'pin_hash', '');
+        const legacyPin = await queries.getAppSetting(db, 'pin_code', '');
+
+        // Tự động nâng cấp mã PIN cũ (plaintext) sang định dạng salted hash an toàn
+        if (!pinHash && legacyPin) {
+          const { encoded } = await hashPin(legacyPin);
+          await queries.setAppSetting(db, 'pin_hash', encoded);
+          await queries.setAppSetting(db, 'pin_code', '');
+          pinHash = encoded;
+        }
+
         const hapticsVal = await queries.getAppSetting(db, 'haptics_enabled', 'true');
         const timeoutVal = await queries.getAppSetting(db, 'auto_lock_timeout', '30');
         const [hasHw, isEnrolled] = await Promise.all([
@@ -72,7 +83,15 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
         if (!isMounted) return;
 
-        const lockEnabled = lockVal === 'true';
+        const hasPin = pinHash.length > 0;
+        let lockEnabled = lockVal === 'true';
+
+        // Tuyệt đối không cho phép bật khóa nếu chưa thiết lập mã PIN
+        if (lockEnabled && !hasPin) {
+          await queries.setAppSetting(db, 'is_app_lock_enabled', 'false');
+          lockEnabled = false;
+        }
+
         const fpEnabled = fpVal === 'true';
         const haptics = hapticsVal !== 'false';
         const parsedTimeout = parseInt(timeoutVal, 10);
@@ -81,16 +100,16 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setIsAppLockEnabled(lockEnabled);
         isAppLockEnabledRef.current = lockEnabled;
         setUseFingerprint(fpEnabled);
-        storedPinRef.current = pinVal;
-        setHasPinCode(pinVal.length > 0);
+        storedPinHashRef.current = pinHash;
+        setHasPinCode(hasPin);
         setIsHardwareSupported(hasHw && isEnrolled);
         setHapticsEnabled(haptics);
         setGlobalHaptics(haptics);
         setAutoLockTimeout(timeout);
         autoLockTimeoutRef.current = timeout;
 
-        // Nếu người dùng đã bật khóa, khóa ngay khi khởi động app lần đầu
-        if (lockEnabled) {
+        // Nếu người dùng đã bật khóa và có PIN, khóa ngay khi khởi động app lần đầu
+        if (lockEnabled && hasPin) {
           setIsLocked(true);
         }
       } catch (err) {
@@ -176,7 +195,9 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, []);
 
   const verifyPin = useCallback(async (pin: string): Promise<boolean> => {
-    if (pin === storedPinRef.current) {
+    if (!storedPinHashRef.current) return false;
+    const isValid = await verifyPinHash(pin, storedPinHashRef.current);
+    if (isValid) {
       setIsLocked(false);
       return true;
     }
@@ -185,15 +206,27 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const updatePinCode = useCallback(
     async (newPin: string): Promise<void> => {
-      await queries.setAppSetting(db, 'pin_code', newPin);
-      storedPinRef.current = newPin;
-      setHasPinCode(newPin.length > 0);
+      if (!newPin || newPin.trim().length === 0) {
+        await queries.setAppSetting(db, 'pin_hash', '');
+        await queries.setAppSetting(db, 'pin_code', '');
+        storedPinHashRef.current = '';
+        setHasPinCode(false);
+        return;
+      }
+      const { encoded } = await hashPin(newPin);
+      await queries.setAppSetting(db, 'pin_hash', encoded);
+      await queries.setAppSetting(db, 'pin_code', ''); // Xóa bỏ hoàn toàn plaintext cũ nếu có
+      storedPinHashRef.current = encoded;
+      setHasPinCode(true);
     },
     [db]
   );
 
   const toggleAppLock = useCallback(
     async (enabled: boolean): Promise<void> => {
+      if (enabled && (!storedPinHashRef.current || storedPinHashRef.current.length === 0)) {
+        throw new Error('Bạn cần thiết lập mã PIN trước khi bật tính năng khóa ứng dụng.');
+      }
       await queries.setAppSetting(db, 'is_app_lock_enabled', enabled ? 'true' : 'false');
       setIsAppLockEnabled(enabled);
       isAppLockEnabledRef.current = enabled;

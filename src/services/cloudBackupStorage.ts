@@ -1,11 +1,13 @@
 import * as SQLite from 'expo-sqlite';
 import * as queries from '../database/queries';
 import { GoogleUser } from './googleDriveService';
+import { encryptToken, decryptToken } from '../utils/tokenStorage';
 
 export interface CloudBackupConfig {
   isLinked: boolean;
   user: GoogleUser | null;
   accessToken: string;
+  refreshToken?: string;
   customClientId: string;
   autoBackupEnabled: boolean;
   autoBackupFrequency: 'on_change' | 'daily' | 'weekly';
@@ -20,6 +22,7 @@ const SETTING_KEYS = {
   USER_NAME: 'gdrive_user_name',
   USER_PICTURE: 'gdrive_user_picture',
   ACCESS_TOKEN: 'gdrive_access_token',
+  REFRESH_TOKEN: 'gdrive_refresh_token',
   CUSTOM_CLIENT_ID: 'gdrive_custom_client_id',
   AUTO_BACKUP_ENABLED: 'gdrive_auto_backup_enabled',
   AUTO_BACKUP_FREQ: 'gdrive_auto_backup_freq',
@@ -38,7 +41,10 @@ export async function loadCloudBackupConfig(
   const userEmail = await queries.getAppSetting(db, SETTING_KEYS.USER_EMAIL, '');
   const userName = await queries.getAppSetting(db, SETTING_KEYS.USER_NAME, '');
   const userPicture = await queries.getAppSetting(db, SETTING_KEYS.USER_PICTURE, '');
-  const accessToken = await queries.getAppSetting(db, SETTING_KEYS.ACCESS_TOKEN, '');
+  const rawAccessToken = await queries.getAppSetting(db, SETTING_KEYS.ACCESS_TOKEN, '');
+  const rawRefreshToken = await queries.getAppSetting(db, SETTING_KEYS.REFRESH_TOKEN, '');
+  const accessToken = await decryptToken(rawAccessToken);
+  const refreshToken = await decryptToken(rawRefreshToken);
   const customClientId = await queries.getAppSetting(db, SETTING_KEYS.CUSTOM_CLIENT_ID, '');
   const autoBackupVal = await queries.getAppSetting(db, SETTING_KEYS.AUTO_BACKUP_ENABLED, 'true');
   const autoBackupFreq = await queries.getAppSetting(db, SETTING_KEYS.AUTO_BACKUP_FREQ, 'on_change');
@@ -67,6 +73,7 @@ export async function loadCloudBackupConfig(
     isLinked,
     user,
     accessToken,
+    refreshToken: refreshToken || undefined,
     customClientId: activeCustomClientId,
     autoBackupEnabled: autoBackupVal === 'true',
     autoBackupFrequency: (autoBackupFreq as any) || 'on_change',
@@ -94,7 +101,13 @@ export async function saveCloudBackupConfig(
   }
 
   if (updates.accessToken !== undefined) {
-    await queries.setAppSetting(db, SETTING_KEYS.ACCESS_TOKEN, updates.accessToken);
+    const encrypted = await encryptToken(updates.accessToken);
+    await queries.setAppSetting(db, SETTING_KEYS.ACCESS_TOKEN, encrypted);
+  }
+
+  if (updates.refreshToken !== undefined) {
+    const encrypted = await encryptToken(updates.refreshToken);
+    await queries.setAppSetting(db, SETTING_KEYS.REFRESH_TOKEN, encrypted);
   }
 
   if (updates.customClientId !== undefined) {
@@ -132,4 +145,5 @@ export async function clearCloudBackupConfig(db: SQLite.SQLiteDatabase): Promise
   await queries.setAppSetting(db, SETTING_KEYS.USER_NAME, '');
   await queries.setAppSetting(db, SETTING_KEYS.USER_PICTURE, '');
   await queries.setAppSetting(db, SETTING_KEYS.ACCESS_TOKEN, '');
+  await queries.setAppSetting(db, SETTING_KEYS.REFRESH_TOKEN, '');
 }

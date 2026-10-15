@@ -14,6 +14,7 @@ export interface BackupData {
     debt_payments_count: number;
     planned_expenses_count?: number;
     contacts_count?: number;
+    payee_mappings_count?: number;
   };
   data: {
     wallets: Wallet[];
@@ -23,6 +24,8 @@ export interface BackupData {
     debt_payments: DebtPayment[];
     planned_expenses?: PlannedExpense[];
     contacts?: ContactPerson[];
+    payee_mappings?: any[];
+    app_settings?: Array<{ key: string; value: string }>;
   };
 }
 
@@ -45,6 +48,14 @@ export const DEFAULT_CATEGORIES: Category[] = [
   { id: 'cat_other_inc', name: 'Thu nhập khác', type: 'income', icon: 'wallet-outline', color: '#22C55E' },
 ];
 
+const SENSITIVE_SETTING_KEYS = new Set([
+  'gdrive_access_token',
+  'gdrive_refresh_token',
+  'pin_code',
+  'pin_hash',
+  'gemini_api_key', // API key không được xuất ra file backup
+]);
+
 /**
  * Trích xuất toàn bộ dữ liệu SQLite hiện tại thành BackupData
  */
@@ -56,6 +67,10 @@ export async function exportAllData(db: SQLite.SQLiteDatabase): Promise<BackupDa
   const debt_payments = await db.getAllAsync<DebtPayment>('SELECT * FROM debt_payments ORDER BY paid_at DESC');
   const planned_expenses = await db.getAllAsync<PlannedExpense>('SELECT * FROM planned_expenses ORDER BY target_date ASC');
   const contacts = await db.getAllAsync<ContactPerson>('SELECT * FROM contacts ORDER BY name ASC');
+  const payee_mappings = await db.getAllAsync<any>('SELECT * FROM payee_mappings ORDER BY use_count DESC');
+
+  const allSettings = await db.getAllAsync<{ key: string; value: string }>('SELECT key, value FROM app_settings');
+  const app_settings = allSettings.filter(s => !SENSITIVE_SETTING_KEYS.has(s.key));
 
   return {
     app: 'multi-wallet-management',
@@ -69,6 +84,7 @@ export async function exportAllData(db: SQLite.SQLiteDatabase): Promise<BackupDa
       debt_payments_count: debt_payments.length,
       planned_expenses_count: planned_expenses.length,
       contacts_count: contacts.length,
+      payee_mappings_count: payee_mappings.length,
     },
     data: {
       wallets,
@@ -78,6 +94,8 @@ export async function exportAllData(db: SQLite.SQLiteDatabase): Promise<BackupDa
       debt_payments,
       planned_expenses,
       contacts,
+      payee_mappings,
+      app_settings,
     },
   };
 }
@@ -90,11 +108,26 @@ export function validateBackupData(data: any): { valid: boolean; message?: strin
     return { valid: false, message: 'Dữ liệu không phải là đối tượng JSON hợp lệ.' };
   }
 
-  // Chấp nhận cả định dạng chuẩn BackupData hoặc định dạng đơn giản có { wallets, transactions, debts }
   const targetData = data.data || data;
 
-  if (!Array.isArray(targetData.wallets) && !Array.isArray(targetData.transactions)) {
-    return { valid: false, message: 'Dữ liệu sao lưu thiếu danh sách ví hoặc giao dịch.' };
+  if (!targetData || typeof targetData !== 'object') {
+    return { valid: false, message: 'Dữ liệu sao lưu không có cấu trúc hợp lệ.' };
+  }
+
+  if (!Array.isArray(targetData.wallets) || !Array.isArray(targetData.transactions)) {
+    return { valid: false, message: 'Dữ liệu sao lưu bắt buộc phải chứa cả danh sách ví (wallets) và giao dịch (transactions).' };
+  }
+
+  for (const w of targetData.wallets) {
+    if (!w || typeof w !== 'object' || !w.id || typeof w.name !== 'string') {
+      return { valid: false, message: 'Dữ liệu danh sách ví bị lỗi hoặc không đúng định dạng.' };
+    }
+  }
+
+  for (const t of targetData.transactions) {
+    if (!t || typeof t !== 'object' || !t.id || !t.wallet_id || typeof t.amount !== 'number') {
+      return { valid: false, message: 'Dữ liệu giao dịch bị lỗi hoặc không đúng định dạng.' };
+    }
   }
 
   return { valid: true };
@@ -113,6 +146,7 @@ export async function importAllData(
   transactionsCount: number;
   debtsCount: number;
   contactsCount?: number;
+  payeeMappingsCount?: number;
 }> {
   const validation = validateBackupData(backupData);
   if (!validation.valid) {
@@ -127,6 +161,8 @@ export async function importAllData(
   const debtPayments: DebtPayment[] = raw.debt_payments || [];
   const plannedExpenses: PlannedExpense[] = raw.planned_expenses || [];
   const contacts: ContactPerson[] = raw.contacts || [];
+  const payeeMappings: any[] = raw.payee_mappings || [];
+  const appSettings: Array<{ key: string; value: string }> = raw.app_settings || [];
 
   // Tắt kiểm tra khóa ngoại trước khi bắt đầu transaction để tránh lỗi FOREIGN KEY constraint failed
   await db.execAsync('PRAGMA foreign_keys = OFF;');
@@ -134,7 +170,7 @@ export async function importAllData(
   try {
     await db.withTransactionAsync(async () => {
       if (mode === 'replace') {
-        // 1. Dọn dẹp các bảng cũ
+        // Dọn dẹp toàn bộ dữ liệu cũ
         await db.runAsync('DELETE FROM debt_payments;');
         await db.runAsync('DELETE FROM transactions;');
         await db.runAsync('DELETE FROM debts;');
@@ -142,9 +178,10 @@ export async function importAllData(
         await db.runAsync('DELETE FROM wallets;');
         await db.runAsync('DELETE FROM categories;');
         await db.runAsync('DELETE FROM contacts;');
+        await db.runAsync('DELETE FROM payee_mappings;');
       }
 
-      // 2. Chèn danh mục
+      // 1. Chèn danh mục
       for (const c of categories) {
         await db.runAsync(
           `INSERT OR REPLACE INTO categories (id, name, type, icon, color)
@@ -153,7 +190,7 @@ export async function importAllData(
         );
       }
 
-      // 3. Chèn ví tiền (bao gồm đầy đủ statement_day, due_day, bank_bin, bank_account, qr_image_uri)
+      // 2. Chèn ví tiền
       for (const w of wallets) {
         await db.runAsync(
           `INSERT OR REPLACE INTO wallets (
@@ -164,8 +201,8 @@ export async function importAllData(
             w.id,
             w.name,
             w.type,
-            w.balance,
-            w.credit_limit || 0,
+            Math.round(w.balance || 0),
+            Math.round(w.credit_limit || 0),
             w.currency || 'VND',
             w.color,
             w.icon,
@@ -175,13 +212,13 @@ export async function importAllData(
             w.bank_bin ?? null,
             w.bank_account ?? null,
             w.qr_image_uri ?? null,
-            w.note || '',
+            w.note ?? null,
             w.created_at || new Date().toISOString(),
           ]
         );
       }
 
-      // 4. Chèn sổ nợ
+      // 3. Chèn các khoản nợ (debts)
       for (const d of debts) {
         await db.runAsync(
           `INSERT OR REPLACE INTO debts (
@@ -192,20 +229,27 @@ export async function importAllData(
             d.id,
             d.type,
             d.person_name,
-            d.person_phone || null,
-            d.initial_amount,
-            d.remaining_amount,
-            d.wallet_id || null,
-            d.due_date || null,
+            d.person_phone ?? null,
+            Math.round(d.initial_amount || 0),
+            Math.round(d.remaining_amount || 0),
+            d.wallet_id ?? null,
+            d.due_date ?? null,
             d.status || 'active',
-            d.note || '',
+            d.note ?? null,
             d.created_at || new Date().toISOString(),
           ]
         );
       }
 
-      // 5. Chèn giao dịch (bao gồm đầy đủ is_amortized, image_uris, và items chia tiền/hóa đơn)
+      // 4. Chèn giao dịch (transactions)
       for (const t of transactions) {
+        let serializedUris: string | null = null;
+        if (Array.isArray(t.image_uris)) {
+          serializedUris = t.image_uris.length > 0 ? JSON.stringify(t.image_uris) : null;
+        } else if (typeof t.image_uris === 'string' && (t.image_uris as string).trim()) {
+          serializedUris = (t.image_uris as string).trim();
+        }
+
         await db.runAsync(
           `INSERT OR REPLACE INTO transactions (
              id, type, amount, wallet_id, to_wallet_id, category_id, debt_id, 
@@ -214,49 +258,49 @@ export async function importAllData(
           [
             t.id,
             t.type,
-            t.amount,
+            Math.round(t.amount || 0),
             t.wallet_id,
-            t.to_wallet_id || null,
-            t.category_id || null,
-            t.debt_id || null,
-            t.note || '',
+            t.to_wallet_id ?? null,
+            t.category_id ?? null,
+            t.debt_id ?? null,
+            t.note ?? null,
             normalizeToIsoString(t.transacted_at),
-            normalizeToIsoString(t.created_at),
+            t.created_at || new Date().toISOString(),
             t.is_amortized ? 1 : 0,
-            t.image_uris || null,
-            t.items || null,
+            serializedUris,
+            t.items ?? null,
           ]
         );
       }
 
-      // 6. Chèn các đợt trả nợ
-      for (const p of debtPayments) {
+      // 5. Chèn lịch sử thanh toán nợ (debt_payments)
+      for (const dp of debtPayments) {
         await db.runAsync(
           `INSERT OR REPLACE INTO debt_payments (id, debt_id, amount, wallet_id, paid_at, note)
            VALUES (?, ?, ?, ?, ?, ?)`,
           [
-            p.id,
-            p.debt_id,
-            p.amount,
-            p.wallet_id,
-            normalizeToIsoString(p.paid_at),
-            p.note || '',
+            dp.id,
+            dp.debt_id,
+            Math.round(dp.amount || 0),
+            dp.wallet_id,
+            dp.paid_at || new Date().toISOString(),
+            dp.note ?? null,
           ]
         );
       }
 
-      // 7. Chèn các khoản dự chi
+      // 6. Chèn dự chi (planned_expenses)
       for (const pe of plannedExpenses) {
         await db.runAsync(
           `INSERT OR REPLACE INTO planned_expenses (
-             id, title, amount, target_date, wallet_id, to_wallet_id, category_id,
-             planned_type, installment_current, installment_total, fee, parent_tx_id,
+             id, title, amount, target_date, wallet_id, to_wallet_id, category_id, 
+             planned_type, installment_current, installment_total, fee, parent_tx_id, 
              status, actual_amount, note, created_at
            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             pe.id,
             pe.title,
-            pe.amount,
+            Math.round(pe.amount || 0),
             pe.target_date,
             pe.wallet_id || null,
             pe.to_wallet_id || null,
@@ -264,17 +308,17 @@ export async function importAllData(
             pe.planned_type || 'expense',
             pe.installment_current ?? null,
             pe.installment_total ?? null,
-            pe.fee || 0,
+            Math.round(pe.fee || 0),
             pe.parent_tx_id || null,
             pe.status || 'pending',
-            pe.actual_amount || null,
+            pe.actual_amount ? Math.round(pe.actual_amount) : null,
             pe.note || '',
             pe.created_at || new Date().toISOString(),
           ]
         );
       }
 
-      // 8. Chèn danh bạ người liên hệ (contacts)
+      // 7. Chèn danh bạ người liên hệ (contacts)
       for (const ct of contacts) {
         await db.runAsync(
           `INSERT OR REPLACE INTO contacts (id, name, phone, note, created_at)
@@ -286,6 +330,41 @@ export async function importAllData(
             ct.note ?? null,
             ct.created_at || new Date().toISOString(),
           ]
+        );
+      }
+
+      // 8. Chèn payee_mappings đã học được
+      for (const pm of payeeMappings) {
+        if (!pm.id || !pm.payee_name) continue;
+        await db.runAsync(
+          `INSERT OR REPLACE INTO payee_mappings (
+             id, payee_name, payee_display_name, account_number, bank_name,
+             suggested_note, suggested_category_id, suggested_wallet_id,
+             use_count, recent_notes, last_used_at, created_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            pm.id,
+            pm.payee_name,
+            pm.payee_display_name || null,
+            pm.account_number || null,
+            pm.bank_name || null,
+            pm.suggested_note || '',
+            pm.suggested_category_id || null,
+            pm.suggested_wallet_id || null,
+            pm.use_count || 1,
+            pm.recent_notes || null,
+            pm.last_used_at || new Date().toISOString(),
+            pm.created_at || new Date().toISOString(),
+          ]
+        );
+      }
+
+      // 9. Chèn cấu hình ứng dụng (loại trừ các token nhạy cảm)
+      for (const setting of appSettings) {
+        if (!setting.key || SENSITIVE_SETTING_KEYS.has(setting.key)) continue;
+        await db.runAsync(
+          'INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)',
+          [setting.key, setting.value]
         );
       }
     });
@@ -300,6 +379,7 @@ export async function importAllData(
     transactionsCount: transactions.length,
     debtsCount: debts.length,
     contactsCount: contacts.length,
+    payeeMappingsCount: payeeMappings.length,
   };
 }
 
@@ -316,6 +396,8 @@ export async function resetDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
       await db.runAsync('DELETE FROM planned_expenses;');
       await db.runAsync('DELETE FROM wallets;');
       await db.runAsync('DELETE FROM categories;');
+      await db.runAsync('DELETE FROM contacts;');
+      await db.runAsync('DELETE FROM payee_mappings;');
 
       for (const c of DEFAULT_CATEGORIES) {
         await db.runAsync(

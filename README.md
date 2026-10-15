@@ -1,8 +1,8 @@
-# MultiWallet (v1.3.0(3)) - Personal Finance & Multi-Source Wallet Management
+# MultiWallet (v1.3.1) - Personal Finance & Multi-Source Wallet Management
 
 A modern, offline-first mobile application built with **React Native (Expo SDK 57)**, **TypeScript**, and **Expo SQLite**, designed with a clean, tactile Neo-Brutalist design system.
 
-MultiWallet provides complete control over personal finances, multiple wallet sources, credit cards, installments, loans, bill splitting, and spending habits with 100% on-device privacy.
+MultiWallet provides complete control over personal finances, multiple wallet sources, credit cards, installments, loans, bill splitting, and spending habits with an offline-first architecture and transparent privacy controls.
 
 ---
 
@@ -36,11 +36,16 @@ MultiWallet provides complete control over personal finances, multiple wallet so
 - **Smart Payee Mapping**: Automatically learns recipient names and bank accounts to auto-fill transaction notes and categories on repeat transfers.
 - **Cross-App Share Intent**: Share payment receipts or screenshots directly from banking apps into MultiWallet to trigger instant OCR logging.
 
-### 5. Security, Cloud Sync & Android Widget
+### 5. Security & Privacy Architecture
 
-- **Biometric & PIN Lock**: Fingerprint unlock and on-screen PIN keypad with smart media picker bypass.
+- **Offline-First & Local Storage**: 100% of financial transactions, wallets, balances, and debts are stored strictly on-device in SQLite.
+- **Salted PIN Hashing & Biometrics**: PIN codes are hashed using salted SHA-256 with constant-time verification. Support for hardware fingerprint biometrics with secure overlay protection.
+- **Encrypted Credentials**: Cloud tokens and API keys are protected; sensitive values are automatically redacted from error logs.
+- **Transparent Cloud Integrations (Optional)**:
+  - *Google Drive*: Private OAuth backup to user's Google Drive app data storage with encrypted tokens and automatic refresh.
+  - *Google Gemini AI*: Calls Gemini API with the receipt image or text prompt only when OCR or Copilot is actively used.
+  - *Cloudinary*: Optional receipt image hosting offloading configured directly by the user.
 - **Android Home Widget (4x2)**: Real-time balance overview, privacy mask toggle, and 1-tap expense logging shortcuts directly on the home screen.
-- **Automated Backup & Cloud Sync**: Local JSON export/import, Google Drive OAuth cloud backup, and direct Cloudinary image offloading.
 - **Offline Habit Reminders**: Local notification engine detecting routine spending patterns with smart absence suppression.
 
 ---
@@ -63,16 +68,21 @@ MultiWallet provides complete control over personal finances, multiple wallet so
 ### Prerequisites
 
 - Node.js 20+
-- Expo Go on Android or iOS
+- Android Studio & Android SDK (Platform 35 / API 35) or a physical Android test device
+- *Note*: Due to native modules (Android Widget, Local Authentication, Native Share Intent, and SQLite WAL mode), this app requires an **Expo Development Build (`expo-dev-client`)** or a pre-built APK. It cannot run inside standard Expo Go.
 
-### Run Locally
+### Run Locally (Development Build)
 
 ```bash
 # 1. Install dependencies
 npm install
 
-# 2. Start Expo development server
-npx expo start
+# 2. Run unit tests & type check
+npm test
+npm run typecheck
+
+# 3. Generate native android project and run on device/emulator
+npx expo run:android
 ```
 
 ### Build Android APK

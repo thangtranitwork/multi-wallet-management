@@ -25,8 +25,32 @@ on:
       - "v*"
 
 jobs:
+  test:
+    name: Test & Typecheck
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+
+      - name: Install NPM Dependencies
+        run: npm ci || npm install
+
+      - name: Run Typecheck
+        run: npm run typecheck
+
+      - name: Run Unit Tests
+        run: npm test
+
   build:
     name: Build Android APK
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: write

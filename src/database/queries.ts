@@ -1,6 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 import dayjs from 'dayjs';
 import { normalizeToIsoString } from '../utils/dateUtils';
+import { generateId } from '../utils/idGenerator';
 import {
   Wallet,
   Transaction,
@@ -117,15 +118,16 @@ export async function adjustWalletBalance(
     const wallet = await getWalletById(db, walletId);
     if (!wallet) return;
 
-    const diff = newBalance - wallet.balance;
+    const roundedNewBalance = Math.round(newBalance);
+    const diff = roundedNewBalance - Math.round(wallet.balance);
     if (diff === 0) return;
 
     await db.runAsync(
       'UPDATE wallets SET balance = ? WHERE id = ?',
-      [newBalance, walletId]
+      [roundedNewBalance, walletId]
     );
 
-    const txId = 'adj_' + Date.now();
+    const txId = generateId('adj');
     const now = new Date().toISOString();
     const isIncome = diff > 0;
     const txType = includeInReports ? (isIncome ? 'income' : 'expense') : 'adjustment';
@@ -336,26 +338,41 @@ export async function createTransaction(
 ): Promise<void> {
   await db.withTransactionAsync(async () => {
     const now = new Date().toISOString();
+    const cleanAmount = Math.round(tx.amount);
+    if (isNaN(cleanAmount) || cleanAmount <= 0) {
+      throw new Error('Số tiền giao dịch phải lớn hơn 0');
+    }
 
     if (tx.type === 'expense') {
       await db.runAsync(
         'UPDATE wallets SET balance = balance - ? WHERE id = ?',
-        [tx.amount, tx.wallet_id]
+        [cleanAmount, tx.wallet_id]
       );
     } else if (tx.type === 'income') {
       await db.runAsync(
         'UPDATE wallets SET balance = balance + ? WHERE id = ?',
-        [tx.amount, tx.wallet_id]
+        [cleanAmount, tx.wallet_id]
       );
-    } else if (tx.type === 'transfer' && tx.to_wallet_id) {
+    } else if (tx.type === 'transfer') {
+      if (!tx.to_wallet_id) {
+        throw new Error('Giao dịch chuyển tiền yêu cầu chọn ví nhận');
+      }
+      if (tx.wallet_id === tx.to_wallet_id) {
+        throw new Error('Ví gửi và ví nhận không được trùng nhau');
+      }
+      const toWallet = await getWalletById(db, tx.to_wallet_id);
+      if (!toWallet) {
+        throw new Error('Ví nhận không tồn tại');
+      }
+
       // Trừ ví nguồn, cộng ví đích
       await db.runAsync(
         'UPDATE wallets SET balance = balance - ? WHERE id = ?',
-        [tx.amount, tx.wallet_id]
+        [cleanAmount, tx.wallet_id]
       );
       await db.runAsync(
         'UPDATE wallets SET balance = balance + ? WHERE id = ?',
-        [tx.amount, tx.to_wallet_id]
+        [cleanAmount, tx.to_wallet_id]
       );
     }
 
@@ -372,7 +389,7 @@ export async function createTransaction(
       [
         tx.id,
         tx.type,
-        tx.amount,
+        cleanAmount,
         tx.wallet_id,
         tx.to_wallet_id || null,
         tx.category_id || null,
@@ -420,25 +437,27 @@ export async function deleteTransaction(
     );
     if (!tx) return;
 
+    const cleanAmount = Math.round(tx.amount);
+
     // Hoàn tác số dư
     if (tx.type === 'expense' || tx.type === 'debt_lend' || tx.type === 'debt_repay') {
       await db.runAsync(
         'UPDATE wallets SET balance = balance + ? WHERE id = ?',
-        [tx.amount, tx.wallet_id]
+        [cleanAmount, tx.wallet_id]
       );
     } else if (tx.type === 'income' || tx.type === 'debt_borrow' || tx.type === 'debt_collect') {
       await db.runAsync(
         'UPDATE wallets SET balance = balance - ? WHERE id = ?',
-        [tx.amount, tx.wallet_id]
+        [cleanAmount, tx.wallet_id]
       );
     } else if (tx.type === 'transfer' && tx.to_wallet_id) {
       await db.runAsync(
         'UPDATE wallets SET balance = balance + ? WHERE id = ?',
-        [tx.amount, tx.wallet_id]
+        [cleanAmount, tx.wallet_id]
       );
       await db.runAsync(
         'UPDATE wallets SET balance = balance - ? WHERE id = ?',
-        [tx.amount, tx.to_wallet_id]
+        [cleanAmount, tx.to_wallet_id]
       );
     }
 
@@ -484,20 +503,25 @@ export async function updateTransactionWallet(
     if (tx.type === 'transfer') {
       const finalToWalletId =
         newToWalletId !== undefined ? newToWalletId : oldToWalletId;
+      if (!finalToWalletId) {
+        throw new Error('Giao dịch chuyển tiền yêu cầu chọn ví nhận');
+      }
       if (newWalletId === finalToWalletId) {
         throw new Error('Ví gửi và ví nhận không được trùng nhau');
       }
+
+      const cleanAmount = Math.round(tx.amount);
 
       if (walletChanged) {
         // Hoàn lại tiền cho ví gửi cũ
         await db.runAsync(
           'UPDATE wallets SET balance = balance + ? WHERE id = ?',
-          [tx.amount, oldWalletId]
+          [cleanAmount, oldWalletId]
         );
         // Trừ tiền ở ví gửi mới
         await db.runAsync(
           'UPDATE wallets SET balance = balance - ? WHERE id = ?',
-          [tx.amount, newWalletId]
+          [cleanAmount, newWalletId]
         );
       }
 
@@ -506,13 +530,13 @@ export async function updateTransactionWallet(
           // Trừ tiền ở ví nhận cũ
           await db.runAsync(
             'UPDATE wallets SET balance = balance - ? WHERE id = ?',
-            [tx.amount, oldToWalletId]
+            [cleanAmount, oldToWalletId]
           );
         }
         // Cộng tiền vào ví nhận mới
         await db.runAsync(
           'UPDATE wallets SET balance = balance + ? WHERE id = ?',
-          [tx.amount, newToWalletId]
+          [cleanAmount, newToWalletId]
         );
       }
 
@@ -521,6 +545,7 @@ export async function updateTransactionWallet(
         [newWalletId, finalToWalletId || null, transactionId]
       );
     } else {
+      const cleanAmount = Math.round(tx.amount);
       if (
         tx.type === 'expense' ||
         tx.type === 'debt_lend' ||
@@ -529,12 +554,12 @@ export async function updateTransactionWallet(
         // Ví cũ được hoàn lại tiền
         await db.runAsync(
           'UPDATE wallets SET balance = balance + ? WHERE id = ?',
-          [tx.amount, oldWalletId]
+          [cleanAmount, oldWalletId]
         );
         // Ví mới bị trừ tiền
         await db.runAsync(
           'UPDATE wallets SET balance = balance - ? WHERE id = ?',
-          [tx.amount, newWalletId]
+          [cleanAmount, newWalletId]
         );
       } else if (
         tx.type === 'income' ||
@@ -544,12 +569,12 @@ export async function updateTransactionWallet(
         // Ví cũ bị trừ tiền lại
         await db.runAsync(
           'UPDATE wallets SET balance = balance - ? WHERE id = ?',
-          [tx.amount, oldWalletId]
+          [cleanAmount, oldWalletId]
         );
         // Ví mới được cộng tiền
         await db.runAsync(
           'UPDATE wallets SET balance = balance + ? WHERE id = ?',
-          [tx.amount, newWalletId]
+          [cleanAmount, newWalletId]
         );
       }
 
@@ -601,16 +626,26 @@ export async function updateTransactionDetails(
 
     const targetWalletId = updates.wallet_id !== undefined ? updates.wallet_id : tx.wallet_id;
     const targetToWalletId = updates.to_wallet_id !== undefined ? updates.to_wallet_id : tx.to_wallet_id;
-    const targetAmount = updates.amount !== undefined ? updates.amount : tx.amount;
+    const targetAmount = Math.round(updates.amount !== undefined ? updates.amount : tx.amount);
+    const oldAmount = Math.round(tx.amount);
+
+    if (tx.type === 'transfer') {
+      if (!targetToWalletId) {
+        throw new Error('Giao dịch chuyển tiền yêu cầu chọn ví nhận');
+      }
+      if (targetWalletId === targetToWalletId) {
+        throw new Error('Ví gửi và ví nhận không được trùng nhau');
+      }
+    }
 
     // 1. Hoàn tác ảnh hưởng số dư cũ của giao dịch trên ví cũ
     if (tx.type === 'expense' || tx.type === 'debt_lend' || tx.type === 'debt_repay') {
-      await db.runAsync('UPDATE wallets SET balance = balance + ? WHERE id = ?', [tx.amount, tx.wallet_id]);
+      await db.runAsync('UPDATE wallets SET balance = balance + ? WHERE id = ?', [oldAmount, tx.wallet_id]);
     } else if (tx.type === 'income' || tx.type === 'debt_borrow' || tx.type === 'debt_collect') {
-      await db.runAsync('UPDATE wallets SET balance = balance - ? WHERE id = ?', [tx.amount, tx.wallet_id]);
+      await db.runAsync('UPDATE wallets SET balance = balance - ? WHERE id = ?', [oldAmount, tx.wallet_id]);
     } else if (tx.type === 'transfer' && tx.to_wallet_id) {
-      await db.runAsync('UPDATE wallets SET balance = balance + ? WHERE id = ?', [tx.amount, tx.wallet_id]);
-      await db.runAsync('UPDATE wallets SET balance = balance - ? WHERE id = ?', [tx.amount, tx.to_wallet_id]);
+      await db.runAsync('UPDATE wallets SET balance = balance + ? WHERE id = ?', [oldAmount, tx.wallet_id]);
+      await db.runAsync('UPDATE wallets SET balance = balance - ? WHERE id = ?', [oldAmount, tx.to_wallet_id]);
     }
 
     // 2. Áp dụng ảnh hưởng số dư mới với targetWalletId và targetAmount
@@ -693,9 +728,10 @@ export async function splitTransactionIntoDebts(
     const splitNames: string[] = [];
     for (let i = 0; i < splits.length; i++) {
       const item = splits[i];
-      if (item.amount <= 0 || !item.personName.trim()) continue;
+      const cleanSplitAmount = Math.round(item.amount);
+      if (cleanSplitAmount <= 0 || !item.personName.trim()) continue;
 
-      const debtId = `debt_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 6)}`;
+      const debtId = generateId('debt');
 
       const debtNote = item.note?.trim()
         ? item.note.trim()
@@ -713,8 +749,8 @@ export async function splitTransactionIntoDebts(
           debtId,
           item.personName.trim(),
           item.personPhone?.trim() || null,
-          item.amount,
-          item.amount,
+          cleanSplitAmount,
+          cleanSplitAmount,
           tx.wallet_id,
           debtNote,
           now,
@@ -723,7 +759,7 @@ export async function splitTransactionIntoDebts(
 
       // Thêm vào bảng transactions bản ghi loại 'debt_lend' tương ứng
       // Không trừ thêm tiền vào ví vì số tiền này đã nằm trong khoản chi ban đầu của tx gốc
-      const splitTxId = `tx_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 6)}`;
+      const splitTxId = generateId('tx');
       const txNote = item.note?.trim()
         ? item.note.trim()
         : item.items
@@ -735,7 +771,7 @@ export async function splitTransactionIntoDebts(
          VALUES (?, 'debt_lend', ?, ?, ?, ?, ?, ?, ?)`,
         [
           splitTxId,
-          item.amount,
+          cleanSplitAmount,
           tx.wallet_id,
           debtId,
           txNote,
@@ -837,6 +873,10 @@ export async function createDebt(
 ): Promise<void> {
   await db.withTransactionAsync(async () => {
     const now = new Date().toISOString();
+    const cleanInitial = Math.round(debt.initial_amount);
+    if (isNaN(cleanInitial) || cleanInitial <= 0) {
+      throw new Error('Số tiền ghi nợ phải lớn hơn 0');
+    }
     const effectiveWalletId = debt.wallet_id?.trim() || null;
 
     // 1. Lưu vào bảng debts TRƯỚC (để transactions.debt_id không bị lỗi FOREIGN KEY constraint)
@@ -848,8 +888,8 @@ export async function createDebt(
         debt.type,
         debt.person_name,
         debt.person_phone || null,
-        debt.initial_amount,
-        debt.initial_amount,
+        cleanInitial,
+        cleanInitial,
         effectiveWalletId,
         debt.due_date || null,
         debt.note || '',
@@ -859,12 +899,12 @@ export async function createDebt(
 
     // 2. Cập nhật số dư ví nếu có liên kết ví và ghi nhận giao dịch
     if (effectiveWalletId) {
-      const txId = `tx_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const txId = generateId('tx');
       if (debt.type === 'lend') {
         // Cho vay: trừ tiền từ ví
         await db.runAsync(
           'UPDATE wallets SET balance = balance - ? WHERE id = ?',
-          [debt.initial_amount, effectiveWalletId]
+          [cleanInitial, effectiveWalletId]
         );
         // Lưu giao dịch tương ứng
         await db.runAsync(
@@ -873,7 +913,7 @@ export async function createDebt(
           [
             txId,
             'debt_lend',
-            debt.initial_amount,
+            cleanInitial,
             effectiveWalletId,
             debt.id,
             `Cho ${debt.person_name} mượn: ${debt.note || ''}`.trim(),
@@ -885,7 +925,7 @@ export async function createDebt(
         // Đi vay: cộng tiền vào ví
         await db.runAsync(
           'UPDATE wallets SET balance = balance + ? WHERE id = ?',
-          [debt.initial_amount, effectiveWalletId]
+          [cleanInitial, effectiveWalletId]
         );
         await db.runAsync(
           `INSERT INTO transactions (id, type, amount, wallet_id, debt_id, note, transacted_at, created_at)
@@ -893,7 +933,7 @@ export async function createDebt(
           [
             txId,
             'debt_borrow',
-            debt.initial_amount,
+            cleanInitial,
             effectiveWalletId,
             debt.id,
             `Vay tiền từ ${debt.person_name}: ${debt.note || ''}`.trim(),
@@ -919,11 +959,15 @@ export async function processDebtPayment(
     const debt = await getDebtById(db, params.debtId);
     if (!debt) throw new Error('Khoản nợ không tồn tại');
 
-    const paymentAmount = Math.min(params.amount, debt.remaining_amount);
-    const newRemaining = Math.max(0, debt.remaining_amount - paymentAmount);
+    const cleanPayment = Math.round(params.amount);
+    if (isNaN(cleanPayment) || cleanPayment <= 0) {
+      throw new Error('Số tiền thanh toán nợ phải lớn hơn 0');
+    }
+    const paymentAmount = Math.min(cleanPayment, Math.round(debt.remaining_amount));
+    const newRemaining = Math.max(0, Math.round(debt.remaining_amount) - paymentAmount);
     const newStatus = newRemaining <= 0 ? 'settled' : 'partially_paid';
     const now = new Date().toISOString();
-    const paymentId = 'dp_' + Date.now();
+    const paymentId = generateId('dp');
 
     // 1. Cập nhật bảng debts
     await db.runAsync(
@@ -949,7 +993,7 @@ export async function processDebtPayment(
         `INSERT INTO transactions (id, type, amount, wallet_id, debt_id, note, transacted_at, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          'tx_' + Date.now(),
+          generateId('tx'),
           'debt_collect',
           paymentAmount,
           params.walletId,
@@ -969,7 +1013,7 @@ export async function processDebtPayment(
         `INSERT INTO transactions (id, type, amount, wallet_id, debt_id, note, transacted_at, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          'tx_' + Date.now(),
+          generateId('tx'),
           'debt_repay',
           paymentAmount,
           params.walletId,
@@ -1003,20 +1047,21 @@ export async function deleteDebt(
 
       if (debt && debt.wallet_id && debt.remaining_amount > 0) {
         const now = new Date().toISOString();
-        const txId = `tx_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+        const txId = generateId('tx');
+        const cleanRemaining = Math.round(debt.remaining_amount);
 
         if (debt.type === 'lend') {
           // Cho vay nhưng xóa → hoàn tiền đã cho vay (chưa thu được) vào lại ví
           await db.runAsync(
             'UPDATE wallets SET balance = balance + ? WHERE id = ?',
-            [debt.remaining_amount, debt.wallet_id]
+            [cleanRemaining, debt.wallet_id]
           );
           await db.runAsync(
             `INSERT INTO transactions (id, type, amount, wallet_id, debt_id, note, transacted_at, created_at)
              VALUES (?, 'income', ?, ?, ?, ?, ?, ?)`,
             [
               txId,
-              debt.remaining_amount,
+              cleanRemaining,
               debt.wallet_id,
               id,
               `Hoàn tiền xóa khoản cho vay: ${debt.person_name}`,
@@ -1028,14 +1073,14 @@ export async function deleteDebt(
           // Đi vay nhưng xóa → trừ lại số tiền vay chưa trả ra khỏi ví
           await db.runAsync(
             'UPDATE wallets SET balance = balance - ? WHERE id = ?',
-            [debt.remaining_amount, debt.wallet_id]
+            [cleanRemaining, debt.wallet_id]
           );
           await db.runAsync(
             `INSERT INTO transactions (id, type, amount, wallet_id, debt_id, note, transacted_at, created_at)
              VALUES (?, 'expense', ?, ?, ?, ?, ?, ?)`,
             [
               txId,
-              debt.remaining_amount,
+              cleanRemaining,
               debt.wallet_id,
               id,
               `Hoàn tiền xóa khoản đi vay: ${debt.person_name}`,
@@ -1931,6 +1976,11 @@ export async function createPlannedExpense(
     note?: string;
   }
 ): Promise<void> {
+  const cleanAmount = Math.round(expense.amount);
+  if (isNaN(cleanAmount) || cleanAmount <= 0) {
+    throw new Error('Số tiền dự chi phải lớn hơn 0');
+  }
+  const cleanFee = Math.round(expense.fee || 0);
   const now = new Date().toISOString();
   await db.runAsync(
     `INSERT INTO planned_expenses (
@@ -1941,7 +1991,7 @@ export async function createPlannedExpense(
     [
       expense.id,
       expense.title,
-      expense.amount,
+      cleanAmount,
       expense.target_date,
       expense.wallet_id || null,
       expense.to_wallet_id || null,
@@ -1949,7 +1999,7 @@ export async function createPlannedExpense(
       expense.planned_type || 'expense',
       expense.installment_current ?? null,
       expense.installment_total ?? null,
-      expense.fee || 0,
+      cleanFee,
       expense.parent_tx_id || null,
       expense.note || '',
       now,
@@ -2017,7 +2067,8 @@ export async function executePlannedExpense(
 
     const now = new Date().toISOString();
     const transactedAt = params.transactedAt || now;
-    const txId = 'tx_' + Date.now();
+    const txId = generateId('tx');
+    const cleanActualAmount = Math.round(params.actualAmount);
 
     // 1. Cập nhật trạng thái khoản dự chi thành 'executed'
     await db.runAsync(
@@ -2026,18 +2077,18 @@ export async function executePlannedExpense(
            actual_amount = ?,
            wallet_id = ?
        WHERE id = ?`,
-      [params.actualAmount, params.walletId, params.id]
+      [cleanActualAmount, params.walletId, params.id]
     );
 
     if (planned.planned_type === 'credit_payment' && planned.to_wallet_id) {
       // 2a. Nếu là trả nợ thẻ tín dụng: Chuyển tiền từ ví nguồn (Ngân hàng) sang ví đích (Thẻ tín dụng)
       await db.runAsync(
         'UPDATE wallets SET balance = balance - ? WHERE id = ?',
-        [params.actualAmount, params.walletId]
+        [cleanActualAmount, params.walletId]
       );
       await db.runAsync(
         'UPDATE wallets SET balance = balance + ? WHERE id = ?',
-        [params.actualAmount, planned.to_wallet_id]
+        [cleanActualAmount, planned.to_wallet_id]
       );
 
       // 3a. Thêm giao dịch chuyển tiền (Transfer)
@@ -2046,7 +2097,7 @@ export async function executePlannedExpense(
          VALUES (?, 'transfer', ?, ?, ?, ?, ?, ?, ?)`,
         [
           txId,
-          params.actualAmount,
+          cleanActualAmount,
           params.walletId,
           planned.to_wallet_id,
           planned.category_id || null,
@@ -2059,7 +2110,7 @@ export async function executePlannedExpense(
       // 2b. Chi tiêu thực tế thông thường
       await db.runAsync(
         'UPDATE wallets SET balance = balance - ? WHERE id = ?',
-        [params.actualAmount, params.walletId]
+        [cleanActualAmount, params.walletId]
       );
 
       // 3b. Thêm giao dịch chi tiêu thực tế
@@ -2068,7 +2119,7 @@ export async function executePlannedExpense(
          VALUES (?, 'expense', ?, ?, NULL, ?, ?, ?, ?)`,
         [
           txId,
-          params.actualAmount,
+          cleanActualAmount,
           params.walletId,
           planned.category_id || null,
           `[Dự chi] ${planned.title}${params.note ? ` - ${params.note}` : ''}`.trim(),
@@ -2099,18 +2150,22 @@ export async function createCreditExpenseWithPlan(
 ): Promise<void> {
   await db.withTransactionAsync(async () => {
     const now = new Date().toISOString();
-    const txId = 'tx_' + Date.now();
+    const txId = generateId('tx');
     const creditWallet = await getWalletById(db, params.creditWalletId);
     if (!creditWallet) throw new Error('Ví thẻ tín dụng không tồn tại');
 
+    const cleanAmount = Math.round(params.amount);
+    if (isNaN(cleanAmount) || cleanAmount <= 0) {
+      throw new Error('Số tiền chi tiêu thẻ tín dụng phải lớn hơn 0');
+    }
     const isInstallment = !!params.isInstallment && (params.installmentCount || 1) > 1;
     const count = isInstallment ? (params.installmentCount || 1) : 1;
     const paidCount = isInstallment ? Math.min(count - 1, Math.max(0, params.paidInstallmentCount || 0)) : 0;
-    const fee = isInstallment ? (params.feePerInstallment || 0) : 0;
+    const fee = isInstallment ? Math.round(params.feePerInstallment || 0) : 0;
     const totalFee = fee * count;
 
-    const basePrincipalPerTerm = Math.floor(params.amount / count);
-    const remainder = params.amount - (basePrincipalPerTerm * (count - 1));
+    const basePrincipalPerTerm = Math.floor(cleanAmount / count);
+    const remainder = cleanAmount - (basePrincipalPerTerm * (count - 1));
 
     // Tính tổng dư nợ các kỳ CHƯA thanh toán còn lại
     let remainingCreditAmount = 0;
@@ -2165,7 +2220,7 @@ export async function createCreditExpenseWithPlan(
     const d = parseInt(parts[2], 10);
 
     for (let i = paidCount + 1; i <= count; i++) {
-      const planId = 'plan_' + Date.now() + '_' + i;
+      const planId = generateId('plan');
       const termPrincipal = i === count ? remainder : basePrincipalPerTerm;
       const termTotal = termPrincipal + fee;
 
@@ -2515,7 +2570,7 @@ export async function upsertPayeeMapping(
     );
   } else {
     // Thêm mới
-    const id = `payee_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const id = generateId('payee');
     const recentList = [{ note, count: 1 }];
 
     await db.runAsync(

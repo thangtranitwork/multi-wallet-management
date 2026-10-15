@@ -35,6 +35,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { THEME } from '../constants';
 import { logger } from '../services/loggerService';
 import { hapticLight, hapticMedium, hapticSuccess, hapticError } from '../utils/haptics';
+import { decryptBackupPayload } from '../utils/backupEncryption';
 import {
   getGeminiApiKey,
   saveGeminiApiKey,
@@ -607,16 +608,16 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
         content = await resp.text();
       }
 
-      let parsed: any;
+      let dataToRestore: any;
       try {
-        parsed = JSON.parse(content);
-      } catch {
-        showAlert('Lỗi file', 'Nội dung file không đúng định dạng JSON.');
+        dataToRestore = await decryptBackupPayload(content);
+      } catch (decryptErr: any) {
+        showAlert('Lỗi file sao lưu', decryptErr?.message || 'Nội dung file không đúng định dạng hoặc không thể giải mã.');
         setIsProcessing(false);
         return;
       }
 
-      const raw = parsed.data || parsed;
+      const raw = dataToRestore.data || dataToRestore;
       const wCount = (raw.wallets || []).length;
       const tCount = (raw.transactions || []).length;
       const dCount = (raw.debts || []).length;
@@ -1868,6 +1869,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
             {expandedSections.export && (
               <View style={styles.cardBody}>
                 <View style={styles.actionButtonsCol}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8, paddingHorizontal: 4 }}>
+                    <Ionicons name="shield-checkmark" size={14} color="#10B981" />
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#047857' }}>
+                      Bản sao lưu được mã hóa đầu cuối (E2EE) an toàn
+                    </Text>
+                  </View>
                   <Pressable
                     style={styles.actionBtnPrimary}
                     onPress={handleExportFile}
@@ -2364,7 +2371,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
         <View style={styles.footerContainer}>
           <Text style={styles.footerAppName}>Ví Của Tôi • Multi-Wallet Manager</Text>
           <Text style={styles.footerNote}>
-            Phiên bản 1.3.0(3) • SQLite Offline Local Storage
+            Phiên bản 1.3.1 • SQLite Offline Local Storage
           </Text>
           <Text style={styles.footerPrivacy}>
             100% dữ liệu được lưu trữ trên thiết bị của bạn, hoàn toàn riêng tư và không tải lên máy chủ ngoài.
@@ -2421,7 +2428,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
             </View>
 
             <Text style={styles.modalSubtitle}>
-              Bạn có thể sao chép chuỗi JSON này để lưu vào ghi chú cá nhân hoặc sao lưu thủ công.
+              Bạn có thể sao chép chuỗi JSON này để lưu vào ghi chú cá nhân hoặc sao lưu thủ công. Dữ liệu đã được mã hóa đầu cuối (E2EE) bảo vệ bí mật giao dịch của bạn.
             </Text>
 
             <TextInput

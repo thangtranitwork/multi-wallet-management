@@ -1,4 +1,5 @@
 import { BillMember, BillItem, BillAdjustment, BillMemberShare } from '../types';
+import { generateId } from './idGenerator';
 
 export interface SplitCalculationResult {
   shares: BillMemberShare[];
@@ -326,7 +327,7 @@ export function buildMemberItemizedPayload(
 
   if (userItems.length === 0 && share.finalAmount > 0) {
     userItems.push({
-      id: `split_item_${Date.now()}_${share.memberId}`,
+      id: generateId(`split_item_${share.memberId}`),
       name: 'Phần chia hóa đơn',
       quantity: 1,
       price: share.finalAmount,

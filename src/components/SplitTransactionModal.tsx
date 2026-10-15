@@ -24,6 +24,7 @@ import {
 import { THEME, formatVND } from '../constants';
 import { hapticLight, hapticSuccess, hapticError } from '../utils/haptics';
 import { calculateItemizedBillShares, buildMemberItemizedPayload } from '../utils/splitBillCalculator';
+import { generateId } from '../utils/idGenerator';
 import { ContactPickerSheet } from './ContactPickerSheet';
 import { ErrorBoundary } from './ErrorBoundary';
 import { InvoicePrintModal } from './InvoicePrintModal';
@@ -122,7 +123,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
             // Danh sách items đơn thuần
             setBillItems(
               parsed.map((it: any, idx: number) => ({
-                id: it.id || `item_${idx}_${Date.now()}`,
+                id: it.id || generateId('item'),
                 name: it.name || `Món #${idx + 1}`,
                 quantity: Math.max(1, Number(it.quantity) || 1),
                 price: Math.max(0, Number(it.price) || 0),
@@ -147,7 +148,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
                     : validMemberIds;
 
                   return {
-                    id: it.id || `item_${idx}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                    id: it.id || generateId('item'),
                     name: it.name || `Món #${idx + 1}`,
                     quantity: Math.max(1, Number(it.quantity) || 1),
                     price: Math.max(0, Number(it.price) || 0),
@@ -159,7 +160,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
             if (Array.isArray(parsed.adjustments)) {
               setBillAdjustments(
                 parsed.adjustments.map((adj: any, idx: number) => ({
-                  id: adj.id || `adj_${idx}_${Date.now()}`,
+                  id: adj.id || generateId('adj'),
                   type: adj.type === 'discount' ? 'discount' : 'fee',
                   name: adj.name || (adj.type === 'discount' ? 'Giảm giá' : 'Phụ phí'),
                   amount: Math.max(0, Number(adj.amount) || 0),
@@ -175,7 +176,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
         // Mặc định tạo 1 món tương đương giao dịch gốc để người dùng dễ chỉnh sửa
         setBillItems([
           {
-            id: `item_init_${Date.now()}`,
+            id: generateId('item'),
             name: transaction.note?.trim() || transaction.category_name || 'Món chính',
             quantity: 1,
             price: transaction.amount,
@@ -265,7 +266,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
 
     hapticSuccess();
     const newItem: BillItem = {
-      id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: generateId('item'),
       name,
       quantity: Math.max(1, qty),
       price,
@@ -400,7 +401,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
 
     hapticSuccess();
     const newAdj: BillAdjustment = {
-      id: `adj_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: generateId('adj'),
       type: adjType,
       name,
       amount,
@@ -434,7 +435,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
         return;
       }
       const newMember: BillMember = {
-        id: `member_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        id: generateId('member'),
         name: contact.name,
         phone: contact.phone,
         isPayer: false,
@@ -457,10 +458,10 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
       const existingNames = new Set(billMembers.map(m => m.name.toLowerCase()));
       const newMembers: BillMember[] = [];
 
-      contacts.forEach((c, idx) => {
+      contacts.forEach((c) => {
         if (!existingNames.has(c.name.toLowerCase())) {
           newMembers.push({
-            id: `member_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`,
+            id: generateId('member'),
             name: c.name,
             phone: c.phone,
             isPayer: false,
@@ -657,7 +658,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
 
   const addQuickMember = () => {
     hapticLight();
-    const newId = Date.now().toString();
+    const newId = generateId('member');
     const nextMembers = [
       ...quickMembers,
       { id: newId, name: '', phone: '', amountStr: '0', note: '' },

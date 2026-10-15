@@ -15,6 +15,8 @@ import {
 } from './cloudinaryService';
 import { parseImageUris } from '../utils/imageUtils';
 import { normalizeToIsoString } from '../utils/dateUtils';
+import { generateId } from '../utils/idGenerator';
+import { encryptToken, decryptToken } from '../utils/tokenStorage';
 
 export const GEMINI_SETTING_KEYS = {
   API_KEY: 'gemini_api_key',
@@ -138,11 +140,14 @@ export function formatGeminiErrorMessage(err: any): string {
 }
 
 export async function getGeminiApiKey(db: SQLite.SQLiteDatabase): Promise<string> {
-  return await getAppSetting(db, GEMINI_SETTING_KEYS.API_KEY, '');
+  const rawKey = await getAppSetting(db, GEMINI_SETTING_KEYS.API_KEY, '');
+  return await decryptToken(rawKey);
 }
 
 export async function saveGeminiApiKey(db: SQLite.SQLiteDatabase, apiKey: string): Promise<void> {
-  await setAppSetting(db, GEMINI_SETTING_KEYS.API_KEY, apiKey.trim());
+  const trimmed = apiKey.trim();
+  const storedValue = trimmed ? await encryptToken(trimmed) : '';
+  await setAppSetting(db, GEMINI_SETTING_KEYS.API_KEY, storedValue);
 }
 
 export async function getPreferredGeminiModel(db: SQLite.SQLiteDatabase): Promise<string> {
@@ -603,7 +608,7 @@ export function sanitizeAdjustments(rawAdj: any): BillAdjustment[] {
       const amount = Math.abs(Number(adj.amount) || 0);
       if (amount <= 0) return null;
       return {
-        id: String(adj.id || `adj_${idx}_${Date.now()}`),
+        id: String(adj.id || generateId(`adj_${idx}`)),
         type,
         name,
         amount,
@@ -620,7 +625,7 @@ export function sanitizeMembers(rawMembers: any): BillMember[] {
       const name = typeof m.name === 'string' ? m.name.trim() : '';
       if (!name) return null;
       return {
-        id: String(m.id || (idx === 0 ? 'me' : `mem_${idx}_${Date.now()}`)),
+        id: String(m.id || (idx === 0 ? 'me' : generateId(`mem_${idx}`))),
         name,
         isPayer: Boolean(m.isPayer),
         phone: typeof m.phone === 'string' ? m.phone.trim() : null,

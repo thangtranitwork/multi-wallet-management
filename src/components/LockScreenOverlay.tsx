@@ -66,9 +66,11 @@ export const LockScreenOverlay: React.FC = () => {
 
     if (newPin.length === 4) {
       if (!hasPinCode) {
-        // Chưa đặt PIN thì mở luôn
-        hapticSuccess();
-        unlockApp();
+        triggerShake();
+        setErrorMessage('Chưa thiết lập mã PIN hợp lệ. Vui lòng sử dụng vân tay.');
+        setTimeout(() => {
+          setEnteredPin('');
+        }, 400);
         return;
       }
       const isValid = await verifyPin(newPin);

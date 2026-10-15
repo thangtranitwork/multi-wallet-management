@@ -1,5 +1,4 @@
 import * as SQLite from 'expo-sqlite';
-import * as FileSystem from 'expo-file-system/legacy';
 import { normalizeToIsoString } from '../utils/dateUtils';
 
 export const DB_NAME = 'multi_wallet_emerald_v3.db';
@@ -71,6 +70,7 @@ export async function initDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
         image_uris TEXT DEFAULT NULL,
         items TEXT DEFAULT NULL,
         FOREIGN KEY (wallet_id) REFERENCES wallets(id) ON DELETE CASCADE,
+        FOREIGN KEY (to_wallet_id) REFERENCES wallets(id) ON DELETE SET NULL,
         FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL,
         FOREIGN KEY (debt_id) REFERENCES debts(id) ON DELETE SET NULL
       );
@@ -138,6 +138,7 @@ export async function initDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
 
       CREATE INDEX IF NOT EXISTS idx_transactions_transacted_at ON transactions(transacted_at DESC);
       CREATE INDEX IF NOT EXISTS idx_transactions_wallet ON transactions(wallet_id);
+      CREATE INDEX IF NOT EXISTS idx_transactions_to_wallet ON transactions(to_wallet_id);
       CREATE INDEX IF NOT EXISTS idx_debts_status ON debts(status);
       CREATE INDEX IF NOT EXISTS idx_planned_target_date ON planned_expenses(target_date ASC);
       CREATE INDEX IF NOT EXISTS idx_planned_status ON planned_expenses(status);
@@ -145,171 +146,122 @@ export async function initDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_payee_mappings_name ON payee_mappings(payee_name);
     `);
 
-    // Safe ALTER TABLE migrations for existing installations
-    const safeAlter = async (sql: string) => {
-      try {
-        await db.execAsync(sql);
-      } catch {
-        // Column already exists or already migrated
-      }
-    };
-    await safeAlter('ALTER TABLE wallets ADD COLUMN statement_day INTEGER DEFAULT NULL;');
-    await safeAlter('ALTER TABLE wallets ADD COLUMN due_day INTEGER DEFAULT NULL;');
-    await safeAlter('ALTER TABLE wallets ADD COLUMN bank_bin TEXT DEFAULT NULL;');
-    await safeAlter('ALTER TABLE wallets ADD COLUMN bank_account TEXT DEFAULT NULL;');
-    await safeAlter('ALTER TABLE wallets ADD COLUMN qr_image_uri TEXT DEFAULT NULL;');
-    await safeAlter('ALTER TABLE planned_expenses ADD COLUMN to_wallet_id TEXT DEFAULT NULL;');
-    await safeAlter("ALTER TABLE planned_expenses ADD COLUMN planned_type TEXT NOT NULL DEFAULT 'expense';");
-    await safeAlter('ALTER TABLE planned_expenses ADD COLUMN installment_current INTEGER DEFAULT NULL;');
-    await safeAlter('ALTER TABLE planned_expenses ADD COLUMN installment_total INTEGER DEFAULT NULL;');
-    await safeAlter('ALTER TABLE planned_expenses ADD COLUMN fee REAL DEFAULT 0;');
-    await safeAlter('ALTER TABLE planned_expenses ADD COLUMN parent_tx_id TEXT DEFAULT NULL;');
-    await safeAlter('ALTER TABLE transactions ADD COLUMN is_amortized INTEGER DEFAULT 0;');
-    await safeAlter('ALTER TABLE transactions ADD COLUMN image_uris TEXT DEFAULT NULL;');
-    await safeAlter('ALTER TABLE transactions ADD COLUMN items TEXT DEFAULT NULL;');
-  } catch (error) {
-    console.error('[initDatabase] Lỗi tạo bảng SQLite:', error);
-    throw error;
-  }
+    // Migration quản lý theo phiên bản PRAGMA user_version, tránh chạy lại migration mỗi lần khởi động app
+    const versionRow = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version;');
+    const currentVersion = versionRow?.user_version || 0;
 
-  // Migration: Chuẩn hóa tất cả transacted_at cũ chưa đúng chuẩn ISO UTC (ví dụ dạng "YYYY-MM-DD HH:mm:ss" do AI tạo)
-  try {
-    const nonIsoTxs = await db.getAllAsync<{ id: string; transacted_at: string }>(
-      "SELECT id, transacted_at FROM transactions WHERE transacted_at NOT LIKE '%Z' AND transacted_at NOT LIKE '%z'"
-    );
-    if (nonIsoTxs && nonIsoTxs.length > 0) {
-      for (const row of nonIsoTxs) {
-        const normalized = normalizeToIsoString(row.transacted_at);
-        if (normalized && normalized !== row.transacted_at) {
-          await db.runAsync('UPDATE transactions SET transacted_at = ? WHERE id = ?', [
-            normalized,
-            row.id,
-          ]);
-        }
-      }
-    }
-  } catch (err) {
-    console.warn('Lỗi migration chuẩn hóa transacted_at:', err);
-  }
-
-  // Migration: Dọn dẹp các đường dẫn ảnh cục bộ không còn tồn tại trên máy (file rác tạm từ cache đã bị OS xóa)
-  try {
-    const txsWithImages = await db.getAllAsync<{ id: string; image_uris: string }>(
-      "SELECT id, image_uris FROM transactions WHERE image_uris IS NOT NULL AND image_uris != '' AND image_uris NOT LIKE '%res.cloudinary.com%'"
-    );
-    if (txsWithImages && txsWithImages.length > 0) {
-      for (const row of txsWithImages) {
-        let uris: string[] = [];
+    if (currentVersion < 1) {
+      const safeAlter = async (sql: string) => {
         try {
-          const parsed = JSON.parse(row.image_uris);
-          uris = Array.isArray(parsed) ? parsed : [row.image_uris];
+          await db.execAsync(sql);
         } catch {
-          uris = [row.image_uris];
+          // Column already exists
         }
+      };
+      await safeAlter('ALTER TABLE wallets ADD COLUMN statement_day INTEGER DEFAULT NULL;');
+      await safeAlter('ALTER TABLE wallets ADD COLUMN due_day INTEGER DEFAULT NULL;');
+      await safeAlter('ALTER TABLE wallets ADD COLUMN bank_bin TEXT DEFAULT NULL;');
+      await safeAlter('ALTER TABLE wallets ADD COLUMN bank_account TEXT DEFAULT NULL;');
+      await safeAlter('ALTER TABLE wallets ADD COLUMN qr_image_uri TEXT DEFAULT NULL;');
+      await safeAlter('ALTER TABLE planned_expenses ADD COLUMN to_wallet_id TEXT DEFAULT NULL;');
+      await safeAlter("ALTER TABLE planned_expenses ADD COLUMN planned_type TEXT NOT NULL DEFAULT 'expense';");
+      await safeAlter('ALTER TABLE planned_expenses ADD COLUMN installment_current INTEGER DEFAULT NULL;');
+      await safeAlter('ALTER TABLE planned_expenses ADD COLUMN installment_total INTEGER DEFAULT NULL;');
+      await safeAlter('ALTER TABLE planned_expenses ADD COLUMN fee REAL DEFAULT 0;');
+      await safeAlter('ALTER TABLE planned_expenses ADD COLUMN parent_tx_id TEXT DEFAULT NULL;');
+      await safeAlter('ALTER TABLE transactions ADD COLUMN is_amortized INTEGER DEFAULT 0;');
+      await safeAlter('ALTER TABLE transactions ADD COLUMN image_uris TEXT DEFAULT NULL;');
+      await safeAlter('ALTER TABLE transactions ADD COLUMN items TEXT DEFAULT NULL;');
 
-        const validUris: string[] = [];
-        let hasDeadImage = false;
+      await db.execAsync('PRAGMA user_version = 1;');
+    }
 
-        for (const uri of uris) {
-          if (uri.startsWith('http://') || uri.startsWith('https://')) {
-            validUris.push(uri);
-            continue;
-          }
-          try {
-            const info = await FileSystem.getInfoAsync(uri);
-            if (info.exists) {
-              validUris.push(uri);
-            } else {
-              hasDeadImage = true;
+    if (currentVersion < 2) {
+      // Chuẩn hóa một lần duy nhất transacted_at cũ chưa đúng chuẩn ISO UTC
+      try {
+        const nonIsoTxs = await db.getAllAsync<{ id: string; transacted_at: string }>(
+          "SELECT id, transacted_at FROM transactions WHERE transacted_at NOT LIKE '%Z' AND transacted_at NOT LIKE '%z'"
+        );
+        if (nonIsoTxs && nonIsoTxs.length > 0) {
+          for (const row of nonIsoTxs) {
+            const normalized = normalizeToIsoString(row.transacted_at);
+            if (normalized && normalized !== row.transacted_at) {
+              await db.runAsync('UPDATE transactions SET transacted_at = ? WHERE id = ?', [
+                normalized,
+                row.id,
+              ]);
             }
-          } catch {
-            hasDeadImage = true;
           }
         }
-
-        if (hasDeadImage) {
-          await db.runAsync('UPDATE transactions SET image_uris = ? WHERE id = ?', [
-            validUris.length > 0 ? JSON.stringify(validUris) : null,
-            row.id,
-          ]);
-        }
+      } catch (err) {
+        console.warn('Lỗi migration chuẩn hóa transacted_at:', err);
       }
+      await db.execAsync('PRAGMA user_version = 2;');
     }
-  } catch (err) {
-    console.warn('Lỗi migration dọn dẹp ảnh hóa đơn không tồn tại:', err);
-  }
 
-  // Migration: Tự động phục hồi các liên kết ảnh Cloudinary bị mất do tính năng dọn dẹp ảnh trước đây
-  try {
-    const knownCloudinaryBackups: Record<string, string[]> = {
-      tx_1790818595719: ['https://res.cloudinary.com/dw7hrsbba/image/upload/v1790818595/multi_wallet_receipts/tgvs1vyfmknxsh86vddi.jpg'],
-      tx_1790785247835: ['https://res.cloudinary.com/dw7hrsbba/image/upload/v1790785247/multi_wallet_receipts/t0mjk7q91unzw37mrrpf.jpg'],
-      tx_1790746786560: [
-        'https://res.cloudinary.com/dw7hrsbba/image/upload/v1790746784/multi_wallet_receipts/bdzyxy6ria2t9zk8pxbn.jpg',
-        'https://res.cloudinary.com/dw7hrsbba/image/upload/v1790746786/multi_wallet_receipts/ee1hv2nxdpqjpabyoxkv.jpg',
-      ],
-      tx_1790815511568: ['https://res.cloudinary.com/dw7hrsbba/image/upload/v1790815511/multi_wallet_receipts/p9z6ljk9a4q5hkehlm9o.jpg'],
-      tx_1790731375165: ['https://res.cloudinary.com/dw7hrsbba/image/upload/v1790731374/multi_wallet_receipts/tmhtba0mgt5yameqsnjn.jpg'],
-      tx_1790684214848: ['https://res.cloudinary.com/dw7hrsbba/image/upload/v1790684214/multi_wallet_receipts/lplreeqc89xmgdm3lujp.jpg'],
-      tx_1790663926946: ['https://res.cloudinary.com/dw7hrsbba/image/upload/v1790677037/multi_wallet_receipts/yk9m13vakbfrkknzpacz.jpg'],
-      tx_1790658747901: ['https://res.cloudinary.com/dw7hrsbba/image/upload/v1790660252/multi_wallet_receipts/qxbkdtojtpfgo0bhslmv.jpg'],
-      tx_1790595520471: ['https://res.cloudinary.com/dw7hrsbba/image/upload/v1790660251/multi_wallet_receipts/awhwtvnaan9yl6dz0yny.jpg'],
-      tx_1790515794206: ['https://res.cloudinary.com/dw7hrsbba/image/upload/v1790697093/multi_wallet_receipts/nvjm7zo2zough8sgbr3u.jpg'],
-    };
+    if (currentVersion < 3) {
+      // Dọn dẹp tiêu đề và ghi chú dự chi thẻ tín dụng thừa
+      try {
+        const creditPlans = await db.getAllAsync<{ id: string; title: string; note: string | null }>(
+          "SELECT id, title, note FROM planned_expenses WHERE planned_type = 'credit_payment' AND (title LIKE 'Trả nợ %' OR note LIKE 'Gốc:%+ Phí: 0%')"
+        );
+        if (creditPlans && creditPlans.length > 0) {
+          for (const plan of creditPlans) {
+            let newTitle = plan.title;
+            if (newTitle.startsWith('Trả nợ ')) {
+              newTitle = newTitle
+                .replace(/^Trả nợ\s+[^:]+:\s*/i, '')
+                .replace(/\s*\(Kỳ\s+\d+\/\d+\)$/i, '')
+                .trim() || plan.title;
+            }
 
-    for (const [txId, uris] of Object.entries(knownCloudinaryBackups)) {
-      const existing = await db.getFirstAsync<{ image_uris: string | null }>(
-        'SELECT image_uris FROM transactions WHERE id = ?',
-        [txId]
-      );
-      if (existing && (!existing.image_uris || existing.image_uris.trim() === '' || existing.image_uris === '[]')) {
-        await db.runAsync('UPDATE transactions SET image_uris = ? WHERE id = ?', [
-          JSON.stringify(uris),
-          txId,
-        ]);
+            let newNote = plan.note;
+            if (newNote && /^Gốc:\s*[\d\.\,]+\s*₫?\s*\+\s*Phí:\s*0\s*₫?$/i.test(newNote.trim())) {
+              newNote = null;
+            }
+
+            if (newTitle !== plan.title || newNote !== plan.note) {
+              await db.runAsync('UPDATE planned_expenses SET title = ?, note = ? WHERE id = ?', [
+                newTitle,
+                newNote,
+                plan.id,
+              ]);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Lỗi migration dọn dẹp tiêu đề dự chi thẻ tín dụng:', err);
       }
+      await db.execAsync('PRAGMA user_version = 3;');
     }
-  } catch (err) {
-    console.warn('Lỗi migration phục hồi ảnh Cloudinary:', err);
-  }
 
-  // Migration: Dọn dẹp tiêu đề và ghi chú dự chi thẻ tín dụng (bỏ tiền tố thừa "Trả nợ [Ví]:", bỏ ghi chú vô nghĩa "Gốc... + Phí: 0đ")
-  try {
-    const creditPlans = await db.getAllAsync<{ id: string; title: string; note: string | null }>(
-      "SELECT id, title, note FROM planned_expenses WHERE planned_type = 'credit_payment' AND (title LIKE 'Trả nợ %' OR note LIKE 'Gốc:%+ Phí: 0%')"
-    );
-    if (creditPlans && creditPlans.length > 0) {
-      for (const plan of creditPlans) {
-        let newTitle = plan.title;
-        if (newTitle.startsWith('Trả nợ ')) {
-          newTitle = newTitle
-            .replace(/^Trả nợ\s+[^:]+:\s*/i, '')
-            .replace(/\s*\(Kỳ\s+\d+\/\d+\)$/i, '')
-            .trim() || plan.title;
-        }
-
-        let newNote = plan.note;
-        if (newNote && /^Gốc:\s*[\d\.\,]+\s*₫?\s*\+\s*Phí:\s*0\s*₫?$/i.test(newNote.trim())) {
-          newNote = null;
-        }
-
-        if (newTitle !== plan.title || newNote !== plan.note) {
-          await db.runAsync('UPDATE planned_expenses SET title = ?, note = ? WHERE id = ?', [
-            newTitle,
-            newNote,
-            plan.id,
-          ]);
-        }
+    if (currentVersion < 4) {
+      // Dọn dẹp các to_wallet_id mồ côi (không tồn tại trong bảng wallets)
+      try {
+        await db.runAsync(`
+          UPDATE transactions
+          SET to_wallet_id = NULL
+          WHERE to_wallet_id IS NOT NULL AND to_wallet_id NOT IN (SELECT id FROM wallets)
+        `);
+        await db.runAsync(`
+          UPDATE planned_expenses
+          SET to_wallet_id = NULL
+          WHERE to_wallet_id IS NOT NULL AND to_wallet_id NOT IN (SELECT id FROM wallets)
+        `);
+      } catch (err) {
+        console.warn('Lỗi migration dọn dẹp to_wallet_id mồ côi:', err);
       }
+      await db.execAsync('PRAGMA user_version = 4;');
     }
-  } catch (err) {
-    console.warn('Lỗi migration dọn dẹp tiêu đề dự chi thẻ tín dụng:', err);
-  }
 
-  // ONLY seed default standard categories (no wallets, no transactions, no debts)
-  const catCount = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM categories');
-  if (!catCount || catCount.count === 0) {
-    await seedDefaultCategories(db);
+    // Khởi tạo danh mục mặc định nếu chưa có
+    const catCount = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM categories');
+    if (!catCount || catCount.count === 0) {
+      await seedDefaultCategories(db);
+    }
+  } catch (error) {
+    console.error('[initDatabase] Lỗi khởi tạo SQLite:', error);
+    throw error;
   }
 }
 

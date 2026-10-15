@@ -16,13 +16,15 @@ import * as backup from '../database/backup';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { hapticLight, hapticSuccess, hapticError } from '../utils/haptics';
 import { loadCloudBackupConfig, saveCloudBackupConfig } from '../services/cloudBackupStorage';
-import { uploadBackupToDrive } from '../services/googleDriveService';
+import { uploadBackupToDrive, refreshGoogleAccessToken } from '../services/googleDriveService';
 import { syncWidgetData } from '../services/widgetSyncService';
 import { refreshHabitReminders } from '../services/habitNotificationService';
 import { deleteReceiptFiles, parseImageUris, purgeReceiptImagesOlderThan } from '../services/geminiService';
 import { normalizeToIsoString } from '../utils/dateUtils';
 import { findBankByName } from '../constants/banks';
+import { generateId } from '../utils/idGenerator';
 import { logger } from '../services/loggerService';
+import { encryptBackupPayload, decryptBackupPayload } from '../utils/backupEncryption';
 
 interface WalletContextType {
   wallets: Wallet[];
@@ -346,11 +348,23 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       try {
         const conf = await loadCloudBackupConfig(currentDb);
         if (!isMountedRef.current) return;
-        if (conf.isLinked && conf.autoBackupEnabled && conf.accessToken) {
+        if (conf.isLinked && conf.autoBackupEnabled && (conf.accessToken || conf.refreshToken)) {
+          let activeToken = conf.accessToken;
           const rawData = await backup.exportAllData(currentDb);
           if (!isMountedRef.current) return;
-          const jsonStr = JSON.stringify(rawData, null, 2);
-          const uploadRes = await uploadBackupToDrive(conf.accessToken, jsonStr);
+          const jsonStr = await encryptBackupPayload(rawData);
+          let uploadRes = await uploadBackupToDrive(activeToken, jsonStr);
+
+          // Nếu token hết hạn và có refreshToken, tự động làm mới token và thử lại
+          if (!uploadRes.success && conf.refreshToken) {
+            const refreshRes = await refreshGoogleAccessToken(conf.refreshToken, conf.customClientId);
+            if (refreshRes.success && refreshRes.accessToken) {
+              activeToken = refreshRes.accessToken;
+              await saveCloudBackupConfig(currentDb, { accessToken: activeToken });
+              uploadRes = await uploadBackupToDrive(activeToken, jsonStr);
+            }
+          }
+
           if (!isMountedRef.current) return;
           if (uploadRes.success) {
             await saveCloudBackupConfig(currentDb, {
@@ -387,7 +401,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     items?: string | null;
   }) => {
     try {
-      const id = 'tx_' + Date.now();
+      const id = generateId('tx');
       await queries.createTransaction(db, {
         id,
         ...tx,
@@ -528,7 +542,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     phone?: string | null;
     note?: string | null;
   }) => {
-    const id = 'c_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+    const id = generateId('c');
     const newContact: ContactPerson = {
       id,
       name: contact.name.trim(),
@@ -555,7 +569,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const addWallet = async (wallet: Omit<Wallet, 'id' | 'created_at'>) => {
-    const id = 'w_' + Date.now();
+    const id = generateId('w');
     let finalBin = wallet.bank_bin;
     if (!finalBin && wallet.name) {
       const detected = findBankByName(wallet.name);
@@ -632,7 +646,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     due_date?: string | null;
     note?: string;
   }) => {
-    const id = 'debt_' + Date.now();
+    const id = generateId('debt');
     await queries.createDebt(db, {
       id,
       ...debt,
@@ -660,7 +674,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const addCategory = async (category: Omit<Category, 'id'> & { id?: string }) => {
     const newCat: Category = {
-      id: category.id || `cat_${Date.now()}`,
+      id: category.id || generateId('cat'),
       name: category.name,
       type: category.type,
       icon: category.icon,
@@ -684,7 +698,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     planned: Omit<PlannedExpense, 'id' | 'created_at' | 'status'>
   ) => {
     try {
-      const id = 'pe_' + Date.now();
+      const id = generateId('pe');
       await queries.createPlannedExpense(db, {
         id,
         ...planned,
@@ -745,7 +759,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const exportDataToJsonString = async (): Promise<string> => {
     const data = await backup.exportAllData(db);
-    return JSON.stringify(data, null, 2);
+    return await encryptBackupPayload(data);
   };
 
   const importDataFromJsonString = async (
@@ -756,7 +770,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       clearTimeout(autoBackupTimerRef.current);
       autoBackupTimerRef.current = null;
     }
-    const parsed = JSON.parse(jsonStr);
+    const parsed = await decryptBackupPayload(jsonStr);
     const result = await backup.importAllData(db, parsed, mode);
     await refreshData();
     return result;
@@ -771,63 +785,85 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     await refreshData();
   };
 
+  const contextValue = useMemo(
+    () => ({
+      wallets,
+      transactions,
+      debts,
+      categories,
+      plannedExpenses,
+      contacts,
+      recentDebtPersons,
+      addContact,
+      editContact,
+      removeContact,
+      summary,
+      categorySpendings,
+      totalPendingPlanned,
+      totalAllPendingPlanned,
+      liquidAvailableBalance,
+      safeToSpendBalance,
+      isLoading,
+      isBalanceHidden,
+      toggleHideBalance,
+      activeWalletFilter,
+      setActiveWalletFilter,
+      refreshData,
+      updateCreditTransactionDueDate,
+      addTransaction,
+      removeTransaction,
+      updateTransactionCategory,
+      updateTransactionWallet,
+      updateTransactionTime,
+      updateTransactionDetails,
+      updateTransactionAmortized,
+      updateTransactionImages,
+      updateTransactionItems,
+      purgeReceiptImages,
+      splitTransaction,
+      addWallet,
+      editWallet,
+      adjustBalance,
+      removeWallet,
+      addCreditExpenseWithPlan,
+      addDebt,
+      payOrCollectDebt,
+      removeDebt,
+      addCategory,
+      editCategory,
+      removeCategory,
+      addPlannedExpense,
+      editPlannedExpense,
+      executePlannedExpense,
+      removePlannedExpense,
+      exportDataToJsonString,
+      importDataFromJsonString,
+      resetAllData,
+    }),
+    [
+      wallets,
+      transactions,
+      debts,
+      categories,
+      plannedExpenses,
+      contacts,
+      recentDebtPersons,
+      summary,
+      categorySpendings,
+      totalPendingPlanned,
+      totalAllPendingPlanned,
+      liquidAvailableBalance,
+      safeToSpendBalance,
+      isLoading,
+      isBalanceHidden,
+      activeWalletFilter,
+      toggleHideBalance,
+      refreshData,
+    ]
+  );
+
   return (
-    <WalletContext.Provider
-      value={{
-        wallets,
-        transactions,
-        debts,
-        categories,
-        plannedExpenses,
-        contacts,
-        recentDebtPersons,
-        addContact,
-        editContact,
-        removeContact,
-        summary,
-        categorySpendings,
-        totalPendingPlanned,
-        totalAllPendingPlanned,
-        liquidAvailableBalance,
-        safeToSpendBalance,
-        isLoading,
-        isBalanceHidden,
-        toggleHideBalance,
-        activeWalletFilter,
-        setActiveWalletFilter,
-        refreshData,
-        updateCreditTransactionDueDate,
-        addTransaction,
-        removeTransaction,
-        updateTransactionCategory,
-        updateTransactionWallet,
-        updateTransactionTime,
-        updateTransactionDetails,
-        updateTransactionAmortized,
-        updateTransactionImages,
-        updateTransactionItems,
-        purgeReceiptImages,
-        splitTransaction,
-        addWallet,
-        editWallet,
-        adjustBalance,
-        removeWallet,
-        addCreditExpenseWithPlan,
-        addDebt,
-        payOrCollectDebt,
-        removeDebt,
-        addCategory,
-        editCategory,
-        removeCategory,
-        addPlannedExpense,
-        editPlannedExpense,
-        executePlannedExpense,
-        removePlannedExpense,
-        exportDataToJsonString,
-        importDataFromJsonString,
-        resetAllData,
-      }}
-    >
+    <WalletContext.Provider value={contextValue}>
       {children}
     </WalletContext.Provider>
   );

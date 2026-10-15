@@ -23,6 +23,7 @@ import {
   listDriveBackups,
   downloadDriveBackup,
   deleteDriveBackup,
+  refreshGoogleAccessToken,
   DriveBackupFile,
   DEFAULT_GOOGLE_CLIENT_ID,
   getRedirectUri,
@@ -142,7 +143,15 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
   const loadDriveFiles = async (token: string) => {
     try {
       setLoadingBackups(true);
-      const files = await listDriveBackups(token);
+      let files = await listDriveBackups(token);
+      if (files.length === 0 && config?.refreshToken) {
+        const refreshRes = await refreshGoogleAccessToken(config.refreshToken, config.customClientId);
+        if (refreshRes.success && refreshRes.accessToken) {
+          await saveCloudBackupConfig(db, { accessToken: refreshRes.accessToken });
+          setConfig(prev => prev ? { ...prev, accessToken: refreshRes.accessToken! } : null);
+          files = await listDriveBackups(refreshRes.accessToken);
+        }
+      }
       setBackupsList(files);
     } catch {
       setBackupsList([]);
@@ -163,6 +172,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
         await saveCloudBackupConfig(db, {
           isLinked: true,
           accessToken: res.accessToken,
+          refreshToken: res.refreshToken,
           user: res.user,
           customClientId: customClientIdInput.trim(),
         });
@@ -200,7 +210,7 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
 
   // 3. Sao lưu lên Google Drive ngay
   const handleUploadBackup = async () => {
-    if (!config?.isLinked || !config.accessToken) {
+    if (!config?.isLinked || (!config.accessToken && !config.refreshToken)) {
       showAlert('Thông báo', 'Vui lòng liên kết tài khoản Google trước khi sao lưu.');
       return;
     }
@@ -208,8 +218,22 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
     try {
       hapticMedium();
       setIsUploading(true);
+      let activeToken = config.accessToken;
       const jsonStr = await exportDataToJsonString();
-      const res = await uploadBackupToDrive(config.accessToken, jsonStr);
+      let res = activeToken
+        ? await uploadBackupToDrive(activeToken, jsonStr)
+        : { success: false, error: 'Token đã hết hạn' };
+
+      // Tự động làm mới access token nếu upload thất bại và có refresh token
+      if (!res.success && config.refreshToken) {
+        const refreshRes = await refreshGoogleAccessToken(config.refreshToken, config.customClientId);
+        if (refreshRes.success && refreshRes.accessToken) {
+          activeToken = refreshRes.accessToken;
+          await saveCloudBackupConfig(db, { accessToken: activeToken });
+          setConfig(prev => prev ? { ...prev, accessToken: activeToken } : null);
+          res = await uploadBackupToDrive(activeToken, jsonStr);
+        }
+      }
 
       if (res.success) {
         hapticSuccess();
@@ -232,17 +256,51 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
     }
   };
 
+  const getActiveOrRefreshedToken = async (): Promise<string | null> => {
+    if (config?.accessToken) return config.accessToken;
+    if (config?.refreshToken) {
+      const refreshRes = await refreshGoogleAccessToken(config.refreshToken, config.customClientId);
+      if (refreshRes.success && refreshRes.accessToken) {
+        await saveCloudBackupConfig(db, { accessToken: refreshRes.accessToken });
+        setConfig(prev => prev ? { ...prev, accessToken: refreshRes.accessToken! } : null);
+        return refreshRes.accessToken;
+      }
+    }
+    return null;
+  };
+
   // 4. Khôi phục từ một bản sao lưu trên Drive
   const handleRestoreBackup = (file: DriveBackupFile) => {
     showConfirm(
       'Khôi phục dữ liệu từ Google Drive',
       `Bạn có chắc muốn khôi phục từ bản sao lưu "${file.name}" không?\n\nDữ liệu hiện tại trên thiết bị sẽ được thay thế bằng dữ liệu từ bản sao lưu này.`,
       async () => {
-        if (!config?.accessToken) return;
+        const token = await getActiveOrRefreshedToken();
+        if (!token) {
+          showAlert('Lỗi', 'Phiên đăng nhập Google đã hết hạn. Vui lòng đăng nhập lại.');
+          return;
+        }
         try {
           hapticMedium();
           setRestoringFileId(file.id);
-          const jsonContent = await downloadDriveBackup(config.accessToken, file.id);
+          let jsonContent = '';
+          try {
+            jsonContent = await downloadDriveBackup(token, file.id);
+          } catch (e) {
+            if (config?.refreshToken) {
+              const refreshRes = await refreshGoogleAccessToken(config.refreshToken, config.customClientId);
+              if (refreshRes.success && refreshRes.accessToken) {
+                await saveCloudBackupConfig(db, { accessToken: refreshRes.accessToken });
+                setConfig(prev => prev ? { ...prev, accessToken: refreshRes.accessToken! } : null);
+                jsonContent = await downloadDriveBackup(refreshRes.accessToken, file.id);
+              } else {
+                throw e;
+              }
+            } else {
+              throw e;
+            }
+          }
+
           const res = await importDataFromJsonString(jsonContent, 'replace');
           hapticSuccess();
           showAlert(
@@ -266,12 +324,22 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
       'Xóa bản sao lưu trên Drive',
       `Bạn có muốn xóa vĩnh viễn file "${file.name}" trên Google Drive không?`,
       async () => {
-        if (!config?.accessToken) return;
+        let token = await getActiveOrRefreshedToken();
+        if (!token) return;
         hapticMedium();
-        const ok = await deleteDriveBackup(config.accessToken, file.id);
+        let ok = await deleteDriveBackup(token, file.id);
+        if (!ok && config?.refreshToken) {
+          const refreshRes = await refreshGoogleAccessToken(config.refreshToken, config.customClientId);
+          if (refreshRes.success && refreshRes.accessToken) {
+            await saveCloudBackupConfig(db, { accessToken: refreshRes.accessToken });
+            setConfig(prev => prev ? { ...prev, accessToken: refreshRes.accessToken! } : null);
+            token = refreshRes.accessToken;
+            ok = await deleteDriveBackup(token, file.id);
+          }
+        }
         if (ok) {
           hapticSuccess();
-          loadDriveFiles(config.accessToken);
+          loadDriveFiles(token);
         } else {
           hapticError();
           showAlert('Lỗi', 'Không thể xóa file trên Google Drive.');
@@ -542,6 +610,14 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
                     </View>
                   </View>
 
+                  {/* Badge bảo mật mã hóa */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#ECFDF5', borderWidth: 1.5, borderColor: '#A7F3D0', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 12, gap: 8 }}>
+                    <Ionicons name="shield-checkmark" size={16} color="#059669" />
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#065F46', flex: 1 }}>
+                      Bản sao lưu trên Drive được mã hóa đầu cuối (E2EE) bảo vệ bí mật tuyệt đối dữ liệu giao dịch.
+                    </Text>
+                  </View>
+
                   {/* Nút Sao lưu lên Drive ngay */}
                   <Pressable
                     style={styles.uploadNowBtnShadow}
@@ -593,7 +669,10 @@ export const GoogleDriveSyncModal: React.FC<GoogleDriveSyncModalProps> = ({
 
                   {/* Danh sách các bản sao lưu trên Drive */}
                   <View style={styles.backupsHeaderRow}>
-                    <Text style={styles.backupsHeaderTitle}>Các bản sao lưu trên Drive</Text>
+                    <View>
+                      <Text style={styles.backupsHeaderTitle}>Các bản sao lưu trên Drive</Text>
+                      <Text style={styles.backupsHeaderSubtitle}>Tự động giữ 10 bản mới nhất</Text>
+                    </View>
                     <Pressable
                       style={styles.refreshListBtn}
                       onPress={() => config.accessToken && loadDriveFiles(config.accessToken)}
@@ -1113,6 +1192,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '900',
     color: '#000000',
+  },
+  backupsHeaderSubtitle: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginTop: 1,
   },
   refreshListBtn: {
     flexDirection: 'row',

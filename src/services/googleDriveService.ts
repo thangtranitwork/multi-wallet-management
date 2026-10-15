@@ -60,6 +60,7 @@ export function getRedirectUri(): string {
 export async function signInWithGoogle(customClientId?: string): Promise<{
   success: boolean;
   accessToken?: string;
+  refreshToken?: string;
   user?: GoogleUser;
   error?: string;
 }> {
@@ -89,8 +90,9 @@ export async function signInWithGoogle(customClientId?: string): Promise<{
 
     if (result.type === 'success' && result.params) {
       let accessToken = result.params.access_token;
+      let refreshToken: string | undefined = undefined;
 
-      // Nếu luồng trả về code (chuẩn PKCE), đổi code lấy access_token
+      // Nếu luồng trả về code (chuẩn PKCE), đổi code lấy access_token và refresh_token
       if (!accessToken && result.params.code) {
         const tokenResponse = await AuthSession.exchangeCodeAsync(
           {
@@ -104,6 +106,7 @@ export async function signInWithGoogle(customClientId?: string): Promise<{
           discovery
         );
         accessToken = tokenResponse.accessToken;
+        refreshToken = tokenResponse.refreshToken;
       }
 
       if (accessToken) {
@@ -112,6 +115,7 @@ export async function signInWithGoogle(customClientId?: string): Promise<{
         return {
           success: true,
           accessToken,
+          refreshToken,
           user: user || {
             id: 'user_connected',
             email: 'Đã liên kết Google Drive',
@@ -224,6 +228,14 @@ export async function uploadBackupToDrive(
     }
 
     const resData = await res.json();
+
+    // Tự động giữ lại 10 bản sao lưu mới nhất, dọn dẹp các bản cũ hơn
+    try {
+      await pruneOldDriveBackups(accessToken, MAX_DRIVE_BACKUP_RETENTION);
+    } catch (e) {
+      console.warn('[GoogleDrive] Không thể dọn dẹp bản sao lưu cũ:', e);
+    }
+
     return {
       success: true,
       fileId: resData.id,
@@ -234,6 +246,53 @@ export async function uploadBackupToDrive(
       success: false,
       error: err?.message || 'Không thể upload lên Google Drive.',
     };
+  }
+}
+
+export const MAX_DRIVE_BACKUP_RETENTION = 10;
+
+/**
+ * Tự động dọn dẹp các bản sao lưu cũ trên Google Drive, chỉ giữ lại `keepCount` bản mới nhất (mặc định 10).
+ */
+export async function pruneOldDriveBackups(
+  accessToken: string,
+  keepCount: number = MAX_DRIVE_BACKUP_RETENTION
+): Promise<number> {
+  try {
+    const query = encodeURIComponent("name contains 'MultiWallet_Backup' and trashed = false");
+    const fields = encodeURIComponent('files(id,name,createdTime)');
+    const url = `${DRIVE_FILES_ENDPOINT}?q=${query}&fields=${fields}&orderBy=createdTime desc&pageSize=50`;
+
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    if (!res.ok) return 0;
+    const data = await res.json();
+    const files = data.files || [];
+
+    if (files.length <= keepCount) {
+      return 0;
+    }
+
+    const filesToDelete = files.slice(keepCount);
+    let deletedCount = 0;
+
+    await Promise.all(
+      filesToDelete.map(async (file: any) => {
+        try {
+          const ok = await deleteDriveBackup(accessToken, file.id);
+          if (ok) deletedCount++;
+        } catch {}
+      })
+    );
+
+    return deletedCount;
+  } catch (err) {
+    console.warn('[GoogleDrive] Lỗi dọn dẹp bản sao lưu cũ:', err);
+    return 0;
   }
 }
 
@@ -303,3 +362,47 @@ export async function deleteDriveBackup(accessToken: string, fileId: string): Pr
     return false;
   }
 }
+
+/**
+ * Làm mới Access Token khi token hết hạn sử dụng Refresh Token
+ */
+export async function refreshGoogleAccessToken(
+  refreshToken: string,
+  customClientId?: string
+): Promise<{ success: boolean; accessToken?: string; error?: string }> {
+  try {
+    const clientId = (customClientId && customClientId.trim().length > 0)
+      ? customClientId.trim()
+      : DEFAULT_GOOGLE_CLIENT_ID;
+
+    const discovery = {
+      authorizationEndpoint: GOOGLE_AUTH_ENDPOINT,
+      tokenEndpoint: GOOGLE_TOKEN_ENDPOINT,
+    };
+
+    const tokenResponse = await AuthSession.refreshAsync(
+      {
+        clientId,
+        refreshToken,
+      },
+      discovery
+    );
+
+    if (tokenResponse.accessToken) {
+      return {
+        success: true,
+        accessToken: tokenResponse.accessToken,
+      };
+    }
+    return {
+      success: false,
+      error: 'Không nhận được mã truy cập mới từ Google.',
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || 'Không thể làm mới phiên đăng nhập Google Drive.',
+    };
+  }
+}
+

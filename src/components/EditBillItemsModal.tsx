@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { ReceiptItem, BillAdjustment } from '../types';
 import { THEME, formatVND } from '../constants';
 import { hapticLight, hapticMedium, hapticSuccess } from '../utils/haptics';
+import { generateId } from '../utils/idGenerator';
 
 export interface EditableItem {
   id: string;
@@ -65,8 +66,8 @@ export const EditBillItemsModal: React.FC<EditBillItemsModalProps> = ({
   // Khởi tạo state khi mở modal
   useEffect(() => {
     if (visible) {
-      const mappedItems: EditableItem[] = (initialItems || []).map((it, idx) => ({
-        id: it.id || `item_${idx}_${Date.now()}`,
+      const mappedItems: EditableItem[] = (initialItems || []).map((it) => ({
+        id: it.id || generateId('item'),
         name: it.name || '',
         price: it.price || 0,
         priceStr: it.price ? it.price.toString() : '',
@@ -75,8 +76,8 @@ export const EditBillItemsModal: React.FC<EditBillItemsModalProps> = ({
         memberQuantities: it.memberQuantities,
       }));
 
-      const mappedAdjustments: EditableAdjustment[] = (initialAdjustments || []).map((adj, idx) => ({
-        id: adj.id || `adj_${idx}_${Date.now()}`,
+      const mappedAdjustments: EditableAdjustment[] = (initialAdjustments || []).map((adj) => ({
+        id: adj.id || generateId('adj'),
         name: adj.name || '',
         amount: adj.amount || 0,
         amountStr: adj.amount ? adj.amount.toString() : '',
@@ -115,7 +116,7 @@ export const EditBillItemsModal: React.FC<EditBillItemsModalProps> = ({
     setItems(prev => [
       ...prev,
       {
-        id: `item_${Date.now()}_${Math.random()}`,
+        id: generateId('item'),
         name: '',
         price: 0,
         priceStr: '',
@@ -158,7 +159,7 @@ export const EditBillItemsModal: React.FC<EditBillItemsModalProps> = ({
     setAdjustments(prev => [
       ...prev,
       {
-        id: `adj_${Date.now()}_${Math.random()}`,
+        id: generateId('adj'),
         name: type === 'fee' ? 'Phí dịch vụ' : 'Giảm giá',
         amount: 0,
         amountStr: '',
