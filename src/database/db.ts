@@ -273,6 +273,39 @@ export async function initDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
     console.warn('Lỗi migration phục hồi ảnh Cloudinary:', err);
   }
 
+  // Migration: Dọn dẹp tiêu đề và ghi chú dự chi thẻ tín dụng (bỏ tiền tố thừa "Trả nợ [Ví]:", bỏ ghi chú vô nghĩa "Gốc... + Phí: 0đ")
+  try {
+    const creditPlans = await db.getAllAsync<{ id: string; title: string; note: string | null }>(
+      "SELECT id, title, note FROM planned_expenses WHERE planned_type = 'credit_payment' AND (title LIKE 'Trả nợ %' OR note LIKE 'Gốc:%+ Phí: 0%')"
+    );
+    if (creditPlans && creditPlans.length > 0) {
+      for (const plan of creditPlans) {
+        let newTitle = plan.title;
+        if (newTitle.startsWith('Trả nợ ')) {
+          newTitle = newTitle
+            .replace(/^Trả nợ\s+[^:]+:\s*/i, '')
+            .replace(/\s*\(Kỳ\s+\d+\/\d+\)$/i, '')
+            .trim() || plan.title;
+        }
+
+        let newNote = plan.note;
+        if (newNote && /^Gốc:\s*[\d\.\,]+\s*₫?\s*\+\s*Phí:\s*0\s*₫?$/i.test(newNote.trim())) {
+          newNote = null;
+        }
+
+        if (newTitle !== plan.title || newNote !== plan.note) {
+          await db.runAsync('UPDATE planned_expenses SET title = ?, note = ? WHERE id = ?', [
+            newTitle,
+            newNote,
+            plan.id,
+          ]);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Lỗi migration dọn dẹp tiêu đề dự chi thẻ tín dụng:', err);
+  }
+
   // ONLY seed default standard categories (no wallets, no transactions, no debts)
   const catCount = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM categories');
   if (!catCount || catCount.count === 0) {

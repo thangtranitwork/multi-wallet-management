@@ -275,6 +275,30 @@ export async function getTransactions(
   return await db.getAllAsync<Transaction>(query, params);
 }
 
+export async function getTransactionById(
+  db: SQLite.SQLiteDatabase,
+  id: string
+): Promise<Transaction | null> {
+  const query = `
+    SELECT 
+      t.*,
+      w.name as wallet_name,
+      tw.name as to_wallet_name,
+      c.name as category_name,
+      c.icon as category_icon,
+      c.color as category_color,
+      d.person_name as person_name
+    FROM transactions t
+    LEFT JOIN wallets w ON t.wallet_id = w.id
+    LEFT JOIN wallets tw ON t.to_wallet_id = tw.id
+    LEFT JOIN categories c ON t.category_id = c.id
+    LEFT JOIN debts d ON t.debt_id = d.id
+    WHERE t.id = ?
+    LIMIT 1
+  `;
+  return await db.getFirstAsync<Transaction>(query, [id]);
+}
+
 export async function countTransactions(
   db: SQLite.SQLiteDatabase,
   options?: GetTransactionsOptions
@@ -2154,9 +2178,13 @@ export async function createCreditExpenseWithPlan(
         String(targetDateObj.getDate()).padStart(2, '0')
       ].join('-');
 
-      const planTitle = isInstallment
-        ? `Trả nợ ${creditWallet.name}: ${params.note || 'Chi tiêu'} (Kỳ ${i}/${count})`
-        : `Trả nợ ${creditWallet.name}: ${params.note || 'Chi tiêu'}`;
+      const cleanTitle = (params.note || 'Chi tiêu').trim();
+      const planTitle = cleanTitle;
+
+      let planNote = '';
+      if (isInstallment && fee > 0) {
+        planNote = `Phí kỳ: ${fee.toLocaleString('vi-VN')}₫ (Gốc: ${termPrincipal.toLocaleString('vi-VN')}₫)`;
+      }
 
       await db.runAsync(
         `INSERT INTO planned_expenses (
@@ -2175,9 +2203,7 @@ export async function createCreditExpenseWithPlan(
           isInstallment ? count : null,
           fee,
           txId,
-          isInstallment
-            ? `Gốc: ${termPrincipal.toLocaleString('vi-VN')}₫ + Phí: ${fee.toLocaleString('vi-VN')}₫`
-            : (params.note || ''),
+          planNote || null,
           now,
         ]
       );

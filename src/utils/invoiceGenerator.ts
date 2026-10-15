@@ -369,7 +369,7 @@ export function buildInvoiceData(
       if (isVietQr && bankBin && bankAccount) {
         memberPaymentQrs = owingMembers.map((m) => {
           const transferNote = `${m.name} tra tien ${cleanNote.slice(0, 15)}`.trim();
-          const qrUrl = `https://img.vietqr.io/image/${bankBin}-${bankAccount}-compact2.png?amount=${Math.round(
+          const qrUrl = `https://img.vietqr.io/image/${bankBin}-${bankAccount}-qr_only.png?amount=${Math.round(
             m.amount
           )}&addInfo=${encodeURIComponent(transferNote)}`;
           return {
@@ -605,27 +605,30 @@ export function generateInvoiceHTML(
             <b>${data.paymentInfo.bankName}</b> ${data.paymentInfo.accountNumber ? `• STK: <b>${data.paymentInfo.accountNumber}</b>` : ''}
           </div>
         ` : ''}
-        <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;">
+        <div style="display: flex; flex-direction: column; gap: 10px;">
           ${data.memberPaymentQrs!.map((mqr) => {
             const mSrc = (qrImageDataUri && mqr.qrUrl?.startsWith('file://')) ? qrImageDataUri : (mqr.qrUrl || qrImageDataUri);
             return `
-              <div style="flex: 1 1 130px; max-width: 190px; background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 10px 6px; text-align: center; box-sizing: border-box;">
-                <div style="display: inline-block; background: #fef08a; border: 1px solid #000000; border-radius: 4px; padding: 2px 8px; font-weight: 800; font-size: 11px; color: #000000; margin-bottom: 6px;">
-                  ${mqr.name}
-                </div>
+              <div style="display: flex; align-items: center; background: #ffffff; border: 1.5px solid #000000; border-radius: 8px; padding: 10px 12px; gap: 12px; box-sizing: border-box; box-shadow: 2px 2px 0px #000000;">
                 ${mSrc ? `
-                  <div style="margin: 2px 0;">
-                    <img src="${mSrc}" alt="${mqr.name}" style="width: 115px; height: 115px; border-radius: 4px; border: 1px solid #e2e8f0; object-fit: contain; background: #ffffff;" />
+                  <div style="flex-shrink: 0;">
+                    <img src="${mSrc}" alt="${mqr.name}" style="width: 110px; height: 110px; border-radius: 6px; border: 1px solid #e2e8f0; object-fit: contain; background: #ffffff; display: block;" />
                   </div>
                 ` : ''}
-                <div style="font-weight: 800; font-size: 12px; color: #059669; margin-top: 4px;">
-                  ${formatCurrency(mqr.amount)}
+                <div style="flex: 1; min-width: 0;">
+                  <div style="display: inline-block; background: #fef08a; border: 1px solid #000000; border-radius: 4px; padding: 2px 8px; font-weight: 800; font-size: 12px; color: #000000; margin-bottom: 5px;">
+                    ${mqr.name}
+                  </div>
+                  <div style="font-weight: 900; font-size: 15px; color: #059669; margin-bottom: 4px;">
+                    ${formatCurrency(mqr.amount)}
+                  </div>
+                  ${mqr.transferNote ? `
+                    <div style="font-size: 10px; color: #475569; background: #f1f5f9; padding: 4px 6px; border-radius: 4px; border: 1px solid #e2e8f0; line-height: 1.35; word-break: break-word;">
+                      <span style="color: #64748b; font-size: 9px; display: block; font-weight: 600;">NỘI DUNG CHUYỂN KHOẢN:</span>
+                      <b>${mqr.transferNote}</b>
+                    </div>
+                  ` : ''}
                 </div>
-                ${mqr.transferNote ? `
-                  <div style="font-size: 9px; color: #64748b; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                    ${mqr.transferNote}
-                  </div>
-                ` : ''}
               </div>
             `;
           }).join('')}

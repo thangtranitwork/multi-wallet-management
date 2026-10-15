@@ -14,10 +14,11 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useCustomAlert } from './CustomAlertModal';
 import dayjs from 'dayjs';
 import { useWallet } from '../context/WalletContext';
-import { PlannedExpense } from '../types';
+import { Transaction, PlannedExpense } from '../types';
 import { THEME, formatVND } from '../constants';
 import { hapticLight, hapticMedium, hapticSuccess, hapticError } from '../utils/haptics';
 import * as queries from '../database/queries';
+import { TransactionDetailModal } from './TransactionDetailModal';
 
 export type DateFilterType =
   | 'all'
@@ -44,6 +45,7 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
     wallets,
     categories,
     plannedExpenses,
+    transactions,
     totalPendingPlanned,
     totalAllPendingPlanned,
     liquidAvailableBalance,
@@ -67,6 +69,13 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
   const [tempStartDate, setTempStartDate] = useState<string | null>(null);
   const [tempEndDate, setTempEndDate] = useState<string | null>(null);
   const [pickerMonth, setPickerMonth] = useState<Date>(new Date());
+
+  // Lọc tìm kiếm theo từ khóa / nội dung
+  const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // Xem chi tiết giao dịch gốc từ dự chi thẻ tín dụng
+  const [selectedParentTx, setSelectedParentTx] = useState<Transaction | null>(null);
+  const [parentTxModalVisible, setParentTxModalVisible] = useState<boolean>(false);
 
   // Lọc số tiền chính xác
   const [exactAmountFilter, setExactAmountFilter] = useState<number | null>(null);
@@ -157,6 +166,20 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
       list = list.filter(item => getItemAmount(item) === exactAmountFilter);
     }
 
+    // Lọc theo từ khóa tìm kiếm (tiêu đề, ghi chú, danh mục, ví)
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      list = list.filter(item => {
+        const titleMatch = item.title?.toLowerCase().includes(q);
+        const noteMatch = item.note?.toLowerCase().includes(q);
+        const catMatch = item.category_name?.toLowerCase().includes(q);
+        const walletMatch =
+          item.wallet_name?.toLowerCase().includes(q) ||
+          item.to_wallet_name?.toLowerCase().includes(q);
+        return titleMatch || noteMatch || catMatch || walletMatch;
+      });
+    }
+
     // Sắp xếp: pending xếp theo target_date gần nhất; executed xếp theo mới nhất
     return list.sort((a, b) => {
       if (a.status === 'pending' && b.status === 'pending') {
@@ -167,6 +190,7 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
   }, [
     plannedExpenses,
     activeTab,
+    searchQuery,
     dateFilter,
     customStartDate,
     customEndDate,
@@ -189,6 +213,19 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
       baseList = baseList.filter(item => item.status === 'executed');
     }
 
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      baseList = baseList.filter(item => {
+        const titleMatch = item.title?.toLowerCase().includes(q);
+        const noteMatch = item.note?.toLowerCase().includes(q);
+        const catMatch = item.category_name?.toLowerCase().includes(q);
+        const walletMatch =
+          item.wallet_name?.toLowerCase().includes(q) ||
+          item.to_wallet_name?.toLowerCase().includes(q);
+        return titleMatch || noteMatch || catMatch || walletMatch;
+      });
+    }
+
     return {
       all: baseList.length,
       overdue: baseList.filter(i => i.target_date < todayStr && i.status === 'pending').length,
@@ -200,6 +237,7 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
   }, [
     plannedExpenses,
     activeTab,
+    searchQuery,
     todayStr,
     startOfWeek,
     endOfWeek,
@@ -480,12 +518,20 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
   const handleOpenEditForm = (item: PlannedExpense) => {
     hapticMedium();
     setEditingItem(item);
-    setTitleInput(item.title);
+    let editTitle = item.title;
+    if (item.planned_type === 'credit_payment' || editTitle.startsWith('Trả nợ ')) {
+      editTitle = editTitle
+        .replace(/^Trả nợ\s+[^:]+:\s*/i, '')
+        .replace(/\s*\(Kỳ\s+\d+\/\d+\)$/i, '')
+        .trim() || item.title;
+    }
+    setTitleInput(editTitle);
     setAmountInput(item.amount.toString());
     setTargetDateInput(item.target_date);
     setSelectedCategoryId(item.category_id || categories[0]?.id || '');
     setSelectedWalletId(item.wallet_id || '');
-    setNoteInput(item.note || '');
+    const isZeroFeeNote = !!item.note && /^Gốc:\s*[\d\.\,]+\s*₫?\s*\+\s*Phí:\s*0\s*₫?$/i.test(item.note.trim());
+    setNoteInput(isZeroFeeNote ? '' : (item.note || ''));
     setFormModalVisible(true);
   };
 
@@ -590,6 +636,32 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
       },
       { destructive: true, confirmText: 'Xóa ngay' }
     );
+  };
+
+  // Xem chi tiết giao dịch gốc từ khoản dự chi tín dụng
+  const handleViewParentTransaction = async (parentTxId: string) => {
+    hapticMedium();
+    // 1. Kiểm tra trong danh sách transactions từ context
+    const found = (transactions || []).find(t => t.id === parentTxId);
+    if (found) {
+      setSelectedParentTx(found);
+      setParentTxModalVisible(true);
+      return;
+    }
+    // 2. Nếu chưa có trong context, truy vấn từ SQLite
+    try {
+      const tx = await queries.getTransactionById(db, parentTxId);
+      if (tx) {
+        setSelectedParentTx(tx);
+        setParentTxModalVisible(true);
+      } else {
+        hapticError();
+        showAlert('Không tìm thấy', 'Giao dịch gốc có thể đã bị xóa hoặc không còn tồn tại.');
+      }
+    } catch (err: any) {
+      hapticError();
+      showAlert('Lỗi', err?.message || 'Không thể tải giao dịch gốc.');
+    }
   };
 
   // Tính toán badge thời hạn
@@ -841,6 +913,31 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
             </Pressable>
           </View>
 
+          {/* Search Input Bar */}
+          <View style={styles.searchBar}>
+            <View style={styles.searchInner}>
+              <Ionicons name="search-outline" size={16} color="#000000" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Tìm theo tiêu đề, ghi chú, danh mục, ví..."
+                placeholderTextColor="#6B7280"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+              {searchQuery ? (
+                <Pressable
+                  onPress={() => {
+                    hapticLight();
+                    setSearchQuery('');
+                  }}
+                  hitSlop={8}
+                >
+                  <Ionicons name="close-circle" size={17} color="#6B7280" />
+                </Pressable>
+              ) : null}
+            </View>
+          </View>
+
           {/* Date Filter Pills (Tháng này & Tháng sau ưu tiên lên đầu) */}
           <ScrollView
             horizontal
@@ -954,6 +1051,19 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
                 </View>
 
                 <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+                  {searchQuery.trim().length > 0 && (
+                    <Pressable
+                      style={styles.statsResetFilterBtn}
+                      onPress={() => {
+                        hapticLight();
+                        setSearchQuery('');
+                      }}
+                    >
+                      <Ionicons name="close-circle-outline" size={14} color="#4B5563" />
+                      <Text style={styles.statsResetFilterBtnText}>Bỏ tìm kiếm</Text>
+                    </Pressable>
+                  )}
+
                   {dateFilter !== 'all' && (
                     <Pressable
                       style={styles.statsResetFilterBtn}
@@ -1043,6 +1153,20 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
               const isPending = item.status === 'pending';
               const isSelected = selectedIds.has(item.id);
 
+              // Xử lý tiêu đề hiển thị: lược bỏ tiền tố dài "Trả nợ [Ví]: " nếu có
+              let displayTitle = item.title;
+              if (item.planned_type === 'credit_payment' || displayTitle.startsWith('Trả nợ ')) {
+                displayTitle = displayTitle
+                  .replace(/^Trả nợ\s+[^:]+:\s*/i, '')
+                  .replace(/\s*\(Kỳ\s+\d+\/\d+\)$/i, '')
+                  .trim() || item.title;
+              }
+
+              // Ẩn các ghi chú thừa thãi như "Gốc: Xđ + Phí: 0đ" hoặc ghi chú trùng lặp 100% với tiêu đề
+              const isZeroFeeNote = !!item.note && /^Gốc:\s*[\d\.\,]+\s*₫?\s*\+\s*Phí:\s*0\s*₫?$/i.test(item.note.trim());
+              const isDuplicateNote = !!item.note && (item.note.trim() === displayTitle.trim() || item.note.trim() === item.title.trim());
+              const shouldShowNote = !!item.note && !isZeroFeeNote && !isDuplicateNote;
+
               return (
                 <Pressable
                   key={item.id}
@@ -1094,7 +1218,7 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
                           />
                         </View>
                         <View style={styles.itemTextCol}>
-                          <Text style={styles.itemTitle} numberOfLines={1}>{item.title}</Text>
+                          <Text style={styles.itemTitle} numberOfLines={2}>{displayTitle}</Text>
                           <View style={styles.itemSubRow}>
                             <Text style={styles.itemCatName}>
                               {cat?.name || 'Khác'}
@@ -1107,7 +1231,7 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
                             ) : null}
                           </View>
                           {item.planned_type === 'credit_payment' && (
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
                               <View style={[styles.dateBadge, { backgroundColor: '#FEF9C3', borderColor: '#000000', borderWidth: 1, paddingVertical: 1, paddingHorizontal: 6 }]}>
                                 <Ionicons name="card" size={10} color="#000000" />
                                 <Text style={[styles.dateBadgeText, { color: '#000000', fontSize: 10, fontWeight: '800' }]}>
@@ -1121,6 +1245,16 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
                                   </Text>
                                 </View>
                               ) : null}
+                              {!!item.parent_tx_id && (
+                                <Pressable
+                                  style={styles.viewParentTxBadgeBtn}
+                                  onPress={() => handleViewParentTransaction(item.parent_tx_id!)}
+                                  hitSlop={6}
+                                >
+                                  <Ionicons name="receipt-outline" size={10} color="#1E40AF" />
+                                  <Text style={styles.viewParentTxBadgeText}>Xem GD gốc</Text>
+                                </Pressable>
+                              )}
                             </View>
                           )}
                         </View>
@@ -1138,8 +1272,8 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
                       </View>
                     </View>
 
-                    {/* Item Note if any */}
-                    {item.note ? (
+                    {/* Item Note if meaningful */}
+                    {shouldShowNote ? (
                       <View style={styles.itemNoteBox}>
                         <Ionicons name="reader-outline" size={13} color="#4B5563" />
                         <Text style={styles.itemNoteText}>{item.note}</Text>
@@ -1157,6 +1291,16 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
 
                       {!isSelectMode && (
                         <View style={styles.itemActionsGroup}>
+                          {!!item.parent_tx_id && (
+                            <Pressable
+                              style={[styles.iconActionBtn, { backgroundColor: '#EFF6FF', borderColor: '#3B82F6' }]}
+                              onPress={() => handleViewParentTransaction(item.parent_tx_id!)}
+                              hitSlop={6}
+                            >
+                              <Ionicons name="receipt-outline" size={15} color="#1D4ED8" />
+                            </Pressable>
+                          )}
+
                           {isPending && (
                             <Pressable
                               style={styles.executeBtnShadow}
@@ -1905,6 +2049,16 @@ export const PlannedExpensesModal: React.FC<PlannedExpensesModalProps> = ({
         </Modal>
 
 
+
+        {/* Modal Xem chi tiết Giao dịch gốc */}
+        <TransactionDetailModal
+          visible={parentTxModalVisible}
+          onClose={() => {
+            setParentTxModalVisible(false);
+            setSelectedParentTx(null);
+          }}
+          transaction={selectedParentTx}
+        />
 
         {AlertModalComponent}
       </SafeAreaView>
@@ -3171,5 +3325,43 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#000000',
+  },
+  searchBar: {
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  searchInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#000000',
+    height: 42,
+    paddingHorizontal: 12,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#000000',
+    paddingVertical: 0,
+  },
+  viewParentTxBadgeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#3B82F6',
+    borderRadius: 4,
+    paddingVertical: 1,
+    paddingHorizontal: 6,
+  },
+  viewParentTxBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#1E40AF',
   },
 });

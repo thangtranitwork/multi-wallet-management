@@ -607,14 +607,9 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                           : ''}
                       </Text>
                     )}
-                    <View style={styles.memberQrsGrid}>
+                    <View style={styles.memberQrsList}>
                       {invoiceData.memberPaymentQrs!.map((mqr, idx) => (
-                        <View key={idx} style={styles.memberQrCard}>
-                          <View style={styles.memberQrNameBadge}>
-                            <Text style={styles.memberQrNameText} numberOfLines={1}>
-                              {mqr.name}
-                            </Text>
-                          </View>
+                        <View key={idx} style={styles.memberQrRowCard}>
                           {mqr.qrUrl ? (
                             <Image
                               source={{ uri: mqr.qrUrl }}
@@ -626,12 +621,22 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                               <Text style={styles.memberQrPlaceholderText}>Không có QR</Text>
                             </View>
                           )}
-                          <Text style={styles.memberQrAmount}>{formatVND(mqr.amount)}</Text>
-                          {!!mqr.transferNote && (
-                            <Text style={styles.memberQrNote} numberOfLines={1}>
-                              {mqr.transferNote}
-                            </Text>
-                          )}
+                          <View style={styles.memberQrInfoCol}>
+                            <View style={styles.memberQrNameBadge}>
+                              <Text style={styles.memberQrNameText} numberOfLines={1}>
+                                {mqr.name}
+                              </Text>
+                            </View>
+                            <Text style={styles.memberQrAmount}>{formatVND(mqr.amount)}</Text>
+                            {!!mqr.transferNote && (
+                              <View style={styles.memberQrNoteBox}>
+                                <Text style={styles.memberQrNoteLabel}>Nội dung CK:</Text>
+                                <Text style={styles.memberQrNoteText} numberOfLines={2}>
+                                  {mqr.transferNote}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
                         </View>
                       ))}
                     </View>
@@ -1211,60 +1216,40 @@ const styles = StyleSheet.create({
     borderColor: '#CBD5E1',
     borderRadius: 8,
   },
-  memberQrsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
+  memberQrsList: {
     gap: 8,
     marginTop: 10,
   },
-  memberQrCard: {
-    width: '48%',
-    minWidth: 130,
-    maxWidth: 200,
+  memberQrRowCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderWidth: 1.5,
     borderColor: '#000000',
     borderRadius: 8,
-    padding: 8,
-    alignItems: 'center',
+    padding: 10,
+    gap: 12,
     shadowColor: '#000000',
-    shadowOffset: { width: 2, height: 2 },
+    shadowOffset: { width: 1.5, height: 1.5 },
     shadowOpacity: 1,
     shadowRadius: 0,
     elevation: 2,
   },
-  memberQrNameBadge: {
-    backgroundColor: '#FEF08A',
-    borderWidth: 1,
-    borderColor: '#000000',
-    paddingHorizontal: 8,
-    paddingVertical: 2.5,
-    borderRadius: 4,
-    marginBottom: 6,
-    maxWidth: '100%',
-  },
-  memberQrNameText: {
-    fontSize: 11.5,
-    fontWeight: '900',
-    color: '#000000',
-    textAlign: 'center',
-  },
   memberQrImage: {
-    width: 115,
-    height: 115,
-    borderRadius: 4,
+    width: 105,
+    height: 105,
+    borderRadius: 6,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#E2E8F0',
   },
   memberQrPlaceholder: {
-    width: 115,
-    height: 115,
-    borderRadius: 4,
+    width: 105,
+    height: 105,
+    borderRadius: 6,
     backgroundColor: '#F3F4F6',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#E2E8F0',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1273,17 +1258,51 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     fontStyle: 'italic',
   },
+  memberQrInfoCol: {
+    flex: 1,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+  },
+  memberQrNameBadge: {
+    backgroundColor: '#FEF08A',
+    borderWidth: 1,
+    borderColor: '#000000',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginBottom: 4,
+    maxWidth: '100%',
+  },
+  memberQrNameText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#000000',
+  },
   memberQrAmount: {
-    fontSize: 12.5,
+    fontSize: 15,
     fontWeight: '900',
     color: '#059669',
-    marginTop: 5,
-    textAlign: 'center',
+    marginBottom: 4,
   },
-  memberQrNote: {
-    fontSize: 9.5,
-    color: '#6B7280',
-    marginTop: 2,
-    textAlign: 'center',
+  memberQrNoteBox: {
+    backgroundColor: '#F1F5F9',
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    width: '100%',
+  },
+  memberQrNoteLabel: {
+    fontSize: 8.5,
+    fontWeight: '700',
+    color: '#64748B',
+    marginBottom: 1,
+  },
+  memberQrNoteText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#1E293B',
+    lineHeight: 14,
   },
 });
