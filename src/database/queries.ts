@@ -743,8 +743,8 @@ export async function splitTransactionIntoDebts(
 
       // Thêm vào bảng debts
       await db.runAsync(
-        `INSERT INTO debts (id, type, person_name, person_phone, initial_amount, remaining_amount, wallet_id, status, note, created_at)
-         VALUES (?, 'lend', ?, ?, ?, ?, ?, 'active', ?, ?)`,
+        `INSERT INTO debts (id, type, person_name, person_phone, initial_amount, remaining_amount, wallet_id, status, note, items, created_at)
+         VALUES (?, 'lend', ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
         [
           debtId,
           item.personName.trim(),
@@ -753,6 +753,7 @@ export async function splitTransactionIntoDebts(
           cleanSplitAmount,
           tx.wallet_id,
           debtNote,
+          item.items || null,
           now,
         ]
       );
@@ -815,7 +816,9 @@ export async function getDebts(
   type?: 'lend' | 'borrow'
 ): Promise<Debt[]> {
   let query = `
-    SELECT d.*, w.name as wallet_name
+    SELECT d.*,
+           COALESCE(d.items, (SELECT t.items FROM transactions t WHERE t.debt_id = d.id AND t.items IS NOT NULL LIMIT 1)) as items,
+           w.name as wallet_name
     FROM debts d
     LEFT JOIN wallets w ON d.wallet_id = w.id
     WHERE 1=1
@@ -836,7 +839,9 @@ export async function getDebtById(
   id: string
 ): Promise<Debt | null> {
   return await db.getFirstAsync<Debt>(
-    `SELECT d.*, w.name as wallet_name
+    `SELECT d.*,
+            COALESCE(d.items, (SELECT t.items FROM transactions t WHERE t.debt_id = d.id AND t.items IS NOT NULL LIMIT 1)) as items,
+            w.name as wallet_name
      FROM debts d
      LEFT JOIN wallets w ON d.wallet_id = w.id
      WHERE d.id = ?`,
@@ -869,6 +874,7 @@ export async function createDebt(
     wallet_id?: string | null;
     due_date?: string | null;
     note?: string;
+    items?: string | null;
   }
 ): Promise<void> {
   await db.withTransactionAsync(async () => {
@@ -881,8 +887,8 @@ export async function createDebt(
 
     // 1. Lưu vào bảng debts TRƯỚC (để transactions.debt_id không bị lỗi FOREIGN KEY constraint)
     await db.runAsync(
-      `INSERT INTO debts (id, type, person_name, person_phone, initial_amount, remaining_amount, wallet_id, due_date, status, note, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+      `INSERT INTO debts (id, type, person_name, person_phone, initial_amount, remaining_amount, wallet_id, due_date, status, note, items, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
       [
         debt.id,
         debt.type,
@@ -893,6 +899,7 @@ export async function createDebt(
         effectiveWalletId,
         debt.due_date || null,
         debt.note || '',
+        debt.items || null,
         now,
       ]
     );

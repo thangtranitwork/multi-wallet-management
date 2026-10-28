@@ -107,6 +107,7 @@ interface WalletContextType {
     wallet_id?: string | null;
     due_date?: string | null;
     note?: string;
+    items?: string | null;
   }) => Promise<void>;
   payOrCollectDebt: (params: {
     debtId: string;
@@ -645,6 +646,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     wallet_id?: string | null;
     due_date?: string | null;
     note?: string;
+    items?: string | null;
   }) => {
     const id = generateId('debt');
     await queries.createDebt(db, {

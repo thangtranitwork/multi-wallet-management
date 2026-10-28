@@ -52,6 +52,7 @@ export async function initDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
         due_date TEXT,
         status TEXT NOT NULL DEFAULT 'active', -- 'active', 'partially_paid', 'settled'
         note TEXT,
+        items TEXT DEFAULT NULL,
         created_at TEXT NOT NULL
       );
 
@@ -252,6 +253,18 @@ export async function initDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
         console.warn('Lỗi migration dọn dẹp to_wallet_id mồ côi:', err);
       }
       await db.execAsync('PRAGMA user_version = 4;');
+    }
+
+    if (currentVersion < 5) {
+      const safeAlter = async (sql: string) => {
+        try {
+          await db.execAsync(sql);
+        } catch {
+          // Column already exists
+        }
+      };
+      await safeAlter('ALTER TABLE debts ADD COLUMN items TEXT DEFAULT NULL;');
+      await db.execAsync('PRAGMA user_version = 5;');
     }
 
     // Khởi tạo danh mục mặc định nếu chưa có

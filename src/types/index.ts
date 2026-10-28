@@ -169,6 +169,7 @@ export interface Debt {
   due_date?: string | null;
   status: DebtStatus;
   note?: string;
+  items?: string | null;
   created_at: string;
   // Joined fields
   wallet_name?: string;

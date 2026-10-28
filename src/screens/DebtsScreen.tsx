@@ -14,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import dayjs from 'dayjs';
 import { useWallet } from '../context/WalletContext';
 import { DebtModal } from '../components/DebtModal';
-import { WalletQRModal } from '../components/WalletQRModal';
+import { DebtInvoiceModal } from '../components/DebtInvoiceModal';
 import { NeoDropdown } from '../components/NeoDropdown';
 import { Debt } from '../types';
 import { THEME, formatVND } from '../constants';
@@ -477,8 +477,25 @@ export const DebtsScreen: React.FC = () => {
                             onPress={() => setQrDebt(debt)}
                           >
                             <View style={styles.qrBtnInner}>
-                              <Ionicons name="qr-code-outline" size={15} color="#000000" />
-                              <Text style={styles.qrBtnText}>Mã QR</Text>
+                              <Ionicons name="receipt-outline" size={15} color="#000000" />
+                              <Text style={styles.qrBtnText}>
+                                In bill / QR
+                                {debts.filter(
+                                  (d) =>
+                                    d.person_name.trim().toLowerCase() === debt.person_name.trim().toLowerCase() &&
+                                    d.type === debt.type &&
+                                    d.status !== 'settled'
+                                ).length > 1
+                                  ? ` (${
+                                      debts.filter(
+                                        (d) =>
+                                          d.person_name.trim().toLowerCase() === debt.person_name.trim().toLowerCase() &&
+                                          d.type === debt.type &&
+                                          d.status !== 'settled'
+                                      ).length
+                                    })`
+                                  : ''}
+                              </Text>
                             </View>
                           </Pressable>
                         </>
@@ -547,26 +564,22 @@ export const DebtsScreen: React.FC = () => {
         />
       )}
 
-      {/* Debt QR Modal */}
+      {/* Debt Bill / QR Modal */}
       {qrDebt && (() => {
-        const effectiveWallet = getDebtQRWallet(qrDebt, wallets);
-        const isLend = qrDebt.type === 'lend' || activeTab === 'lend';
-        const purposeText = isLend
-          ? `${qrDebt.person_name} tra no`
-          : `Nhan tien vay ${qrDebt.person_name}`;
-        const modalTitle = isLend
-          ? `MÃ QR THU NỢ: ${qrDebt.person_name.toUpperCase()}`
-          : `MÃ QR NHẬN TIỀN VAY: ${qrDebt.person_name.toUpperCase()}`;
+        const targetPersonDebts = debts.filter(
+          (d) =>
+            d.person_name.trim().toLowerCase() === qrDebt.person_name.trim().toLowerCase() &&
+            d.type === qrDebt.type &&
+            d.status !== 'settled'
+        );
 
         return (
-          <WalletQRModal
+          <DebtInvoiceModal
             visible={true}
             onClose={() => setQrDebt(null)}
-            wallet={effectiveWallet}
-            amount={qrDebt.remaining_amount}
-            purpose={purposeText}
-            title={modalTitle}
-            isReadOnly={true}
+            debts={targetPersonDebts.length > 0 ? targetPersonDebts : [qrDebt]}
+            initialDebtId={qrDebt.id}
+            wallets={wallets}
           />
         );
       })()}

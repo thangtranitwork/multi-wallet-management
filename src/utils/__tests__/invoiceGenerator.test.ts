@@ -3,10 +3,12 @@ import {
   getInvoiceOptions,
   getAvailableQrOptions,
   buildInvoiceData,
+  buildDebtInvoiceData,
+  getDebtInvoiceItems,
   generateInvoiceHTML,
   generateInvoiceText,
 } from '../invoiceGenerator';
-import { Transaction, Wallet, BillMember, BillItem, BillAdjustment } from '../../types';
+import { Transaction, Wallet, BillMember, BillItem, BillAdjustment, Debt } from '../../types';
 
 describe('invoiceGenerator', () => {
   const mockWallet: Wallet = {
@@ -122,6 +124,15 @@ describe('invoiceGenerator', () => {
     // plus 10000 fee = 86000
     expect(totalData.totalAmount).toBe(86000);
     expect(totalData.memberAllocations?.length).toBe(2);
+
+    // Kiểm tra chi tiết phân bổ món cho từng thành viên kể cả Tôi
+    const meAlloc = totalData.memberAllocations?.find((m) => m.isPayer || m.memberId === 'me');
+    expect(meAlloc).toBeDefined();
+    expect(meAlloc?.items?.length).toBeGreaterThan(0);
+
+    const thangAlloc = totalData.memberAllocations?.find((m) => m.name === 'Hà Thắng');
+    expect(thangAlloc).toBeDefined();
+    expect(thangAlloc?.items?.length).toBe(2);
   });
 
   it('buildInvoiceData builds member invoice correctly with custom quantities', () => {
@@ -170,6 +181,8 @@ describe('invoiceGenerator', () => {
     expect(html).not.toContain('VÍ CỦA TÔI');
     expect(html).toContain('HÀ THẮNG');
     expect(html).toContain('img.vietqr.io');
+    expect(html).toContain('aspect-ratio: 1');
+    expect(html).toContain('63.500');
   });
 
   it('generateInvoiceText creates formatted text', () => {
@@ -211,6 +224,8 @@ describe('invoiceGenerator', () => {
     expect(totalData.memberPaymentQrs).toBeDefined();
     expect(totalData.memberPaymentQrs?.length).toBe(1);
     expect(totalData.memberPaymentQrs?.[0].name).toBe('Hà Thắng');
+    // Đảm bảo không tạo mã QR cho 'Bạn' / 'Tôi'
+    expect(totalData.memberPaymentQrs?.some((q) => q.name === 'Bạn' || q.memberId === 'me')).toBe(false);
     expect(totalData.memberPaymentQrs?.[0].amount).toBe(63500);
     expect(totalData.memberPaymentQrs?.[0].qrUrl).toContain('img.vietqr.io');
     expect(totalData.memberPaymentQrs?.[0].qrUrl).toContain('amount=63500');
@@ -220,6 +235,8 @@ describe('invoiceGenerator', () => {
     expect(html).toContain('MÃ QR THANH TOÁN THEO TỪNG NGƯỜI');
     expect(html).toContain('Hà Thắng');
     expect(html).toContain('img.vietqr.io');
+    expect(html).toContain('aspect-ratio: 1');
+    expect(html).toContain('PHÂN BỔ THEO THÀNH VIÊN');
   });
 
   it('correctly handles 100% covered split bill with [Trả hộ 100% - Đã tách cho ...]', () => {
@@ -251,6 +268,78 @@ describe('invoiceGenerator', () => {
     expect(totalData.memberPaymentQrs?.length).toBe(2);
     expect(totalData.memberPaymentQrs?.[0].name).toBe('Lan');
     expect(totalData.memberPaymentQrs?.[1].name).toBe('Nam');
+  });
+
+  describe('Debt invoice generation & merging', () => {
+    const mockDebt1: Debt = {
+      id: 'd_1',
+      type: 'lend',
+      person_name: 'Anh Nam',
+      initial_amount: 45000,
+      remaining_amount: 45000,
+      wallet_id: 'w_momo',
+      status: 'active',
+      note: 'Cơm chiên bò',
+      items: JSON.stringify([
+        { name: 'Cơm chiên bò', quantity: 1, price: 45000, totalPrice: 45000 },
+      ]),
+      created_at: '2026-10-22T10:00:00Z',
+    };
+
+    const mockDebt2: Debt = {
+      id: 'd_2',
+      type: 'lend',
+      person_name: 'Anh Nam',
+      initial_amount: 30000,
+      remaining_amount: 30000,
+      wallet_id: 'w_momo',
+      status: 'active',
+      note: 'Cà phê sáng',
+      // Không có items -> fallback note x 1
+      items: null,
+      created_at: '2026-10-23T08:00:00Z',
+    };
+
+    it('getDebtInvoiceItems parses items when present and falls back to note x 1 when empty', () => {
+      const items1 = getDebtInvoiceItems(mockDebt1);
+      expect(items1.length).toBe(1);
+      expect(items1[0].name).toBe('Cơm chiên bò');
+      expect(items1[0].totalPrice).toBe(45000);
+
+      const items2 = getDebtInvoiceItems(mockDebt2);
+      expect(items2.length).toBe(1);
+      expect(items2[0].name).toBe('Cà phê sáng');
+      expect(items2[0].quantity).toBe(1);
+      expect(items2[0].totalPrice).toBe(30000);
+    });
+
+    it('buildDebtInvoiceData creates a single debt bill with qr_only format', () => {
+      const qrOpts = getAvailableQrOptions([mockWallet]);
+      const data = buildDebtInvoiceData([mockDebt1], qrOpts[1], mockWallet);
+
+      expect(data.title).toContain('PHIẾU BÁO NỢ: ANH NAM');
+      expect(data.targetName).toBe('Anh Nam');
+      expect(data.totalAmount).toBe(45000);
+      expect(data.items.length).toBe(1);
+      expect(data.paymentInfo?.qrUrl).toContain('qr_only.png');
+      expect(data.paymentInfo?.qrUrl).not.toContain('compact2.png');
+      expect(data.paymentInfo?.transferNote).toContain('Anh Nam tra no');
+    });
+
+    it('buildDebtInvoiceData merges multiple debts for the same person into 1 combined bill', () => {
+      const qrOpts = getAvailableQrOptions([mockWallet]);
+      const data = buildDebtInvoiceData([mockDebt1, mockDebt2], qrOpts[1], mockWallet);
+
+      expect(data.title).toContain('PHIẾU TỔNG HỢP NỢ: ANH NAM');
+      expect(data.targetName).toBe('Anh Nam');
+      // 45000 + 30000 = 75000
+      expect(data.totalAmount).toBe(75000);
+      expect(data.items.length).toBe(2);
+      expect(data.items[0].name).toBe('Cơm chiên bò');
+      expect(data.items[1].name).toBe('Cà phê sáng');
+      expect(data.paymentInfo?.qrUrl).toContain('qr_only.png');
+      expect(data.paymentInfo?.qrUrl).toContain('amount=75000');
+    });
   });
 });
 

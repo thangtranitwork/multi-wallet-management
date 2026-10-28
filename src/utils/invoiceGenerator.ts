@@ -1,4 +1,4 @@
-import { Transaction, Wallet, BillItem, BillAdjustment, BillMember } from '../types';
+import { Transaction, Wallet, BillItem, BillAdjustment, BillMember, Debt } from '../types';
 import { calculateItemizedBillShares } from './splitBillCalculator';
 import dayjs from 'dayjs';
 
@@ -41,6 +41,15 @@ export interface InvoiceMemberQrItem {
   transferNote?: string;
 }
 
+export interface InvoiceMemberAllocation {
+  name: string;
+  amount: number;
+  isPayer?: boolean;
+  memberId?: string;
+  items?: InvoiceItemDisplay[];
+  adjustmentShare?: number;
+}
+
 export interface InvoiceReportData {
   title: string;
   subtitle: string;
@@ -54,12 +63,13 @@ export interface InvoiceReportData {
   adjustments: { name: string; type: 'fee' | 'discount'; amount: number }[];
   netAdjustments: number;
   totalAmount: number;
-  memberAllocations?: { name: string; amount: number; isPayer?: boolean }[];
+  memberAllocations?: InvoiceMemberAllocation[];
   paymentInfo?: {
     payerName?: string;
     bankName?: string;
     accountNumber?: string;
     qrUrl?: string;
+    transferNote?: string;
   };
   memberPaymentQrs?: InvoiceMemberQrItem[];
 }
@@ -250,6 +260,59 @@ export function getAvailableQrOptions(
 }
 
 /**
+ * Lấy danh sách các món được gán cho một thành viên cụ thể
+ */
+export function getMemberAssignedItems(
+  memberId: string,
+  items: BillItem[]
+): InvoiceItemDisplay[] {
+  const memberItems: InvoiceItemDisplay[] = [];
+
+  items.forEach((it) => {
+    const assignedIds = it.assignedMemberIds || [];
+    const customQtyMap = it.memberQuantities;
+    const hasCustomQuantities =
+      customQtyMap &&
+      assignedIds.some((id) => typeof customQtyMap[id] === 'number' && customQtyMap[id] > 0);
+
+    const itemTotal = (it.price || 0) * (it.quantity || 1);
+
+    if (hasCustomQuantities) {
+      const totalAssignedQty = assignedIds.reduce(
+        (sum, id) => sum + Math.max(0, customQtyMap[id] || 0),
+        0
+      );
+      const myQty = Math.max(0, customQtyMap[memberId] || 0);
+
+      if (myQty > 0) {
+        const mySharePrice = totalAssignedQty > 0 ? (myQty / totalAssignedQty) * itemTotal : 0;
+        memberItems.push({
+          name: it.name,
+          quantity: myQty,
+          unitPrice: it.price || 0,
+          totalPrice: Math.round(mySharePrice),
+          note: totalAssignedQty > myQty ? `Sử dụng: ${myQty}/${it.quantity}` : undefined,
+        });
+      }
+    } else if (assignedIds.includes(memberId)) {
+      const count = Math.max(1, assignedIds.length);
+      const sharePrice = itemTotal / count;
+      const myQty = (it.quantity || 1) / count;
+
+      memberItems.push({
+        name: it.name,
+        quantity: Number(myQty.toFixed(1)),
+        unitPrice: it.price || 0,
+        totalPrice: Math.round(sharePrice),
+        note: count > 1 ? `Chia cùng ${count} người` : undefined,
+      });
+    }
+  });
+
+  return memberItems;
+}
+
+/**
  * Xây dựng dữ liệu chi tiết cho hóa đơn được chọn
  */
 export function buildInvoiceData(
@@ -275,7 +338,7 @@ export function buildInvoiceData(
   if (selectedQr && selectedQr.type !== 'none') {
     if (selectedQr.type === 'vietqr' && selectedQr.bankBin && selectedQr.accountNumber) {
       const transferNote = `Tra tien ${cleanNote.slice(0, 20)}`.trim();
-      const qrUrl = `https://img.vietqr.io/image/${selectedQr.bankBin}-${selectedQr.accountNumber}-compact2.png?amount=${Math.round(
+      const qrUrl = `https://img.vietqr.io/image/${selectedQr.bankBin}-${selectedQr.accountNumber}-qr_only.png?amount=${Math.round(
         calculatedAmount
       )}&addInfo=${encodeURIComponent(transferNote)}`;
 
@@ -284,6 +347,7 @@ export function buildInvoiceData(
         bankName: selectedQr.bankName || defaultWallet?.name || 'Ngân hàng',
         accountNumber: selectedQr.accountNumber,
         qrUrl,
+        transferNote,
       };
     } else if (selectedQr.qrUrl) {
       paymentInfo = {
@@ -291,11 +355,12 @@ export function buildInvoiceData(
         bankName: selectedQr.bankName || defaultWallet?.name || 'Chuyển khoản',
         accountNumber: selectedQr.accountNumber,
         qrUrl: selectedQr.qrUrl,
+        transferNote: `Chuyen khoan ${formatCurrency(calculatedAmount)}`,
       };
     }
   } else if (!selectedQr && defaultWallet?.bank_bin && defaultWallet?.bank_account && calculatedAmount > 0) {
     const transferNote = `Tra tien ${cleanNote.slice(0, 20)}`.trim();
-    const qrUrl = `https://img.vietqr.io/image/${defaultWallet.bank_bin}-${defaultWallet.bank_account}-compact2.png?amount=${Math.round(
+    const qrUrl = `https://img.vietqr.io/image/${defaultWallet.bank_bin}-${defaultWallet.bank_account}-qr_only.png?amount=${Math.round(
       calculatedAmount
     )}&addInfo=${encodeURIComponent(transferNote)}`;
 
@@ -304,6 +369,7 @@ export function buildInvoiceData(
       bankName: defaultWallet.name,
       accountNumber: defaultWallet.bank_account,
       qrUrl,
+      transferNote,
     };
   }
 
@@ -322,7 +388,7 @@ export function buildInvoiceData(
       0
     );
 
-    let memberAllocations: { name: string; amount: number; isPayer?: boolean; memberId?: string }[] | undefined;
+    let memberAllocations: InvoiceMemberAllocation[] | undefined;
     if (members.length > 1) {
       const calcResult = calculateItemizedBillShares(
         transaction.amount,
@@ -336,6 +402,8 @@ export function buildInvoiceData(
         amount: s.finalAmount,
         isPayer: s.isPayer,
         memberId: s.memberId,
+        items: getMemberAssignedItems(s.memberId, items),
+        adjustmentShare: s.adjustmentShare,
       }));
     } else {
       const splitMatch = transaction.note?.match(/\[(?:Trả hộ 100% - )?Đã tách cho ([^\]]+)\]/i);
@@ -344,19 +412,28 @@ export function buildInvoiceData(
         const othersTotal = Math.max(0, rawSum + netAdj - transaction.amount);
         const splitPerPerson = names.length > 0 ? othersTotal / names.length : othersTotal;
         memberAllocations = [
-          { name: 'Bạn (Thực chi)', amount: transaction.amount, isPayer: true, memberId: 'me' },
+          { name: 'Bạn (Thực chi)', amount: transaction.amount, isPayer: true, memberId: 'me', items: [] },
           ...names.map((n, idx) => ({
             name: n,
             amount: splitPerPerson,
             memberId: `split_${idx}`,
+            items: [],
           })),
         ];
       }
     }
 
-    // Tạo danh sách mã QR thanh toán theo từng người khi chia đơn
+    // Tạo danh sách mã QR thanh toán theo từng người khi chia đơn (không hiển thị QR cho Tôi / chủ chi)
     let memberPaymentQrs: InvoiceMemberQrItem[] | undefined;
-    const owingMembers = (memberAllocations || []).filter((m) => !m.isPayer && m.amount > 0);
+    const isMeMember = (m: InvoiceMemberAllocation) => {
+      return (
+        m.isPayer ||
+        m.memberId === 'me' ||
+        m.name?.trim().toLowerCase() === 'tôi' ||
+        m.name?.trim().toLowerCase() === 'bạn'
+      );
+    };
+    const owingMembers = (memberAllocations || []).filter((m) => !isMeMember(m) && m.amount > 0);
     if (owingMembers.length > 0 && selectedQr?.type !== 'none') {
       const isVietQr =
         (selectedQr?.type === 'vietqr' && selectedQr.bankBin && selectedQr.accountNumber) ||
@@ -426,57 +503,43 @@ export function buildInvoiceData(
       parsedBill?.includeMeInSplit !== false
     );
     const memberShare = calcResult.shares.find((s) => s.memberId === targetMemberId);
-
-    const memberItems: InvoiceItemDisplay[] = [];
-    items.forEach((it) => {
-      const assignedIds = it.assignedMemberIds || [];
-      const customQtyMap = it.memberQuantities;
-      const hasCustomQty = customQtyMap && Number(customQtyMap[targetMemberId]) > 0;
-
-      if (hasCustomQty) {
-        const myQty = Number(customQtyMap[targetMemberId]);
-        const totalAssignedQty = assignedIds.reduce(
-          (sum, id) => sum + Math.max(0, Number(customQtyMap[id]) || 0),
-          0
-        );
-        const itemTotal = (it.price || 0) * (it.quantity || 1);
-        const mySharePrice = totalAssignedQty > 0 ? (myQty / totalAssignedQty) * itemTotal : 0;
-
-        memberItems.push({
-          name: it.name,
-          quantity: myQty,
-          unitPrice: it.price || 0,
-          totalPrice: Math.round(mySharePrice),
-          note: totalAssignedQty > myQty ? `Sử dụng: ${myQty}/${it.quantity}` : undefined,
-        });
-      } else if (assignedIds.includes(targetMemberId)) {
-        const itemTotal = (it.price || 0) * (it.quantity || 1);
-        const sharePrice = itemTotal / Math.max(1, assignedIds.length);
-        const myQty = (it.quantity || 1) / Math.max(1, assignedIds.length);
-
-        memberItems.push({
-          name: it.name,
-          quantity: Number(myQty.toFixed(1)),
-          unitPrice: it.price || 0,
-          totalPrice: Math.round(sharePrice),
-          note: assignedIds.length > 1 ? `Chia cùng ${assignedIds.length} người` : undefined,
-        });
-      }
-    });
+    const memberItems = getMemberAssignedItems(targetMemberId, items);
 
     const itemsSubtotal = memberShare?.itemsSubtotal || memberItems.reduce((s, it) => s + it.totalPrice, 0);
     const adjustmentShare = memberShare?.adjustmentShare || 0;
     const finalAmount = memberShare?.finalAmount || itemsSubtotal + adjustmentShare;
 
-    if (selectedQr?.type === 'vietqr' && selectedQr.bankBin && selectedQr.accountNumber) {
-      const transferNote = `Tra tien ${cleanNote.slice(0, 20)}`.trim();
+    if (isMe) {
+      paymentInfo = undefined;
+    } else if (selectedQr?.type === 'vietqr' && selectedQr.bankBin && selectedQr.accountNumber) {
+      const transferNote = `${memberName} tra tien ${cleanNote.slice(0, 15)}`.trim();
       paymentInfo = {
         payerName: 'Chủ tài khoản',
         bankName: selectedQr.bankName || defaultWallet?.name || 'Ngân hàng',
         accountNumber: selectedQr.accountNumber,
-        qrUrl: `https://img.vietqr.io/image/${selectedQr.bankBin}-${selectedQr.accountNumber}-compact2.png?amount=${Math.round(
+        qrUrl: `https://img.vietqr.io/image/${selectedQr.bankBin}-${selectedQr.accountNumber}-qr_only.png?amount=${Math.round(
           finalAmount
         )}&addInfo=${encodeURIComponent(transferNote)}`,
+        transferNote,
+      };
+    } else if (selectedQr?.qrUrl) {
+      paymentInfo = {
+        payerName: 'Chủ tài khoản',
+        bankName: selectedQr.bankName || defaultWallet?.name || 'Chuyển khoản',
+        accountNumber: selectedQr.accountNumber,
+        qrUrl: selectedQr.qrUrl,
+        transferNote: `${memberName} chuyen khoan ${formatCurrency(finalAmount)}`,
+      };
+    } else if (!selectedQr && defaultWallet?.bank_bin && defaultWallet?.bank_account && finalAmount > 0) {
+      const transferNote = `${memberName} tra tien ${cleanNote.slice(0, 15)}`.trim();
+      paymentInfo = {
+        payerName: 'Chủ tài khoản',
+        bankName: defaultWallet.name,
+        accountNumber: defaultWallet.bank_account,
+        qrUrl: `https://img.vietqr.io/image/${defaultWallet.bank_bin}-${defaultWallet.bank_account}-qr_only.png?amount=${Math.round(
+          finalAmount
+        )}&addInfo=${encodeURIComponent(transferNote)}`,
+        transferNote,
       };
     }
 
@@ -518,6 +581,159 @@ export function buildInvoiceData(
     adjustments: [],
     netAdjustments: 0,
     totalAmount: option.totalAmount,
+    paymentInfo: isMe ? undefined : paymentInfo,
+  };
+}
+
+/**
+ * Lấy danh sách món / dịch vụ cho một khoản nợ
+ * - Nếu nợ được tách từ hóa đơn: lấy danh sách item trong debt.items
+ * - Nếu nợ tạo thủ công có nhập items: lấy danh sách item đó
+ * - Nếu không có items: lấy nội dung (note) làm item x 1 với giá là remaining_amount
+ */
+export function getDebtInvoiceItems(debt: Debt): InvoiceItemDisplay[] {
+  if (debt.items) {
+    try {
+      const parsed = JSON.parse(debt.items);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((it: any) => {
+          const qty = Number(it.quantity) || 1;
+          const price = Number(it.price || it.unitPrice || it.amount) || 0;
+          return {
+            name: it.name || it.title || 'Món / Dịch vụ',
+            quantity: qty,
+            unitPrice: price,
+            totalPrice: Number(it.totalPrice) || price * qty,
+            note: it.note,
+          };
+        });
+      } else if (parsed && typeof parsed === 'object') {
+        if (Array.isArray(parsed.items) && parsed.items.length > 0) {
+          return parsed.items.map((it: any) => {
+            const qty = Number(it.quantity) || 1;
+            const price = Number(it.price || it.unitPrice || it.amount) || 0;
+            return {
+              name: it.name || 'Món / Dịch vụ',
+              quantity: qty,
+              unitPrice: price,
+              totalPrice: Number(it.totalPrice) || price * qty,
+              note: it.note,
+            };
+          });
+        }
+      }
+    } catch {
+      // Fallback bên dưới
+    }
+  }
+
+  // Fallback: Nếu không nhập items, lấy nội dung làm item x 1
+  return [
+    {
+      name: debt.note?.trim() || 'Khoản nợ',
+      quantity: 1,
+      unitPrice: debt.remaining_amount,
+      totalPrice: debt.remaining_amount,
+    },
+  ];
+}
+
+/**
+ * Xây dựng dữ liệu hóa đơn / phiếu báo nợ cho 1 hoặc nhiều khoản nợ gộp của cùng 1 người
+ */
+export function buildDebtInvoiceData(
+  debts: Debt[],
+  selectedQr?: InvoiceQrOption | null,
+  defaultWallet?: Wallet | null
+): InvoiceReportData {
+  const validDebts = debts.filter((d) => d && d.remaining_amount > 0);
+  const primaryDebt = validDebts[0] || debts[0];
+  const personName = primaryDebt?.person_name?.trim() || 'Người nợ';
+  const isCombined = validDebts.length > 1;
+
+  const totalAmount = validDebts.reduce((sum, d) => sum + d.remaining_amount, 0);
+
+  // Tạo danh sách items từ các khoản nợ
+  const allItems: InvoiceItemDisplay[] = [];
+  if (isCombined) {
+    validDebts.forEach((d, dIdx) => {
+      const dItems = getDebtInvoiceItems(d);
+      const debtDateStr = dayjs(d.created_at).format('DD/MM');
+      dItems.forEach((it) => {
+        allItems.push({
+          ...it,
+          note: it.note
+            ? `${it.note} (Khoản ${debtDateStr})`
+            : `Khoản nợ ${dIdx + 1} (${debtDateStr})`,
+        });
+      });
+    });
+  } else if (primaryDebt) {
+    allItems.push(...getDebtInvoiceItems(primaryDebt));
+  }
+
+  const itemsSubtotal = allItems.reduce((s, it) => s + it.totalPrice, 0);
+  const cleanTransferPurpose = `${personName} tra no`.trim();
+
+  let paymentInfo: InvoiceReportData['paymentInfo'] = undefined;
+  if (selectedQr && selectedQr.type !== 'none') {
+    if (selectedQr.type === 'vietqr' && selectedQr.bankBin && selectedQr.accountNumber) {
+      const qrUrl = `https://img.vietqr.io/image/${selectedQr.bankBin}-${selectedQr.accountNumber}-qr_only.png?amount=${Math.round(
+        totalAmount
+      )}&addInfo=${encodeURIComponent(cleanTransferPurpose.slice(0, 25))}`;
+
+      paymentInfo = {
+        payerName: 'Chủ tài khoản',
+        bankName: selectedQr.bankName || defaultWallet?.name || 'Ngân hàng',
+        accountNumber: selectedQr.accountNumber,
+        qrUrl,
+        transferNote: cleanTransferPurpose,
+      };
+    } else if (selectedQr.qrUrl) {
+      paymentInfo = {
+        payerName: 'Chủ tài khoản',
+        bankName: selectedQr.bankName || defaultWallet?.name || 'Chuyển khoản',
+        accountNumber: selectedQr.accountNumber,
+        qrUrl: selectedQr.qrUrl,
+        transferNote: `${personName} chuyen khoan ${formatCurrency(totalAmount)}`,
+      };
+    }
+  } else if (!selectedQr && defaultWallet?.bank_bin && defaultWallet?.bank_account && totalAmount > 0) {
+    const qrUrl = `https://img.vietqr.io/image/${defaultWallet.bank_bin}-${defaultWallet.bank_account}-qr_only.png?amount=${Math.round(
+      totalAmount
+    )}&addInfo=${encodeURIComponent(cleanTransferPurpose.slice(0, 25))}`;
+
+    paymentInfo = {
+      payerName: 'Chủ tài khoản',
+      bankName: defaultWallet.name,
+      accountNumber: defaultWallet.bank_account,
+      qrUrl,
+      transferNote: cleanTransferPurpose,
+    };
+  }
+
+  const dateFormatted = dayjs().format('DD/MM/YYYY • HH:mm');
+  const title = isCombined
+    ? `PHIẾU TỔNG HỢP NỢ: ${personName.toUpperCase()}`
+    : `PHIẾU BÁO NỢ: ${personName.toUpperCase()}`;
+
+  const subtitle = isCombined
+    ? `Gộp ${validDebts.length} khoản nợ cần thanh toán`
+    : primaryDebt?.note?.trim() || 'Chi tiết khoản nợ';
+
+  return {
+    title,
+    subtitle,
+    targetName: personName,
+    targetType: 'member_share',
+    dateStr: dateFormatted,
+    note: subtitle,
+    walletName: defaultWallet?.name,
+    items: allItems,
+    itemsSubtotal,
+    adjustments: [],
+    netAdjustments: 0,
+    totalAmount,
     paymentInfo,
   };
 }
@@ -573,12 +789,34 @@ export function generateInvoiceHTML(
         </div>
         ${data.memberAllocations
           .map(
-            (m) => `
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; font-size: 12px;">
-              <span style="font-weight: ${m.isPayer ? '800' : '600'}; color: ${m.isPayer ? '#059669' : '#111827'};">
-                ${m.name} ${m.isPayer ? '(Đã thanh toán)' : ''}
-              </span>
-              <span style="font-weight: 800; color: #111827;">${formatCurrency(m.amount)}</span>
+            (m, idx) => `
+            <div style="${idx > 0 ? 'border-top: 1px dashed #e2e8f0; margin-top: 6px; padding-top: 6px;' : ''}">
+              <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px;">
+                <span style="font-weight: 800; color: ${m.isPayer ? '#059669' : '#111827'};">
+                  ${m.name} ${m.isPayer ? '(Chủ chi)' : ''}
+                </span>
+                <span style="font-weight: 800; color: #111827;">${formatCurrency(m.amount)}</span>
+              </div>
+              ${m.items && m.items.length > 0 ? `
+                <div style="padding-left: 8px; margin-top: 3px;">
+                  ${m.items.map(it => `
+                    <div style="display: flex; justify-content: space-between; font-size: 10.5px; color: #4b5563; line-height: 1.4;">
+                      <span>• ${it.name} (x${it.quantity})${it.note ? ` <span style="color: #9ca3af;">[${it.note}]</span>` : ''}</span>
+                      <span>${formatCurrency(it.totalPrice)}</span>
+                    </div>
+                  `).join('')}
+                  ${m.adjustmentShare && m.adjustmentShare !== 0 ? `
+                    <div style="display: flex; justify-content: space-between; font-size: 10.5px; color: ${m.adjustmentShare > 0 ? '#d97706' : '#059669'}; font-style: italic;">
+                      <span>• ${m.adjustmentShare > 0 ? 'Phụ phí chia đều' : 'Giảm giá / Voucher'}</span>
+                      <span>${m.adjustmentShare > 0 ? '+' : ''}${formatCurrency(m.adjustmentShare)}</span>
+                    </div>
+                  ` : ''}
+                </div>
+              ` : `
+                <div style="padding-left: 8px; margin-top: 2px; font-size: 10.5px; color: #9ca3af; font-style: italic;">
+                  (Không có món riêng)
+                </div>
+              `}
             </div>
           `
           )
@@ -605,30 +843,30 @@ export function generateInvoiceHTML(
             <b>${data.paymentInfo.bankName}</b> ${data.paymentInfo.accountNumber ? `• STK: <b>${data.paymentInfo.accountNumber}</b>` : ''}
           </div>
         ` : ''}
-        <div style="display: flex; flex-direction: column; gap: 10px;">
+        <div style="display: flex; flex-direction: column; gap: 12px;">
           ${data.memberPaymentQrs!.map((mqr) => {
             const mSrc = (qrImageDataUri && mqr.qrUrl?.startsWith('file://')) ? qrImageDataUri : (mqr.qrUrl || qrImageDataUri);
             return `
-              <div style="display: flex; align-items: center; background: #ffffff; border: 1.5px solid #000000; border-radius: 8px; padding: 10px 12px; gap: 12px; box-sizing: border-box; box-shadow: 2px 2px 0px #000000;">
-                ${mSrc ? `
-                  <div style="flex-shrink: 0;">
-                    <img src="${mSrc}" alt="${mqr.name}" style="width: 110px; height: 110px; border-radius: 6px; border: 1px solid #e2e8f0; object-fit: contain; background: #ffffff; display: block;" />
-                  </div>
-                ` : ''}
-                <div style="flex: 1; min-width: 0;">
-                  <div style="display: inline-block; background: #fef08a; border: 1px solid #000000; border-radius: 4px; padding: 2px 8px; font-weight: 800; font-size: 12px; color: #000000; margin-bottom: 5px;">
+              <div style="background: #ffffff; border: 1.5px solid #000000; border-radius: 8px; padding: 12px; box-sizing: border-box; box-shadow: 2px 2px 0px #000000;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                  <div style="display: inline-block; background: #fef08a; border: 1px solid #000000; border-radius: 4px; padding: 2px 8px; font-weight: 800; font-size: 13px; color: #000000;">
                     ${mqr.name}
                   </div>
-                  <div style="font-weight: 900; font-size: 15px; color: #059669; margin-bottom: 4px;">
+                  <div style="font-weight: 900; font-size: 15px; color: #059669;">
                     ${formatCurrency(mqr.amount)}
                   </div>
-                  ${mqr.transferNote ? `
-                    <div style="font-size: 10px; color: #475569; background: #f1f5f9; padding: 4px 6px; border-radius: 4px; border: 1px solid #e2e8f0; line-height: 1.35; word-break: break-word;">
-                      <span style="color: #64748b; font-size: 9px; display: block; font-weight: 600;">NỘI DUNG CHUYỂN KHOẢN:</span>
-                      <b>${mqr.transferNote}</b>
-                    </div>
-                  ` : ''}
                 </div>
+                ${mSrc ? `
+                  <div style="width: 100%; aspect-ratio: 1; border-radius: 6px; border: 1px solid #e2e8f0; background: #ffffff; margin-bottom: 8px; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                    <img src="${mSrc}" alt="${mqr.name}" style="width: 100%; height: 100%; object-fit: contain; display: block;" />
+                  </div>
+                ` : ''}
+                ${mqr.transferNote ? `
+                  <div style="font-size: 10.5px; color: #475569; background: #f1f5f9; padding: 5px 8px; border-radius: 4px; border: 1px solid #e2e8f0; line-height: 1.35; word-break: break-word;">
+                    <span style="color: #64748b; font-size: 9px; display: block; font-weight: 600;">NỘI DUNG CHUYỂN KHOẢN:</span>
+                    <b>${mqr.transferNote}</b>
+                  </div>
+                ` : ''}
               </div>
             `;
           }).join('')}
@@ -639,18 +877,33 @@ export function generateInvoiceHTML(
 
   const paymentQrHtml = activeQrSrc
     ? `
-      <div style="margin-top: 18px; padding: 14px; background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px; text-align: center;">
-        <div style="font-weight: 800; font-size: 11px; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
-          MÃ QR THANH TOÁN (VIETQR / VÍ)
+      <div style="margin-top: 18px; padding: 14px; background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px;">
+        <div style="font-weight: 800; font-size: 11px; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px; text-align: center; margin-bottom: 4px;">
+          MÃ QR THANH TOÁN
         </div>
         ${data.paymentInfo?.bankName ? `
-          <div style="font-size: 11px; color: #334155; margin-bottom: 8px;">
-            <b>${data.paymentInfo.bankName}</b> ${data.paymentInfo.accountNumber ? `- STK: <b>${data.paymentInfo.accountNumber}</b>` : ''}
+          <div style="font-size: 11px; color: #334155; margin-bottom: 12px; text-align: center;">
+            <b>${data.paymentInfo.bankName}</b> ${data.paymentInfo.accountNumber ? `• STK: <b>${data.paymentInfo.accountNumber}</b>` : ''}
           </div>
         ` : ''}
-        <img src="${activeQrSrc}" alt="QR Code" style="width: 160px; height: 160px; border-radius: 6px; border: 1px solid #94a3b8; background: #ffffff; object-fit: contain;" />
-        <div style="font-size: 10px; color: #475569; margin-top: 6px;">
-          Số tiền cần chuyển: <b style="color: #0f172a;">${formatCurrency(data.totalAmount)}</b>
+        <div style="background: #ffffff; border: 1.5px solid #000000; border-radius: 8px; padding: 12px; box-sizing: border-box; box-shadow: 2px 2px 0px #000000;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <div style="display: inline-block; background: #fef08a; border: 1px solid #000000; border-radius: 4px; padding: 2px 8px; font-weight: 800; font-size: 13px; color: #000000;">
+              ${data.targetName}
+            </div>
+            <div style="font-weight: 900; font-size: 15px; color: #059669;">
+              ${formatCurrency(data.totalAmount)}
+            </div>
+          </div>
+          <div style="width: 100%; aspect-ratio: 1; border-radius: 6px; border: 1px solid #e2e8f0; background: #ffffff; margin-bottom: ${data.paymentInfo?.transferNote ? '8px' : '0'}; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+            <img src="${activeQrSrc}" alt="QR Code" style="width: 100%; height: 100%; object-fit: contain; display: block;" />
+          </div>
+          ${data.paymentInfo?.transferNote ? `
+            <div style="font-size: 10.5px; color: #475569; background: #f1f5f9; padding: 5px 8px; border-radius: 4px; border: 1px solid #e2e8f0; line-height: 1.35; word-break: break-word;">
+              <span style="color: #64748b; font-size: 9px; display: block; font-weight: 600;">NỘI DUNG CHUYỂN KHOẢN:</span>
+              <b>${data.paymentInfo.transferNote}</b>
+            </div>
+          ` : ''}
         </div>
       </div>
     `
@@ -890,6 +1143,14 @@ export function generateInvoiceText(data: InvoiceReportData): string {
     text += `\nPhân bổ thành viên:\n`;
     data.memberAllocations.forEach((m) => {
       text += `• ${m.name}: ${formatCurrency(m.amount)}\n`;
+      if (m.items && m.items.length > 0) {
+        m.items.forEach((it) => {
+          text += `   - ${it.name} (x${it.quantity}): ${formatCurrency(it.totalPrice)}\n`;
+        });
+        if (m.adjustmentShare && m.adjustmentShare !== 0) {
+          text += `   - ${m.adjustmentShare > 0 ? 'Phụ phí' : 'Giảm giá'}: ${m.adjustmentShare > 0 ? '+' : ''}${formatCurrency(m.adjustmentShare)}\n`;
+        }
+      }
     });
   }
 

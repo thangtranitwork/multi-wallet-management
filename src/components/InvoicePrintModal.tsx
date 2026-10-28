@@ -584,9 +584,65 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                       <Text style={styles.allocationsTitle}>Phân bổ theo thành viên:</Text>
                     </View>
                     {invoiceData.memberAllocations.map((m, idx) => (
-                      <View key={idx} style={styles.allocationRow}>
-                        <Text style={styles.allocationName}>{m.name}</Text>
-                        <Text style={styles.allocationVal}>{formatVND(m.amount)}</Text>
+                      <View
+                        key={idx}
+                        style={[
+                          styles.allocationMemberBlock,
+                          idx > 0 && styles.allocationMemberBorder,
+                        ]}
+                      >
+                        <View style={styles.allocationRow}>
+                          <Text style={[styles.allocationName, m.isPayer && styles.allocationPayerName]}>
+                            {m.name} {m.isPayer ? '(Chủ chi)' : ''}
+                          </Text>
+                          <Text style={[styles.allocationVal, m.isPayer && styles.allocationPayerVal]}>
+                            {formatVND(m.amount)}
+                          </Text>
+                        </View>
+                        {m.items && m.items.length > 0 ? (
+                          <View style={styles.allocationItemsList}>
+                            {m.items.map((it, itemIdx) => (
+                              <View key={itemIdx} style={styles.allocationItemSubRow}>
+                                <Text style={styles.allocationItemSubText} numberOfLines={1}>
+                                  • {it.name} (x{it.quantity}){it.note ? ` [${it.note}]` : ''}
+                                </Text>
+                                <Text style={styles.allocationItemSubPrice}>
+                                  {formatVND(it.totalPrice)}
+                                </Text>
+                              </View>
+                            ))}
+                            {!!m.adjustmentShare && m.adjustmentShare !== 0 && (
+                              <View style={styles.allocationItemSubRow}>
+                                <Text
+                                  style={[
+                                    styles.allocationItemSubText,
+                                    {
+                                      fontStyle: 'italic',
+                                      color: m.adjustmentShare > 0 ? '#D97706' : '#059669',
+                                    },
+                                  ]}
+                                >
+                                  • {m.adjustmentShare > 0 ? 'Phụ phí chia đều' : 'Giảm giá / Voucher'}
+                                </Text>
+                                <Text
+                                  style={[
+                                    styles.allocationItemSubPrice,
+                                    { color: m.adjustmentShare > 0 ? '#D97706' : '#059669' },
+                                  ]}
+                                >
+                                  {m.adjustmentShare > 0 ? '+' : ''}
+                                  {formatVND(m.adjustmentShare)}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                        ) : (
+                          <View style={styles.allocationItemsList}>
+                            <Text style={styles.allocationNoItemsText}>
+                              (Không có món riêng)
+                            </Text>
+                          </View>
+                        )}
                       </View>
                     ))}
                   </View>
@@ -609,34 +665,41 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                     )}
                     <View style={styles.memberQrsList}>
                       {invoiceData.memberPaymentQrs!.map((mqr, idx) => (
-                        <View key={idx} style={styles.memberQrRowCard}>
-                          {mqr.qrUrl ? (
-                            <Image
-                              source={{ uri: mqr.qrUrl }}
-                              style={styles.memberQrImage}
-                              resizeMode="contain"
-                            />
-                          ) : (
-                            <View style={styles.memberQrPlaceholder}>
-                              <Text style={styles.memberQrPlaceholderText}>Không có QR</Text>
-                            </View>
-                          )}
-                          <View style={styles.memberQrInfoCol}>
+                        <View key={idx} style={styles.memberQrCard}>
+                          {/* 1. Tên người và số tiền nằm cùng 1 dòng bên trên QR */}
+                          <View style={styles.memberQrTopRow}>
                             <View style={styles.memberQrNameBadge}>
                               <Text style={styles.memberQrNameText} numberOfLines={1}>
                                 {mqr.name}
                               </Text>
                             </View>
                             <Text style={styles.memberQrAmount}>{formatVND(mqr.amount)}</Text>
-                            {!!mqr.transferNote && (
-                              <View style={styles.memberQrNoteBox}>
-                                <Text style={styles.memberQrNoteLabel}>Nội dung CK:</Text>
-                                <Text style={styles.memberQrNoteText} numberOfLines={2}>
-                                  {mqr.transferNote}
-                                </Text>
-                              </View>
-                            )}
                           </View>
+
+                          {/* 2. Mã QR chiếm toàn bộ bề ngang */}
+                          {mqr.qrUrl ? (
+                            <View style={styles.memberQrImageContainer}>
+                              <Image
+                                source={{ uri: mqr.qrUrl }}
+                                style={styles.memberQrImage}
+                                resizeMode="contain"
+                              />
+                            </View>
+                          ) : (
+                            <View style={styles.memberQrPlaceholder}>
+                              <Text style={styles.memberQrPlaceholderText}>Không có QR</Text>
+                            </View>
+                          )}
+
+                          {/* 3. Nội dung chuyển khoản bên dưới */}
+                          {!!mqr.transferNote && (
+                            <View style={styles.memberQrNoteBox}>
+                              <Text style={styles.memberQrNoteLabel}>Nội dung CK:</Text>
+                              <Text style={styles.memberQrNoteText} numberOfLines={2}>
+                                {mqr.transferNote}
+                              </Text>
+                            </View>
+                          )}
                         </View>
                       ))}
                     </View>
@@ -653,14 +716,36 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                         {invoiceData.paymentInfo.accountNumber ? ` • STK: ${invoiceData.paymentInfo.accountNumber}` : ''}
                       </Text>
                     )}
-                    <Image
-                      source={{ uri: invoiceData.paymentInfo.qrUrl }}
-                      style={styles.qrImage}
-                      resizeMode="contain"
-                    />
-                    <Text style={styles.qrFootnote}>
-                      Số tiền: <Text style={{ fontWeight: '800' }}>{formatVND(invoiceData.totalAmount)}</Text>
-                    </Text>
+                    <View style={styles.memberQrCard}>
+                      {/* 1. Tên người và số tiền nằm cùng 1 dòng bên trên QR */}
+                      <View style={styles.memberQrTopRow}>
+                        <View style={styles.memberQrNameBadge}>
+                          <Text style={styles.memberQrNameText} numberOfLines={1}>
+                            {invoiceData.targetName}
+                          </Text>
+                        </View>
+                        <Text style={styles.memberQrAmount}>{formatVND(invoiceData.totalAmount)}</Text>
+                      </View>
+
+                      {/* 2. Mã QR chiếm toàn bộ bề ngang */}
+                      <View style={styles.memberQrImageContainer}>
+                        <Image
+                          source={{ uri: invoiceData.paymentInfo.qrUrl }}
+                          style={styles.memberQrImage}
+                          resizeMode="contain"
+                        />
+                      </View>
+
+                      {/* 3. Nội dung chuyển khoản bên dưới (nếu có) */}
+                      {!!invoiceData.paymentInfo?.transferNote && (
+                        <View style={styles.memberQrNoteBox}>
+                          <Text style={styles.memberQrNoteLabel}>Nội dung CK:</Text>
+                          <Text style={styles.memberQrNoteText} numberOfLines={2}>
+                            {invoiceData.paymentInfo.transferNote}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
                   </View>
                 ) : null}
               </View>
@@ -1051,46 +1136,89 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#374151',
   },
+  allocationMemberBlock: {
+    paddingVertical: 2,
+  },
+  allocationMemberBorder: {
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    marginTop: 4,
+    paddingTop: 4,
+  },
   allocationRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingVertical: 1,
   },
   allocationName: {
     fontSize: 10,
-    fontWeight: '600',
-    color: '#4B5563',
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  allocationPayerName: {
+    color: '#059669',
   },
   allocationVal: {
     fontSize: 10,
     fontWeight: '800',
     color: '#111827',
   },
+  allocationPayerVal: {
+    color: '#059669',
+  },
+  allocationItemsList: {
+    paddingLeft: 8,
+    marginTop: 2,
+    gap: 1.5,
+  },
+  allocationItemSubRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  allocationItemSubText: {
+    fontSize: 9.5,
+    color: '#4B5563',
+    flex: 1,
+    paddingRight: 6,
+  },
+  allocationItemSubPrice: {
+    fontSize: 9.5,
+    fontWeight: '600',
+    color: '#4B5563',
+  },
+  allocationNoItemsText: {
+    fontSize: 9.5,
+    fontStyle: 'italic',
+    color: '#9CA3AF',
+  },
   qrBox: {
-    marginTop: 8,
-    padding: 8,
+    marginTop: 14,
+    padding: 10,
     backgroundColor: '#ECFDF5',
     borderRadius: 8,
     borderWidth: 1.5,
     borderColor: '#10B981',
-    alignItems: 'center',
   },
   qrHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 4,
     marginBottom: 2,
   },
   qrTitle: {
-    fontSize: 10.5,
+    fontSize: 11,
     fontWeight: '800',
     color: '#065F46',
   },
   qrSub: {
     fontSize: 9.5,
     color: '#047857',
+    textAlign: 'center',
     marginTop: 1,
-    marginBottom: 4,
+    marginBottom: 8,
   },
   qrImage: {
     width: 120,
@@ -1217,51 +1345,26 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   memberQrsList: {
-    gap: 8,
+    gap: 12,
     marginTop: 10,
   },
-  memberQrRowCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  memberQrCard: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1.5,
     borderColor: '#000000',
     borderRadius: 8,
     padding: 10,
-    gap: 12,
     shadowColor: '#000000',
     shadowOffset: { width: 1.5, height: 1.5 },
     shadowOpacity: 1,
     shadowRadius: 0,
     elevation: 2,
   },
-  memberQrImage: {
-    width: 105,
-    height: 105,
-    borderRadius: 6,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  memberQrPlaceholder: {
-    width: 105,
-    height: 105,
-    borderRadius: 6,
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    justifyContent: 'center',
+  memberQrTopRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-  },
-  memberQrPlaceholderText: {
-    fontSize: 10,
-    color: '#9CA3AF',
-    fontStyle: 'italic',
-  },
-  memberQrInfoCol: {
-    flex: 1,
-    alignItems: 'flex-start',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
   },
   memberQrNameBadge: {
     backgroundColor: '#FEF08A',
@@ -1270,8 +1373,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 4,
-    marginBottom: 4,
-    maxWidth: '100%',
+    maxWidth: '55%',
   },
   memberQrNameText: {
     fontSize: 12,
@@ -1282,15 +1384,46 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '900',
     color: '#059669',
-    marginBottom: 4,
+  },
+  memberQrImageContainer: {
+    width: '100%',
+    aspectRatio: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  memberQrImage: {
+    width: '100%',
+    height: '100%',
+  },
+  memberQrPlaceholder: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 6,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  memberQrPlaceholderText: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    fontStyle: 'italic',
   },
   memberQrNoteBox: {
     backgroundColor: '#F1F5F9',
     borderRadius: 4,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
     width: '100%',
   },
   memberQrNoteLabel: {

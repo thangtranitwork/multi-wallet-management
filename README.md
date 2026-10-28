@@ -1,4 +1,4 @@
-# MultiWallet (v1.3.1) - Personal Finance & Multi-Source Wallet Management
+# MultiWallet (v1.3.2) - Personal Finance & Multi-Source Wallet Management
 
 A modern, offline-first mobile application built with **React Native (Expo SDK 57)**, **TypeScript**, and **Expo SQLite**, designed with a clean, tactile Neo-Brutalist design system.
 
@@ -15,15 +15,18 @@ MultiWallet provides complete control over personal finances, multiple wallet so
 - **Installment Engine**: Single-period deferral or multi-term installments with fee support, historical settled term imports, and 1-tap debt repayment transfers.
 - **Smart Balance Adjustments**: Direct wallet balance reconciliation with optional inclusion in monthly statistics.
 
-### 2. Debt Ledger & Smart VietQR Collection
+### 2. Debt Ledger, Smart VietQR & Invoicing
 
 - **Receivables & Payables**: Comprehensive tracking of lending and borrowing records with contact linkage and overdue alerts.
-- **1-Tap Dynamic VietQR**: Generates instant NAPAS-standard QR codes with recipient bank details, exact amounts, and automated transfer notes.
+- **Full-Width Pure VietQR (`qr_only`)**: Generates border-to-border, clean QR codes with recipient badge name and exact amount on the same line directly above the QR.
+- **Debt Invoicing & Consolidated Bills**: Export and print rich invoices for debts with itemized breakdown or note fallback (`item x 1`). Seamlessly consolidates multiple debts for the same person into a single bill with 1 combined QR code.
+- **Manual Itemized Debts**: Support adding itemized items/dishes when recording debts manually.
 - **Intelligent Receiving Wallet Fallback**: Automatically falls back to the first available bank account if the initial spending wallet lacks a QR code.
 
 ### 3. Smart Bill Splitting & VietQR Invoicing
 
 - **Flexible Modes**: Equal split or itemized split with custom per-person item assignments and quantities.
+- **Detailed Member Allocation**: Itemized breakdown for every member (including self proxy/payer).
 - **Pay on Behalf Mode (0d Self-Expense)**: Option to act as paying proxy where 100% of the bill is distributed to friends with 0d personal expense.
 - **Round-Up Support & 1k Preset**: Allows rounding up split amounts (e.g. 25,432d to 26,000d) with surplus credit tracking and a 1-tap 1,000d round-up button.
 - **Fee & Discount Allocation**: Proportional or equal headcount distribution of delivery fees, service charges, and promo vouchers.

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -46,6 +46,10 @@ export const DebtModal: React.FC<DebtModalProps> = ({
   const [dueDays, setDueDays] = useState<string>('7');
   const [note, setNote] = useState<string>('');
 
+  // Danh sách các món / dịch vụ (tùy chọn) khi tạo nợ thủ công
+  const [manualItems, setManualItems] = useState<{ id: string; name: string; quantity: string; price: string }[]>([]);
+  const [showItemsSection, setShowItemsSection] = useState<boolean>(false);
+
   // State cho Mode Payment
   const [payAmountStr, setPayAmountStr] = useState<string>('0');
 
@@ -58,6 +62,8 @@ export const DebtModal: React.FC<DebtModalProps> = ({
           setSelectedWalletId(effectiveDebt.wallet_id || wallets[0].id);
         }
         setNote('');
+        setManualItems([]);
+        setShowItemsSection(false);
       } else {
         // Create mode
         setType(defaultType);
@@ -66,12 +72,41 @@ export const DebtModal: React.FC<DebtModalProps> = ({
         setAmountStr('0');
         setDueDays('7');
         setNote('');
+        setManualItems([]);
+        setShowItemsSection(false);
         if (wallets.length > 0) {
           setSelectedWalletId(wallets[0].id);
         }
       }
     }
   }, [visible, effectiveDebt, defaultType, wallets]);
+
+  const addManualItem = () => {
+    hapticLight();
+    setManualItems(prev => [
+      ...prev,
+      { id: Date.now().toString(), name: '', quantity: '1', price: '' },
+    ]);
+  };
+
+  const removeManualItem = (id: string) => {
+    hapticLight();
+    setManualItems(prev => prev.filter(it => it.id !== id));
+  };
+
+  const updateManualItem = (id: string, field: 'name' | 'quantity' | 'price', val: string) => {
+    setManualItems(prev =>
+      prev.map(it => (it.id === id ? { ...it, [field]: val } : it))
+    );
+  };
+
+  const totalFromItems = useMemo(() => {
+    return manualItems.reduce((sum, it) => {
+      const q = parseInt(it.quantity, 10) || 1;
+      const p = parseInt(it.price.replace(/[^0-9]/g, ''), 10) || 0;
+      return sum + q * p;
+    }, 0);
+  }, [manualItems]);
 
   const handleDigitPress = (digit: string, isPayment: boolean) => {
     hapticLight();
@@ -108,6 +143,21 @@ export const DebtModal: React.FC<DebtModalProps> = ({
     const days = parseInt(dueDays, 10) || 7;
     const dueDate = new Date(Date.now() + days * 86400000).toISOString();
 
+    const validItems = manualItems
+      .filter((it) => it.name.trim())
+      .map((it) => {
+        const q = Math.max(1, parseInt(it.quantity, 10) || 1);
+        const p = Math.max(0, parseInt(it.price.replace(/[^0-9]/g, ''), 10) || 0);
+        return {
+          name: it.name.trim(),
+          quantity: q,
+          price: p,
+          totalPrice: q * p,
+        };
+      });
+
+    const serializedItems = validItems.length > 0 ? JSON.stringify(validItems) : null;
+
     try {
       await addDebt({
         type,
@@ -117,6 +167,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({
         wallet_id: selectedWalletId || null,
         due_date: dueDate,
         note: note.trim(),
+        items: serializedItems,
       });
       hapticSuccess();
       onClose();
@@ -336,6 +387,94 @@ export const DebtModal: React.FC<DebtModalProps> = ({
                 onChangeText={setNote}
               />
             </View>
+
+            {/* Chi tiết món / dịch vụ (tùy chọn) */}
+            {!isPaymentMode && (
+              <View style={styles.sectionContainer}>
+                <Pressable
+                  style={styles.itemsToggleHeader}
+                  onPress={() => {
+                    hapticLight();
+                    setShowItemsSection(!showItemsSection);
+                    if (!showItemsSection && manualItems.length === 0) {
+                      addManualItem();
+                    }
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Ionicons name="fast-food-outline" size={15} color="#000000" />
+                    <Text style={[styles.sectionLabel, { marginBottom: 0 }]}>
+                      Chi tiết món / dịch vụ ({manualItems.length})
+                    </Text>
+                  </View>
+                  <Ionicons
+                    name={showItemsSection ? 'chevron-up' : 'chevron-down'}
+                    size={16}
+                    color="#000000"
+                  />
+                </Pressable>
+
+                {showItemsSection && (
+                  <View style={styles.itemsBox}>
+                    {manualItems.map((item, idx) => (
+                      <View key={item.id} style={styles.itemRow}>
+                        <TextInput
+                          style={[styles.itemInput, { flex: 2 }]}
+                          placeholder={`Món ${idx + 1}...`}
+                          placeholderTextColor="#9CA3AF"
+                          value={item.name}
+                          onChangeText={(val) => updateManualItem(item.id, 'name', val)}
+                        />
+                        <TextInput
+                          style={[styles.itemInput, { width: 44, textAlign: 'center' }]}
+                          placeholder="SL"
+                          placeholderTextColor="#9CA3AF"
+                          keyboardType="numeric"
+                          value={item.quantity}
+                          onChangeText={(val) => updateManualItem(item.id, 'quantity', val)}
+                        />
+                        <TextInput
+                          style={[styles.itemInput, { flex: 1.5, textAlign: 'right' }]}
+                          placeholder="Đơn giá"
+                          placeholderTextColor="#9CA3AF"
+                          keyboardType="numeric"
+                          value={item.price}
+                          onChangeText={(val) => updateManualItem(item.id, 'price', val)}
+                        />
+                        <Pressable
+                          style={styles.itemRemoveBtn}
+                          onPress={() => removeManualItem(item.id)}
+                          hitSlop={8}
+                        >
+                          <Ionicons name="trash-outline" size={15} color="#EF4444" />
+                        </Pressable>
+                      </View>
+                    ))}
+
+                    <View style={styles.itemsActionRow}>
+                      <Pressable style={styles.addItemBtn} onPress={addManualItem}>
+                        <Ionicons name="add" size={14} color="#000000" />
+                        <Text style={styles.addItemBtnText}>Thêm món</Text>
+                      </Pressable>
+
+                      {totalFromItems > 0 && (
+                        <Pressable
+                          style={styles.applyTotalBtn}
+                          onPress={() => {
+                            hapticSuccess();
+                            setAmountStr(totalFromItems.toString());
+                          }}
+                        >
+                          <Text style={styles.applyTotalBtnText}>
+                            Dùng tổng: {formatVND(totalFromItems)}
+                          </Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  </View>
+                )}
+              </View>
+            )}
 
             {/* Amount Display - Placed right above the keypad */}
             <View style={styles.amountDisplayContainer}>
@@ -712,6 +851,84 @@ const styles = StyleSheet.create({
   },
   pickContactBtnText: {
     fontSize: 11,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  itemsToggleHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F3F4F6',
+    borderWidth: 2,
+    borderColor: '#000000',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  itemsBox: {
+    backgroundColor: '#F9FAFB',
+    borderWidth: 2,
+    borderTopWidth: 0,
+    borderColor: '#000000',
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+    padding: 10,
+    gap: 8,
+  },
+  itemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  itemInput: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  itemRemoveBtn: {
+    width: 28,
+    height: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  itemsActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  addItemBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  addItemBtnText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  applyTotalBtn: {
+    backgroundColor: THEME.popYellow,
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  applyTotalBtnText: {
+    fontSize: 11.5,
     fontWeight: '800',
     color: '#000000',
   },
