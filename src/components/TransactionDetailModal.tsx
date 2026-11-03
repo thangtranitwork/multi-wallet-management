@@ -23,6 +23,7 @@ import { InvoicePrintModal } from './InvoicePrintModal';
 import { EditBillItemsModal } from './EditBillItemsModal';
 import { useCustomAlert } from './CustomAlertModal';
 import { useSecurity } from '../context/SecurityContext';
+import { findMatchingDebtForMember } from '../utils/invoiceGenerator';
 import {
   parseImageUris,
   saveReceiptImages,
@@ -51,6 +52,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   const db = useSQLiteContext();
   const {
     wallets,
+    debts,
     categories,
     updateTransactionCategory,
     updateTransactionWallet,
@@ -1754,6 +1756,27 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                     const diff = Math.abs(fullSum - transaction.amount);
                     const splitAmount = Math.max(0, fullSum - transaction.amount);
 
+                    let totalDebtInitial = 0;
+                    let totalDebtPaid = 0;
+                    let totalDebtRemaining = 0;
+                    if (debts && debts.length > 0) {
+                      const membersToCheck = (parsedBill?.members && parsedBill.members.length > 1)
+                        ? parsedBill.members.filter((m: any) => m.id !== 'me' && !m.isPayer).map((m: any) => m.name)
+                        : splitTargetName.split(',').map((s: string) => s.trim()).filter(Boolean);
+
+                      membersToCheck.forEach((name: string) => {
+                        const match = findMatchingDebtForMember(name, 0, transaction, debts);
+                        if (match) {
+                          const init = match.initial_amount || match.remaining_amount;
+                          const rem = match.remaining_amount;
+                          const paid = Math.max(0, init - rem);
+                          totalDebtInitial += init;
+                          totalDebtPaid += paid;
+                          totalDebtRemaining += rem;
+                        }
+                      });
+                    }
+
                     if (isSplit) {
                       return (
                         <View style={styles.splitBillInfoBox}>
@@ -1780,6 +1803,24 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                               -{formatVND(splitAmount)}
                             </Text>
                           </View>
+
+                          {totalDebtPaid > 0 && (
+                            <View style={styles.splitBillRow}>
+                              <Text style={styles.splitBillLabel}>Đã thu nợ:</Text>
+                              <Text style={[styles.splitBillVal, { color: '#059669', fontWeight: '800' }]}>
+                                +{formatVND(totalDebtPaid)}
+                              </Text>
+                            </View>
+                          )}
+
+                          {totalDebtPaid > 0 && (
+                            <View style={styles.splitBillRow}>
+                              <Text style={styles.splitBillLabel}>Còn lại cần thu:</Text>
+                              <Text style={[styles.splitBillVal, { color: totalDebtRemaining > 0 ? '#DC2626' : '#059669', fontWeight: '800' }]}>
+                                {totalDebtRemaining > 0 ? formatVND(totalDebtRemaining) : 'Đã tất toán'}
+                              </Text>
+                            </View>
+                          )}
 
                           <View style={[styles.splitBillRow, { paddingTop: 6, marginTop: 4, borderTopWidth: 1.5, borderTopColor: '#E5E7EB' }]}>
                             <Text style={[styles.splitBillLabel, { fontWeight: '800', color: '#000000' }]}>
@@ -1949,6 +1990,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
         transaction={transaction}
         parsedBill={parsedBill}
         wallets={wallets}
+        debts={debts}
       />
       {/* Edit Bill Items Modal */}
       <EditBillItemsModal

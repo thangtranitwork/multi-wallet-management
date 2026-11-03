@@ -340,6 +340,154 @@ describe('invoiceGenerator', () => {
       expect(data.paymentInfo?.qrUrl).toContain('qr_only.png');
       expect(data.paymentInfo?.qrUrl).toContain('amount=75000');
     });
+
+    it('buildDebtInvoiceData correctly handles partial debt payment (reduces bill and adds discount adjustment)', () => {
+      // Ví dụ Tú nợ 36.5k, đã trả 18k, còn lại 18.5k
+      const mockPartialDebt: Debt = {
+        id: 'd_tu',
+        type: 'lend',
+        person_name: 'Tú',
+        initial_amount: 36500,
+        remaining_amount: 18500,
+        wallet_id: 'w_momo',
+        status: 'partially_paid',
+        note: 'Trà sữa và bánh ngọt',
+        items: JSON.stringify([
+          { name: 'Trà sữa trân châu', quantity: 1, price: 36500, totalPrice: 36500 },
+        ]),
+        created_at: '2026-10-25T14:00:00Z',
+      };
+
+      const qrOpts = getAvailableQrOptions([mockWallet]);
+      const data = buildDebtInvoiceData([mockPartialDebt], qrOpts[1], mockWallet);
+
+      expect(data.targetName).toBe('Tú');
+      expect(data.itemsSubtotal).toBe(36500);
+      expect(data.totalAmount).toBe(18500); // Đã giảm 18k!
+      expect(data.adjustments).toEqual([
+        { name: 'Đã thanh toán', type: 'discount', amount: 18000 },
+      ]);
+      expect(data.netAdjustments).toBe(-18000);
+      expect(data.paymentInfo?.qrUrl).toContain('amount=18500');
+    });
+
+    it('buildDebtInvoiceData handles partial debt payment without items (fallback note)', () => {
+      const mockPartialDebtNoItems: Debt = {
+        id: 'd_tu_no_items',
+        type: 'lend',
+        person_name: 'Tú',
+        initial_amount: 36500,
+        remaining_amount: 18500,
+        wallet_id: 'w_momo',
+        status: 'partially_paid',
+        note: 'Tiền xem phim',
+        items: null,
+        created_at: '2026-10-25T14:00:00Z',
+      };
+
+      const qrOpts = getAvailableQrOptions([mockWallet]);
+      const data = buildDebtInvoiceData([mockPartialDebtNoItems], qrOpts[1], mockWallet);
+
+      expect(data.targetName).toBe('Tú');
+      expect(data.itemsSubtotal).toBe(36500);
+      expect(data.totalAmount).toBe(18500);
+      expect(data.adjustments).toEqual([
+        { name: 'Đã thanh toán', type: 'discount', amount: 18000 },
+      ]);
+      expect(data.paymentInfo?.qrUrl).toContain('amount=18500');
+    });
+  });
+
+  describe('Split bill invoice integration with debt payments', () => {
+    const splitTx: Transaction = {
+      id: 'tx_split',
+      wallet_id: 'w_momo',
+      amount: 63500, // Phần của tôi
+      type: 'expense',
+      note: 'Đi ăn lẩu [Đã tách cho Tú]',
+      transacted_at: '2026-10-25T12:00:00Z',
+      created_at: '2026-10-25T12:00:00Z',
+    };
+
+    const splitParsedBill = {
+      members: [
+        { id: 'me', name: 'Tôi', isPayer: true },
+        { id: 'm_tu', name: 'Tú' },
+      ],
+      items: [
+        { id: 'i1', name: 'Phần lẩu của tôi', quantity: 1, price: 63500, assignedMemberIds: ['me'] },
+        { id: 'i2', name: 'Phần lẩu của Tú', quantity: 1, price: 36500, assignedMemberIds: ['m_tu'] },
+      ],
+      adjustments: [],
+    };
+
+    const mockDebtTu: Debt = {
+      id: 'd_tu_split',
+      type: 'lend',
+      person_name: 'Tú',
+      initial_amount: 36500,
+      remaining_amount: 18500,
+      wallet_id: 'w_momo',
+      status: 'partially_paid',
+      note: 'Tách từ: Đi ăn lẩu',
+      items: null,
+      created_at: '2026-10-25T12:00:00Z',
+    };
+
+    it('getInvoiceOptions reflects remaining debt amount for member', () => {
+      const opts = getInvoiceOptions(splitTx, splitParsedBill, [mockDebtTu]);
+      const tuOpt = opts.find((o) => o.targetPersonName === 'Tú');
+      expect(tuOpt).toBeDefined();
+      expect(tuOpt?.totalAmount).toBe(18500);
+      expect(tuOpt?.paidAmount).toBe(18000);
+      expect(tuOpt?.initialAmount).toBe(36500);
+    });
+
+    it('buildInvoiceData for member reflects partial debt payment and generates correct QR', () => {
+      const opts = getInvoiceOptions(splitTx, splitParsedBill, [mockDebtTu]);
+      const tuOpt = opts.find((o) => o.targetPersonName === 'Tú')!;
+      const qrOpts = getAvailableQrOptions([mockWallet]);
+      const data = buildInvoiceData(tuOpt, splitTx, splitParsedBill, qrOpts[1], mockWallet, [mockDebtTu]);
+
+      expect(data.targetName).toBe('Tú');
+      expect(data.itemsSubtotal).toBe(36500);
+      expect(data.totalAmount).toBe(18500);
+      expect(data.adjustments).toEqual([
+        { name: 'Đã thanh toán', type: 'discount', amount: 18000 },
+      ]);
+      expect(data.paymentInfo?.qrUrl).toContain('amount=18500');
+    });
+
+    it('buildInvoiceData in total mode shows remaining amount and paid amount in memberAllocations', () => {
+      const opts = getInvoiceOptions(splitTx, splitParsedBill, [mockDebtTu]);
+      const totalOpt = opts.find((o) => o.type === 'total')!;
+      const qrOpts = getAvailableQrOptions([mockWallet]);
+      const data = buildInvoiceData(totalOpt, splitTx, splitParsedBill, qrOpts[1], mockWallet, [mockDebtTu]);
+
+      const tuAlloc = data.memberAllocations?.find((m) => m.name === 'Tú');
+      expect(tuAlloc?.amount).toBe(18500);
+      expect(tuAlloc?.paidAmount).toBe(18000);
+
+      const tuQr = data.memberPaymentQrs?.find((m) => m.name === 'Tú');
+      expect(tuQr?.amount).toBe(18500);
+      expect(tuQr?.qrUrl).toContain('amount=18500');
+    });
+
+    it('buildInvoiceData omits payment QR for members who have fully settled debt', () => {
+      const settledDebt: Debt = {
+        ...mockDebtTu,
+        remaining_amount: 0,
+        status: 'settled',
+      };
+
+      const opts = getInvoiceOptions(splitTx, splitParsedBill, [settledDebt]);
+      const totalOpt = opts.find((o) => o.type === 'total')!;
+      const qrOpts = getAvailableQrOptions([mockWallet]);
+      const data = buildInvoiceData(totalOpt, splitTx, splitParsedBill, qrOpts[1], mockWallet, [settledDebt]);
+
+      const tuQr = data.memberPaymentQrs?.find((m) => m.name === 'Tú');
+      expect(tuQr).toBeUndefined(); // Không tạo QR đòi tiền người đã tất toán
+    });
   });
 });
 

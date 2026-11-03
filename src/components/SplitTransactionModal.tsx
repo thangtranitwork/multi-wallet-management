@@ -48,7 +48,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
   onClose,
   transaction,
 }) => {
-  const { categories, wallets, splitTransaction, updateTransactionCategory } = useWallet();
+  const { categories, wallets, debts, splitTransaction, updateTransactionCategory } = useWallet();
   const { showAlert, AlertModalComponent } = useCustomAlert(false);
 
   // ── Tab state ──
@@ -1721,6 +1721,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
           transaction={transaction}
           parsedBill={parsedBillForPrint}
           wallets={wallets}
+          debts={debts}
         />
 
         {AlertModalComponent}

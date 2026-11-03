@@ -435,6 +435,25 @@ export const DebtInvoiceModal: React.FC<DebtInvoiceModalProps> = ({
                   </View>
                 ))}
 
+                {/* Adjustments (Đã thanh toán / Phụ phí / Giảm giá) */}
+                {invoiceData.adjustments.map((adj, idx) => (
+                  <View key={`adj_${idx}`} style={styles.receiptItemRow}>
+                    <Text style={[styles.receiptItemNote, { flex: 2, fontStyle: 'italic' }]}>
+                      {adj.name}
+                    </Text>
+                    <Text style={styles.receiptItemQty}>-</Text>
+                    <Text
+                      style={[
+                        styles.receiptItemPrice,
+                        { color: adj.type === 'discount' ? '#059669' : '#D97706' },
+                      ]}
+                    >
+                      {adj.type === 'discount' ? '-' : '+'}
+                      {formatVND(adj.amount)}
+                    </Text>
+                  </View>
+                ))}
+
                 <View style={styles.receiptDivider} />
 
                 {/* Total Box */}

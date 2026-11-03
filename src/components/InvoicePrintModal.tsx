@@ -17,7 +17,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { captureRef } from 'react-native-view-shot';
-import { Transaction, Wallet, BillItem, BillAdjustment, BillMember } from '../types';
+import { Transaction, Wallet, BillItem, BillAdjustment, BillMember, Debt } from '../types';
 import { THEME, formatVND } from '../constants';
 import { hapticLight, hapticSuccess, hapticError, hapticMedium } from '../utils/haptics';
 import {
@@ -36,6 +36,7 @@ export interface InvoicePrintModalProps {
   transaction: Transaction | null;
   parsedBill: { items?: BillItem[]; adjustments?: BillAdjustment[]; members?: BillMember[] } | null;
   wallets?: Wallet[];
+  debts?: Debt[];
 }
 
 export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
@@ -44,6 +45,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
   transaction,
   parsedBill,
   wallets = [],
+  debts = [],
 }) => {
   const [selectedOptionId, setSelectedOptionId] = useState<string>('total');
   const [selectedQrId, setSelectedQrId] = useState<string>('');
@@ -58,11 +60,11 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
 
   const receiptRef = useRef<View>(null);
 
-  // Danh sách các tùy chọn hóa đơn: Tổng, Của tôi, Của từng người khác
+  // Danh sách các tùy chọn hóa đơn: Tổng, Của tôi, Của từng người khác (đã đối soát thu nợ nếu có)
   const options = useMemo(() => {
     if (!transaction) return [];
-    return getInvoiceOptions(transaction, parsedBill);
-  }, [transaction, parsedBill]);
+    return getInvoiceOptions(transaction, parsedBill, debts);
+  }, [transaction, parsedBill, debts]);
 
   // Tùy chọn hóa đơn đang chọn
   const activeOption = useMemo(() => {
@@ -91,11 +93,11 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
     return wallets.find((w) => w.id === transaction?.wallet_id) || wallets[0] || null;
   }, [wallets, transaction?.wallet_id]);
 
-  // Dữ liệu hóa đơn chi tiết
+  // Dữ liệu hóa đơn chi tiết (đã đối soát thu nợ nếu có)
   const invoiceData = useMemo(() => {
     if (!transaction || !activeOption) return null;
-    return buildInvoiceData(activeOption, transaction, parsedBill, activeQrOption, defaultWallet);
-  }, [transaction, activeOption, parsedBill, activeQrOption, defaultWallet]);
+    return buildInvoiceData(activeOption, transaction, parsedBill, activeQrOption, defaultWallet, debts);
+  }, [transaction, activeOption, parsedBill, activeQrOption, defaultWallet, debts]);
 
   const hasMemberQrs = useMemo(() => {
     return (
@@ -596,7 +598,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                             {m.name} {m.isPayer ? '(Chủ chi)' : ''}
                           </Text>
                           <Text style={[styles.allocationVal, m.isPayer && styles.allocationPayerVal]}>
-                            {formatVND(m.amount)}
+                            {m.amount <= 0 && m.paidAmount ? 'Đã tất toán' : formatVND(m.amount)}
                           </Text>
                         </View>
                         {m.items && m.items.length > 0 ? (
@@ -635,6 +637,53 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                                 </Text>
                               </View>
                             )}
+                            {!!m.paidAmount && m.paidAmount > 0 && (
+                              <View style={styles.allocationItemSubRow}>
+                                <Text
+                                  style={[
+                                    styles.allocationItemSubText,
+                                    {
+                                      fontStyle: 'italic',
+                                      color: '#059669',
+                                    },
+                                  ]}
+                                >
+                                  • Đã thanh toán
+                                </Text>
+                                <Text
+                                  style={[
+                                    styles.allocationItemSubPrice,
+                                    { color: '#059669' },
+                                  ]}
+                                >
+                                  -{formatVND(m.paidAmount)}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                        ) : m.paidAmount && m.paidAmount > 0 ? (
+                          <View style={styles.allocationItemsList}>
+                            <View style={styles.allocationItemSubRow}>
+                              <Text
+                                style={[
+                                  styles.allocationItemSubText,
+                                  {
+                                    fontStyle: 'italic',
+                                    color: '#059669',
+                                  },
+                                ]}
+                              >
+                                • Đã thanh toán
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.allocationItemSubPrice,
+                                  { color: '#059669' },
+                                ]}
+                              >
+                                -{formatVND(m.paidAmount)}
+                              </Text>
+                            </View>
                           </View>
                         ) : (
                           <View style={styles.allocationItemsList}>

@@ -20,6 +20,8 @@ export interface InvoiceMemberOption {
   totalAmount: number;
   itemsCount: number;
   memberId?: string;
+  initialAmount?: number;
+  paidAmount?: number;
 }
 
 export interface InvoiceQrOption {
@@ -48,6 +50,8 @@ export interface InvoiceMemberAllocation {
   memberId?: string;
   items?: InvoiceItemDisplay[];
   adjustmentShare?: number;
+  initialAmount?: number;
+  paidAmount?: number;
 }
 
 export interface InvoiceReportData {
@@ -83,14 +87,64 @@ const formatCurrency = (val: number): string => {
 };
 
 /**
+ * Tìm khoản nợ tương ứng với một thành viên trong giao dịch
+ */
+export function findMatchingDebtForMember(
+  memberName: string,
+  memberAmount: number,
+  transaction: Transaction,
+  debts?: Debt[]
+): Debt | null {
+  if (!debts || debts.length === 0 || !memberName) return null;
+  const cleanMemberName = memberName.trim().toLowerCase();
+  if (!cleanMemberName || cleanMemberName === 'tôi' || cleanMemberName === 'bạn') return null;
+
+  const cleanTxNote = (transaction.note || '')
+    .replace(/\s*\[(?:Trả hộ 100% - )?Đã tách cho [^\]]+\]/gi, '')
+    .trim()
+    .toLowerCase();
+
+  // Tìm các khoản nợ loại lend của người này
+  const candidates = debts.filter(
+    (d) => d && d.type === 'lend' && d.person_name?.trim().toLowerCase() === cleanMemberName
+  );
+  if (candidates.length === 0) return null;
+
+  // 1. Ưu tiên tìm candidate có note chứa nội dung transaction (ví dụ "Tách từ: ...")
+  if (cleanTxNote) {
+    const noteMatch = candidates.find(
+      (d) => d.note && d.note.toLowerCase().includes(cleanTxNote)
+    );
+    if (noteMatch) return noteMatch;
+  }
+
+  // 2. Tìm candidate có initial_amount khớp đúng memberAmount (nếu memberAmount > 0)
+  if (memberAmount > 0) {
+    const amountMatch = candidates.find(
+      (d) => Math.abs((d.initial_amount || 0) - memberAmount) < 1
+    );
+    if (amountMatch) return amountMatch;
+  }
+
+  // 3. Tìm candidate có note chứa "tách từ"
+  const splitNoteMatch = candidates.find(
+    (d) => d.note && d.note.toLowerCase().includes('tách từ')
+  );
+  if (splitNoteMatch) return splitNoteMatch;
+
+  return candidates[0] || null;
+}
+
+/**
  * Lấy danh sách các tùy chọn xuất hóa đơn:
  * 1. Hóa đơn tổng (Toàn bộ)
  * 2. Hóa đơn của tôi (Bạn)
- * 3. Hóa đơn của từng người khác được tách
+ * 3. Hóa đơn của từng người khác được tách (Đã khấu trừ tiền thu nợ nếu có)
  */
 export function getInvoiceOptions(
   transaction: Transaction,
-  parsedBill: { items?: BillItem[]; adjustments?: BillAdjustment[]; members?: BillMember[]; includeMeInSplit?: boolean } | null
+  parsedBill: { items?: BillItem[]; adjustments?: BillAdjustment[]; members?: BillMember[]; includeMeInSplit?: boolean } | null,
+  debts?: Debt[]
 ): InvoiceMemberOption[] {
   if (!parsedBill || !Array.isArray(parsedBill.items) || parsedBill.items.length === 0) {
     return [
@@ -149,12 +203,27 @@ export function getInvoiceOptions(
         return false;
       }).length;
 
+      let effectiveAmount = share.finalAmount;
+      let initialAmount = share.finalAmount;
+      let paidAmount = 0;
+
+      if (!isMe && debts) {
+        const matchingDebt = findMatchingDebtForMember(share.memberName, share.finalAmount, transaction, debts);
+        if (matchingDebt) {
+          initialAmount = matchingDebt.initial_amount || share.finalAmount;
+          paidAmount = Math.max(0, initialAmount - matchingDebt.remaining_amount);
+          effectiveAmount = Math.max(0, share.finalAmount - paidAmount);
+        }
+      }
+
       options.push({
         id: share.memberId,
         type: isMe ? 'my_share' : 'member_share',
         name: isMe ? 'Của tôi (Bạn)' : `Của ${share.memberName}`,
         targetPersonName: share.memberName,
-        totalAmount: share.finalAmount,
+        totalAmount: effectiveAmount,
+        initialAmount,
+        paidAmount,
         itemsCount: count,
         memberId: share.memberId,
       });
@@ -174,12 +243,27 @@ export function getInvoiceOptions(
     });
 
     names.forEach((name, idx) => {
+      let effectiveAmount = splitPerPerson;
+      let initialAmount = splitPerPerson;
+      let paidAmount = 0;
+
+      if (debts) {
+        const matchingDebt = findMatchingDebtForMember(name, splitPerPerson, transaction, debts);
+        if (matchingDebt) {
+          initialAmount = matchingDebt.initial_amount || splitPerPerson;
+          paidAmount = Math.max(0, initialAmount - matchingDebt.remaining_amount);
+          effectiveAmount = Math.max(0, splitPerPerson - paidAmount);
+        }
+      }
+
       options.push({
         id: `split_${idx}`,
         type: 'member_share',
         name: `Của ${name}`,
         targetPersonName: name,
-        totalAmount: splitPerPerson,
+        totalAmount: effectiveAmount,
+        initialAmount,
+        paidAmount,
         itemsCount: parsedBill.items!.length,
       });
     });
@@ -320,7 +404,8 @@ export function buildInvoiceData(
   transaction: Transaction,
   parsedBill: { items?: BillItem[]; adjustments?: BillAdjustment[]; members?: BillMember[]; includeMeInSplit?: boolean } | null,
   selectedQr?: InvoiceQrOption | null,
-  defaultWallet?: Wallet | null
+  defaultWallet?: Wallet | null,
+  debts?: Debt[]
 ): InvoiceReportData {
   const items = parsedBill?.items || [];
   const adjustments = parsedBill?.adjustments || [];
@@ -397,14 +482,28 @@ export function buildInvoiceData(
         adjustments,
         parsedBill?.includeMeInSplit !== false
       );
-      memberAllocations = calcResult.shares.map((s) => ({
-        name: s.memberName,
-        amount: s.finalAmount,
-        isPayer: s.isPayer,
-        memberId: s.memberId,
-        items: getMemberAssignedItems(s.memberId, items),
-        adjustmentShare: s.adjustmentShare,
-      }));
+      memberAllocations = calcResult.shares.map((s) => {
+        let mPaid = 0;
+        let mRemaining = s.finalAmount;
+        if (!s.isPayer && s.memberId !== 'me' && debts) {
+          const mDebt = findMatchingDebtForMember(s.memberName, s.finalAmount, transaction, debts);
+          if (mDebt) {
+            const mInit = mDebt.initial_amount || s.finalAmount;
+            mPaid = Math.max(0, mInit - mDebt.remaining_amount);
+            mRemaining = Math.max(0, s.finalAmount - mPaid);
+          }
+        }
+        return {
+          name: s.memberName,
+          amount: mRemaining,
+          initialAmount: s.finalAmount,
+          paidAmount: mPaid,
+          isPayer: s.isPayer,
+          memberId: s.memberId,
+          items: getMemberAssignedItems(s.memberId, items),
+          adjustmentShare: s.adjustmentShare,
+        };
+      });
     } else {
       const splitMatch = transaction.note?.match(/\[(?:Trả hộ 100% - )?Đã tách cho ([^\]]+)\]/i);
       if (splitMatch) {
@@ -413,17 +512,31 @@ export function buildInvoiceData(
         const splitPerPerson = names.length > 0 ? othersTotal / names.length : othersTotal;
         memberAllocations = [
           { name: 'Bạn (Thực chi)', amount: transaction.amount, isPayer: true, memberId: 'me', items: [] },
-          ...names.map((n, idx) => ({
-            name: n,
-            amount: splitPerPerson,
-            memberId: `split_${idx}`,
-            items: [],
-          })),
+          ...names.map((n, idx) => {
+            let mPaid = 0;
+            let mRemaining = splitPerPerson;
+            if (debts) {
+              const mDebt = findMatchingDebtForMember(n, splitPerPerson, transaction, debts);
+              if (mDebt) {
+                const mInit = mDebt.initial_amount || splitPerPerson;
+                mPaid = Math.max(0, mInit - mDebt.remaining_amount);
+                mRemaining = Math.max(0, splitPerPerson - mPaid);
+              }
+            }
+            return {
+              name: n,
+              amount: mRemaining,
+              initialAmount: splitPerPerson,
+              paidAmount: mPaid,
+              memberId: `split_${idx}`,
+              items: [],
+            };
+          }),
         ];
       }
     }
 
-    // Tạo danh sách mã QR thanh toán theo từng người khi chia đơn (không hiển thị QR cho Tôi / chủ chi)
+    // Tạo danh sách mã QR thanh toán theo từng người khi chia đơn (không hiển thị QR cho Tôi / chủ chi hoặc người đã trả hết)
     let memberPaymentQrs: InvoiceMemberQrItem[] | undefined;
     const isMeMember = (m: InvoiceMemberAllocation) => {
       return (
@@ -507,9 +620,37 @@ export function buildInvoiceData(
 
     const itemsSubtotal = memberShare?.itemsSubtotal || memberItems.reduce((s, it) => s + it.totalPrice, 0);
     const adjustmentShare = memberShare?.adjustmentShare || 0;
-    const finalAmount = memberShare?.finalAmount || itemsSubtotal + adjustmentShare;
+    const baseShareAmount = memberShare?.finalAmount || itemsSubtotal + adjustmentShare;
 
-    if (isMe) {
+    let paidAmount = option.paidAmount || 0;
+    if (!paidAmount && !isMe && debts) {
+      const matchingDebt = findMatchingDebtForMember(memberName, baseShareAmount, transaction, debts);
+      if (matchingDebt) {
+        const init = matchingDebt.initial_amount || baseShareAmount;
+        paidAmount = Math.max(0, init - matchingDebt.remaining_amount);
+      }
+    }
+
+    const finalAmount = Math.max(0, baseShareAmount - paidAmount);
+
+    const memberAdjustments: { name: string; type: 'fee' | 'discount'; amount: number }[] = [];
+    if (adjustmentShare !== 0) {
+      memberAdjustments.push({
+        name: 'Phần chia phụ phí/voucher',
+        type: adjustmentShare >= 0 ? 'fee' : 'discount',
+        amount: Math.abs(adjustmentShare),
+      });
+    }
+    if (paidAmount > 0) {
+      memberAdjustments.push({
+        name: 'Đã thanh toán',
+        type: 'discount',
+        amount: paidAmount,
+      });
+    }
+    const netAdjustments = adjustmentShare - paidAmount;
+
+    if (isMe || finalAmount <= 0) {
       paymentInfo = undefined;
     } else if (selectedQr?.type === 'vietqr' && selectedQr.bankBin && selectedQr.accountNumber) {
       const transferNote = `${memberName} tra tien ${cleanNote.slice(0, 15)}`.trim();
@@ -553,14 +694,71 @@ export function buildInvoiceData(
       walletName: defaultWallet?.name,
       items: memberItems,
       itemsSubtotal,
-      adjustments: adjustmentShare !== 0 ? [{ name: 'Phần chia phụ phí/voucher', type: adjustmentShare >= 0 ? 'fee' : 'discount', amount: Math.abs(adjustmentShare) }] : [],
-      netAdjustments: adjustmentShare,
+      adjustments: memberAdjustments,
+      netAdjustments,
       totalAmount: finalAmount,
       paymentInfo,
     };
   }
 
   // Trường hợp tách đơn bằng chia nhanh
+  const memberName = option.targetPersonName;
+  let paidAmount = option.paidAmount || 0;
+  if (!paidAmount && !isMe && debts) {
+    const matchingDebt = findMatchingDebtForMember(memberName, option.totalAmount, transaction, debts);
+    if (matchingDebt) {
+      const init = matchingDebt.initial_amount || option.totalAmount;
+      paidAmount = Math.max(0, init - matchingDebt.remaining_amount);
+    }
+  }
+  const baseAmount = option.initialAmount || option.totalAmount + (option.paidAmount || 0);
+  const finalAmount = Math.max(0, baseAmount - paidAmount);
+
+  const quickAdjustments: { name: string; type: 'fee' | 'discount'; amount: number }[] = [];
+  if (paidAmount > 0) {
+    quickAdjustments.push({
+      name: 'Đã thanh toán',
+      type: 'discount',
+      amount: paidAmount,
+    });
+  }
+
+  if (!isMe && finalAmount > 0 && selectedQr && selectedQr.type !== 'none') {
+    if (selectedQr.type === 'vietqr' && selectedQr.bankBin && selectedQr.accountNumber) {
+      const transferNote = `${memberName} tra tien ${cleanNote.slice(0, 15)}`.trim();
+      paymentInfo = {
+        payerName: 'Chủ tài khoản',
+        bankName: selectedQr.bankName || defaultWallet?.name || 'Ngân hàng',
+        accountNumber: selectedQr.accountNumber,
+        qrUrl: `https://img.vietqr.io/image/${selectedQr.bankBin}-${selectedQr.accountNumber}-qr_only.png?amount=${Math.round(
+          finalAmount
+        )}&addInfo=${encodeURIComponent(transferNote)}`,
+        transferNote,
+      };
+    } else if (selectedQr?.qrUrl) {
+      paymentInfo = {
+        payerName: 'Chủ tài khoản',
+        bankName: selectedQr.bankName || defaultWallet?.name || 'Chuyển khoản',
+        accountNumber: selectedQr.accountNumber,
+        qrUrl: selectedQr.qrUrl,
+        transferNote: `${memberName} chuyen khoan ${formatCurrency(finalAmount)}`,
+      };
+    }
+  } else if (!isMe && finalAmount > 0 && !selectedQr && defaultWallet?.bank_bin && defaultWallet?.bank_account) {
+    const transferNote = `${memberName} tra tien ${cleanNote.slice(0, 15)}`.trim();
+    paymentInfo = {
+      payerName: 'Chủ tài khoản',
+      bankName: defaultWallet.name,
+      accountNumber: defaultWallet.bank_account,
+      qrUrl: `https://img.vietqr.io/image/${defaultWallet.bank_bin}-${defaultWallet.bank_account}-qr_only.png?amount=${Math.round(
+        finalAmount
+      )}&addInfo=${encodeURIComponent(transferNote)}`,
+      transferNote,
+    };
+  } else {
+    paymentInfo = undefined;
+  }
+
   const itemDisplays: InvoiceItemDisplay[] = items.map((it) => ({
     name: it.name,
     quantity: it.quantity || 1,
@@ -577,10 +775,10 @@ export function buildInvoiceData(
     note: cleanNote,
     walletName: defaultWallet?.name,
     items: itemDisplays,
-    itemsSubtotal: option.totalAmount,
-    adjustments: [],
-    netAdjustments: 0,
-    totalAmount: option.totalAmount,
+    itemsSubtotal: baseAmount,
+    adjustments: quickAdjustments,
+    netAdjustments: -paidAmount,
+    totalAmount: finalAmount,
     paymentInfo: isMe ? undefined : paymentInfo,
   };
 }
@@ -627,13 +825,14 @@ export function getDebtInvoiceItems(debt: Debt): InvoiceItemDisplay[] {
     }
   }
 
-  // Fallback: Nếu không nhập items, lấy nội dung làm item x 1
+  // Fallback: Nếu không nhập items, lấy nội dung làm item x 1 với giá là initial_amount (hoặc remaining_amount)
+  const basePrice = debt.initial_amount || debt.remaining_amount;
   return [
     {
       name: debt.note?.trim() || 'Khoản nợ',
       quantity: 1,
-      unitPrice: debt.remaining_amount,
-      totalPrice: debt.remaining_amount,
+      unitPrice: basePrice,
+      totalPrice: basePrice,
     },
   ];
 }
@@ -655,6 +854,8 @@ export function buildDebtInvoiceData(
 
   // Tạo danh sách items từ các khoản nợ
   const allItems: InvoiceItemDisplay[] = [];
+  const extractedAdjustments: { name: string; type: 'fee' | 'discount'; amount: number }[] = [];
+
   if (isCombined) {
     validDebts.forEach((d, dIdx) => {
       const dItems = getDebtInvoiceItems(d);
@@ -667,12 +868,70 @@ export function buildDebtInvoiceData(
             : `Khoản nợ ${dIdx + 1} (${debtDateStr})`,
         });
       });
+      if (d.items) {
+        try {
+          const parsed = JSON.parse(d.items);
+          if (parsed && typeof parsed === 'object' && Array.isArray(parsed.adjustments)) {
+            parsed.adjustments.forEach((adj: any) => {
+              extractedAdjustments.push({
+                name: `${adj.name || 'Phụ phí/Voucher'} (${debtDateStr})`,
+                type: adj.type === 'discount' ? 'discount' : 'fee',
+                amount: Math.abs(Number(adj.amount) || 0),
+              });
+            });
+          }
+        } catch {}
+      }
     });
   } else if (primaryDebt) {
     allItems.push(...getDebtInvoiceItems(primaryDebt));
+    if (primaryDebt.items) {
+      try {
+        const parsed = JSON.parse(primaryDebt.items);
+        if (parsed && typeof parsed === 'object' && Array.isArray(parsed.adjustments)) {
+          parsed.adjustments.forEach((adj: any) => {
+            extractedAdjustments.push({
+              name: adj.name || 'Phụ phí/Voucher',
+              type: adj.type === 'discount' ? 'discount' : 'fee',
+              amount: Math.abs(Number(adj.amount) || 0),
+            });
+          });
+        }
+      } catch {}
+    }
   }
 
   const itemsSubtotal = allItems.reduce((s, it) => s + it.totalPrice, 0);
+  const initialSum = validDebts.reduce((s, d) => s + (d.initial_amount || d.remaining_amount), 0);
+  const totalPaid = Math.max(0, initialSum - totalAmount);
+
+  const adjustments: { name: string; type: 'fee' | 'discount'; amount: number }[] = [
+    ...extractedAdjustments,
+  ];
+
+  const currentNetAdj = adjustments.reduce(
+    (s, adj) => s + (adj.type === 'fee' ? adj.amount : -adj.amount),
+    0
+  );
+  const expectedTotalBeforePayment = itemsSubtotal + currentNetAdj;
+  const paymentDeduction = Math.max(
+    0,
+    expectedTotalBeforePayment > totalAmount ? expectedTotalBeforePayment - totalAmount : totalPaid
+  );
+
+  if (paymentDeduction > 0) {
+    adjustments.push({
+      name: 'Đã thanh toán',
+      type: 'discount',
+      amount: paymentDeduction,
+    });
+  }
+
+  const netAdjustments = adjustments.reduce(
+    (s, adj) => s + (adj.type === 'fee' ? adj.amount : -adj.amount),
+    0
+  );
+
   const cleanTransferPurpose = `${personName} tra no`.trim();
 
   let paymentInfo: InvoiceReportData['paymentInfo'] = undefined;
@@ -731,8 +990,8 @@ export function buildDebtInvoiceData(
     walletName: defaultWallet?.name,
     items: allItems,
     itemsSubtotal,
-    adjustments: [],
-    netAdjustments: 0,
+    adjustments,
+    netAdjustments,
     totalAmount,
     paymentInfo,
   };
@@ -795,7 +1054,9 @@ export function generateInvoiceHTML(
                 <span style="font-weight: 800; color: ${m.isPayer ? '#059669' : '#111827'};">
                   ${m.name} ${m.isPayer ? '(Chủ chi)' : ''}
                 </span>
-                <span style="font-weight: 800; color: #111827;">${formatCurrency(m.amount)}</span>
+                <span style="font-weight: 800; color: ${m.amount <= 0 && m.paidAmount ? '#059669' : '#111827'};">
+                  ${m.amount <= 0 && m.paidAmount ? 'Đã tất toán' : formatCurrency(m.amount)}
+                </span>
               </div>
               ${m.items && m.items.length > 0 ? `
                 <div style="padding-left: 8px; margin-top: 3px;">
@@ -811,6 +1072,19 @@ export function generateInvoiceHTML(
                       <span>${m.adjustmentShare > 0 ? '+' : ''}${formatCurrency(m.adjustmentShare)}</span>
                     </div>
                   ` : ''}
+                  ${m.paidAmount && m.paidAmount > 0 ? `
+                    <div style="display: flex; justify-content: space-between; font-size: 10.5px; color: #059669; font-style: italic;">
+                      <span>• Đã thanh toán</span>
+                      <span>-${formatCurrency(m.paidAmount)}</span>
+                    </div>
+                  ` : ''}
+                </div>
+              ` : m.paidAmount && m.paidAmount > 0 ? `
+                <div style="padding-left: 8px; margin-top: 3px;">
+                  <div style="display: flex; justify-content: space-between; font-size: 10.5px; color: #059669; font-style: italic;">
+                    <span>• Đã thanh toán</span>
+                    <span>-${formatCurrency(m.paidAmount)}</span>
+                  </div>
                 </div>
               ` : `
                 <div style="padding-left: 8px; margin-top: 2px; font-size: 10.5px; color: #9ca3af; font-style: italic;">
@@ -1142,7 +1416,9 @@ export function generateInvoiceText(data: InvoiceReportData): string {
   if (data.memberAllocations && data.memberAllocations.length > 0) {
     text += `\nPhân bổ thành viên:\n`;
     data.memberAllocations.forEach((m) => {
-      text += `• ${m.name}: ${formatCurrency(m.amount)}\n`;
+      const statusText = m.amount <= 0 && m.paidAmount ? 'Đã tất toán' : formatCurrency(m.amount);
+      const paidNote = m.paidAmount && m.paidAmount > 0 ? ` (Đã trả: ${formatCurrency(m.paidAmount)})` : '';
+      text += `• ${m.name}: ${statusText}${paidNote}\n`;
       if (m.items && m.items.length > 0) {
         m.items.forEach((it) => {
           text += `   - ${it.name} (x${it.quantity}): ${formatCurrency(it.totalPrice)}\n`;
@@ -1150,6 +1426,11 @@ export function generateInvoiceText(data: InvoiceReportData): string {
         if (m.adjustmentShare && m.adjustmentShare !== 0) {
           text += `   - ${m.adjustmentShare > 0 ? 'Phụ phí' : 'Giảm giá'}: ${m.adjustmentShare > 0 ? '+' : ''}${formatCurrency(m.adjustmentShare)}\n`;
         }
+        if (m.paidAmount && m.paidAmount > 0) {
+          text += `   - Đã thanh toán: -${formatCurrency(m.paidAmount)}\n`;
+        }
+      } else if (m.paidAmount && m.paidAmount > 0) {
+        text += `   - Đã thanh toán: -${formatCurrency(m.paidAmount)}\n`;
       }
     });
   }
