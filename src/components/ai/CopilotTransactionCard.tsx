@@ -959,9 +959,15 @@ export const CopilotTransactionCard: React.FC<CopilotTransactionCardProps> = ({
 
             <View style={styles.metaRow}>
               <View style={styles.walletPill}>
-                <Ionicons name="wallet-outline" size={12} color="#000000" />
+                <Ionicons
+                  name={debt.wallet_id === null ? 'ban-outline' : 'wallet-outline'}
+                  size={12}
+                  color="#000000"
+                />
                 <Text style={styles.walletText}>
-                  {debt.wallet_name || 'Ví mặc định'}
+                  {debt.wallet_id === null
+                    ? (debt.type === 'lend' ? 'Không trừ ví' : 'Không cộng ví')
+                    : (debt.wallet_name || 'Ví mặc định')}
                 </Text>
               </View>
             </View>

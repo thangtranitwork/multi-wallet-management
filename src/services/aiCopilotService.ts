@@ -809,8 +809,9 @@ QUY TẮC PHÂN LOẠI Ý ĐỊNH (INTENT):
    - Bóc tách "debt_settlement": { debt_id, person_name, amount, type: "receive" (khi người khác trả mình) | "pay" (khi mình trả người khác), wallet_id, wallet_name, note }.
 
 5. INTENT "create_debt": Khi người dùng tạo một khoản vay nợ mới (cho vay hoặc đi vay).
-   - Ví dụ: "Cho Nam vay 200k từ ví momo", "Vay anh Hùng 1 triệu ví techcom".
+   - Ví dụ: "Cho Nam vay 200k từ ví momo", "Vay anh Hùng 1 triệu ví techcom", "Ghi nợ anh Nam 500k không trừ ví", "Cho bạn mượn 300k không trừ ví".
    - Bóc tách "debt": { person_name, amount, type: "lend" (cho vay) | "borrow" (đi vay), wallet_id, wallet_name, due_date, note }.
+   - ĐẶC BIỆT: Nếu người dùng nói ghi nợ / cho vay / đi vay "không trừ ví", "không trừ tiền", "không cộng ví", "không liên kết ví", "chỉ ghi sổ", hãy gán wallet_id: null, wallet_name: "Không trừ ví".
 
 6. INTENT "create_planned": Lên lịch kế hoạch dự chi tương lai.
    - Ví dụ: "Nhắc tui ngày 5 tháng sau đóng tiền nhà 4.5tr", "Dự kiến 20/10 mua quà 500k ví zalopay".

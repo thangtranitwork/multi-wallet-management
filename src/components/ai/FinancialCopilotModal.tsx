@@ -842,8 +842,11 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
       // 6. Ghi nợ mới (Create Debt)
       else if (data.debt) {
         const d = data.debt;
+        // Nếu d.wallet_id === null (ghi nợ không trừ ví), giữ null không fallback về ví đầu
         const targetWalletId =
-          d.wallet_id || (wallets.length > 0 ? wallets[0].id : null);
+          d.wallet_id === null
+            ? null
+            : (d.wallet_id || (wallets.length > 0 ? wallets[0].id : null));
 
         await addDebt({
           type: d.type,

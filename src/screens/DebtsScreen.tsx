@@ -433,16 +433,19 @@ export const DebtsScreen: React.FC = () => {
                     </View>
 
                     {/* Note or Wallet info */}
-                    {(debt.note || debt.wallet_name) && (
-                      <View style={styles.noteBox}>
-                        <Ionicons name="information-circle-outline" size={14} color="#000000" />
-                        <Text style={styles.noteBoxText} numberOfLines={1}>
-                          {debt.note || ''}
-                          {debt.note && debt.wallet_name ? ' • ' : ''}
-                          {debt.wallet_name ? `Ví trích: ${debt.wallet_name}` : ''}
-                        </Text>
-                      </View>
-                    )}
+                    <View style={styles.noteBox}>
+                      <Ionicons
+                        name={debt.wallet_name ? 'wallet-outline' : 'ban-outline'}
+                        size={14}
+                        color="#000000"
+                      />
+                      <Text style={styles.noteBoxText} numberOfLines={1}>
+                        {debt.note ? `${debt.note} • ` : ''}
+                        {debt.wallet_name
+                          ? (debt.type === 'lend' ? `Ví trích: ${debt.wallet_name}` : `Ví nhận: ${debt.wallet_name}`)
+                          : (debt.type === 'lend' ? 'Không trừ ví' : 'Không cộng ví')}
+                      </Text>
+                    </View>
 
                     {/* Bottom Action Row */}
                     <View style={styles.cardActionsRow}>

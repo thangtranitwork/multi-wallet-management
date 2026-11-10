@@ -7,6 +7,7 @@ import {
   Pressable,
   ScrollView,
   TextInput,
+  Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useCustomAlert } from './CustomAlertModal';
@@ -43,6 +44,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({
   const [showContactPicker, setShowContactPicker] = useState<boolean>(false);
   const [amountStr, setAmountStr] = useState<string>('0');
   const [selectedWalletId, setSelectedWalletId] = useState<string>('');
+  const [isNoWallet, setIsNoWallet] = useState<boolean>(false);
   const [dueDays, setDueDays] = useState<string>('7');
   const [note, setNote] = useState<string>('');
 
@@ -64,6 +66,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({
         setNote('');
         setManualItems([]);
         setShowItemsSection(false);
+        setIsNoWallet(false);
       } else {
         // Create mode
         setType(defaultType);
@@ -74,8 +77,12 @@ export const DebtModal: React.FC<DebtModalProps> = ({
         setNote('');
         setManualItems([]);
         setShowItemsSection(false);
+        setIsNoWallet(false);
         if (wallets.length > 0) {
           setSelectedWalletId(wallets[0].id);
+        } else {
+          setSelectedWalletId('');
+          setIsNoWallet(true);
         }
       }
     }
@@ -139,6 +146,11 @@ export const DebtModal: React.FC<DebtModalProps> = ({
       showAlert('Số tiền không hợp lệ', 'Vui lòng nhập số tiền lớn hơn 0');
       return;
     }
+    if (!isNoWallet && !selectedWalletId && wallets.length > 0) {
+      hapticError();
+      showAlert('Chưa chọn ví', 'Vui lòng chọn ví biến động hoặc bật tùy chọn Không trừ ví');
+      return;
+    }
 
     const days = parseInt(dueDays, 10) || 7;
     const dueDate = new Date(Date.now() + days * 86400000).toISOString();
@@ -164,7 +176,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({
         person_name: personName.trim(),
         person_phone: personPhone.trim() || null,
         initial_amount: amount,
-        wallet_id: selectedWalletId || null,
+        wallet_id: isNoWallet ? null : (selectedWalletId || null),
         due_date: dueDate,
         note: note.trim(),
         items: serializedItems,
@@ -334,6 +346,34 @@ export const DebtModal: React.FC<DebtModalProps> = ({
               </>
             )}
 
+            {/* Switch: Không trừ ví / Không cộng ví */}
+            {!isPaymentMode && (
+              <View style={styles.switchRow}>
+                <View style={styles.switchTextContainer}>
+                  <Text style={styles.switchTitle}>
+                    {type === 'lend' ? 'Ghi nợ không trừ ví' : 'Ghi nợ không cộng ví'}
+                  </Text>
+                  <Text style={styles.switchSubtitle}>
+                    {type === 'lend'
+                      ? 'Chỉ ghi vào sổ nợ, không làm giảm số dư ví'
+                      : 'Chỉ ghi vào sổ nợ, không làm tăng số dư ví'}
+                  </Text>
+                </View>
+                <Switch
+                  value={isNoWallet}
+                  onValueChange={(val) => {
+                    hapticLight();
+                    setIsNoWallet(val);
+                    if (!val && !selectedWalletId && wallets.length > 0) {
+                      setSelectedWalletId(wallets[0].id);
+                    }
+                  }}
+                  trackColor={{ false: '#E5E7EB', true: THEME.primary }}
+                  thumbColor="#FFFFFF"
+                />
+              </View>
+            )}
+
             {/* Wallet Selection */}
             <View style={styles.sectionContainer}>
               <Text style={styles.sectionLabel}>
@@ -346,8 +386,34 @@ export const DebtModal: React.FC<DebtModalProps> = ({
                   : 'Nhận tiền vay vào ví'}
               </Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalChips}>
+                {!isPaymentMode && (
+                  <Pressable
+                    style={[
+                      styles.chip,
+                      isNoWallet && styles.chipSelected,
+                    ]}
+                    onPress={() => {
+                      hapticLight();
+                      setIsNoWallet(true);
+                    }}
+                  >
+                    <Ionicons
+                      name="ban-outline"
+                      size={16}
+                      color={isNoWallet ? '#FACC15' : '#000000'}
+                    />
+                    <Text
+                      style={[
+                        styles.chipText,
+                        isNoWallet && styles.chipTextSelected,
+                      ]}
+                    >
+                      {type === 'lend' ? 'Không trừ ví' : 'Không cộng ví'}
+                    </Text>
+                  </Pressable>
+                )}
                 {wallets.map(w => {
-                  const isSelected = selectedWalletId === w.id;
+                  const isSelected = !isNoWallet && selectedWalletId === w.id;
                   return (
                     <Pressable
                       key={w.id}
@@ -355,7 +421,11 @@ export const DebtModal: React.FC<DebtModalProps> = ({
                         styles.chip,
                         isSelected && styles.chipSelected,
                       ]}
-                      onPress={() => setSelectedWalletId(w.id)}
+                      onPress={() => {
+                        hapticLight();
+                        setIsNoWallet(false);
+                        setSelectedWalletId(w.id);
+                      }}
                     >
                       <Ionicons
                         name={(w.icon as any) || 'wallet-outline'}
@@ -374,6 +444,17 @@ export const DebtModal: React.FC<DebtModalProps> = ({
                   );
                 })}
               </ScrollView>
+
+              {!isPaymentMode && isNoWallet && (
+                <View style={styles.noWalletNoticeBox}>
+                  <Ionicons name="information-circle-outline" size={15} color="#000000" />
+                  <Text style={styles.noWalletNoticeText}>
+                    {type === 'lend'
+                      ? 'Khoản cho vay này chỉ ghi nhận vào sổ nợ, không trừ tiền từ bất kỳ ví nào.'
+                      : 'Khoản đi vay này chỉ ghi nhận vào sổ nợ, không cộng tiền vào bất kỳ ví nào.'}
+                  </Text>
+                </View>
+              )}
             </View>
 
             {/* Note Input */}
@@ -550,6 +631,10 @@ export const DebtModal: React.FC<DebtModalProps> = ({
                   ? effectiveDebt?.type === 'lend'
                     ? 'Xác nhận thu nợ'
                     : 'Xác nhận trả nợ'
+                  : isNoWallet
+                  ? type === 'lend'
+                    ? 'Tạo nợ (không trừ ví)'
+                    : 'Tạo nợ (không cộng ví)'
                   : 'Tạo khoản nợ'}
               </Text>
             </Pressable>
@@ -700,6 +785,50 @@ const styles = StyleSheet.create({
   },
   sectionContainer: {
     marginBottom: 14,
+  },
+  switchRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    padding: 14,
+    borderRadius: 14,
+    marginBottom: 14,
+    borderWidth: 2,
+    borderColor: '#000000',
+  },
+  switchTextContainer: {
+    flex: 1,
+    marginRight: 10,
+  },
+  switchTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#000000',
+    marginBottom: 2,
+  },
+  switchSubtitle: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  noWalletNoticeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginTop: 8,
+  },
+  noWalletNoticeText: {
+    flex: 1,
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#000000',
   },
   sectionLabel: {
     fontSize: 13,
