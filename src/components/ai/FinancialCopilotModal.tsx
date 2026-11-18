@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSQLiteContext } from 'expo-sqlite';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
+import * as Clipboard from 'expo-clipboard';
 import {
   useAudioRecorder,
   RecordingPresets,
@@ -108,8 +109,13 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [inAppMicEnabled, setInAppMicEnabled] = useState(true);
   const [copilotTtsEnabled, setCopilotTtsEnabledState] = useState(true);
+  const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
+  const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
+  const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
 
   const flatListRef = useRef<FlatList>(null);
+  const inputRef = useRef<TextInput>(null);
+  const copyTimeoutRef = useRef<any>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const [personalityId, setPersonalityId] = useState<CopilotPersonalityId>('cheerful');
   const timerRef = useRef<any>(null);
@@ -187,6 +193,13 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
     } else {
       console.log('[Copilot Modal] Modal closed, stopping TTS');
       hasHandledInitialRef.current = false;
+      setPreviewImageUri(null);
+      setEditingMsgId(null);
+      setCopiedMsgId(null);
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current);
+        copyTimeoutRef.current = null;
+      }
       stopCopilotSpeech();
       if (timerRef.current) {
         clearInterval(timerRef.current);
@@ -282,7 +295,91 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
     setSelectedImageUris(prev => prev.filter((_, idx) => idx !== indexToRemove));
   };
 
-  const handleSendText = async (textToSend?: string, overrideImages?: string[]) => {
+  // Trích xuất text sạch khi sửa hoặc gửi lại tin nhắn
+  const extractEditableText = (rawText: string): string => {
+    const trimmed = (rawText || '').trim();
+    if (
+      /^📷\s*\[(?:\d+\s*)?ảnh đính kèm\]$/i.test(trimmed) ||
+      trimmed === '🎤 [Đang nhận diện giọng nói...]' ||
+      trimmed === '🎤 [Đoạn ghi âm giọng nói]'
+    ) {
+      return '';
+    }
+    const voiceMatch = trimmed.match(/^🎤\s*"([\s\S]*)"$/);
+    if (voiceMatch) {
+      return voiceMatch[1];
+    }
+    return trimmed;
+  };
+
+  const handleCopyMessage = async (msg: ChatMessage) => {
+    try {
+      await Clipboard.setStringAsync(msg.text || '');
+      hapticLight();
+      setCopiedMsgId(msg.id);
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+      copyTimeoutRef.current = setTimeout(() => {
+        setCopiedMsgId(prev => (prev === msg.id ? null : prev));
+      }, 1500);
+    } catch {
+      hapticError();
+    }
+  };
+
+  const handleEditMessage = (msg: ChatMessage) => {
+    if (isGenerating) return;
+    hapticLight();
+    setEditingMsgId(msg.id);
+    setInputText(extractEditableText(msg.text));
+    const imgs = msg.imageUris || (msg.imageUri ? [msg.imageUri] : []);
+    setSelectedImageUris(imgs);
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 80);
+  };
+
+  const handleCancelEdit = () => {
+    hapticLight();
+    setEditingMsgId(null);
+    setInputText('');
+    setSelectedImageUris([]);
+  };
+
+  const handleResendMessage = (msg: ChatMessage) => {
+    if (isGenerating) return;
+    const idx = messages.findIndex(m => m.id === msg.id);
+    if (idx < 0) return;
+
+    if (msg.sender === 'user') {
+      const cleanText = extractEditableText(msg.text);
+      const imgs = msg.imageUris || (msg.imageUri ? [msg.imageUri] : []);
+      if (!cleanText.trim() && imgs.length === 0) return;
+      setEditingMsgId(null);
+      handleSendText(cleanText, imgs, messages.slice(0, idx));
+      return;
+    }
+
+    // Nếu bấm "Thử lại" trên tin nhắn của AI, tìm tin nhắn user gần nhất trước đó để gửi lại
+    for (let i = idx - 1; i >= 0; i--) {
+      if (messages[i].sender === 'user') {
+        const prevUser = messages[i];
+        const cleanText = extractEditableText(prevUser.text);
+        const imgs = prevUser.imageUris || (prevUser.imageUri ? [prevUser.imageUri] : []);
+        if (!cleanText.trim() && imgs.length === 0) return;
+        setEditingMsgId(null);
+        handleSendText(cleanText, imgs, messages.slice(0, i));
+        return;
+      }
+    }
+  };
+
+  const handleSendText = async (
+    textToSend?: string,
+    overrideImages?: string[],
+    overrideBaseMessages?: ChatMessage[]
+  ) => {
     stopCopilotSpeech(); // Dừng ngay âm thanh nếu đang phát
     const text = (textToSend !== undefined ? textToSend : inputText).trim();
     const imagesToSend = overrideImages !== undefined ? overrideImages : [...selectedImageUris];
@@ -291,6 +388,15 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
     hapticLight();
     setInputText('');
     setSelectedImageUris([]);
+
+    let baseMessages = overrideBaseMessages !== undefined ? overrideBaseMessages : messages;
+    if (overrideBaseMessages === undefined && editingMsgId) {
+      const editIdx = messages.findIndex(m => m.id === editingMsgId);
+      if (editIdx >= 0) {
+        baseMessages = messages.slice(0, editIdx);
+      }
+      setEditingMsgId(null);
+    }
 
     const userMsg: ChatMessage = {
       id: `user_${Date.now()}`,
@@ -307,14 +413,14 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
       timestamp: new Date().toISOString(),
     };
 
-    const newMessages = [...messages, userMsg];
+    const newMessages = [...baseMessages, userMsg];
     setMessages(newMessages);
     setIsGenerating(true);
     scrollToBottom();
 
     try {
       // Chỉ truyền các lượt hội thoại trước đó (loại trừ userMsg hiện tại để tránh trùng lặp turn)
-      const historyPayload = messages.map(m => ({
+      const historyPayload = baseMessages.map(m => ({
         role: (m.sender === 'user' ? 'user' : 'model') as 'user' | 'model',
         text: m.text,
       }));
@@ -931,80 +1037,181 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
 
         <View
           style={[
-            styles.bubbleShadow,
-            isUser ? styles.bubbleShadowUser : styles.bubbleShadowAssistant,
-            hasCard && styles.bubbleShadowWithCard,
+            styles.messageContentCol,
+            isUser ? styles.messageContentColUser : styles.messageContentColAssistant,
+            hasCard && styles.messageContentColWithCard,
           ]}
         >
           <View
             style={[
-              styles.bubbleInner,
-              isUser ? styles.bubbleInnerUser : styles.bubbleInnerAssistant,
-              hasCard && styles.bubbleInnerWithCard,
+              styles.bubbleShadow,
+              isUser ? styles.bubbleShadowUser : styles.bubbleShadowAssistant,
+              hasCard && styles.bubbleShadowWithCard,
             ]}
           >
-            {/* Ảnh hóa đơn đính kèm nếu có (chỉ hiển thị ở bubble người dùng) */}
-            {isUser && (item.imageUris || item.imageUri) && (
-              <View style={styles.bubbleImagesGrid}>
-                {(item.imageUris || (item.imageUri ? [item.imageUri] : [])).map((img, idx) => (
-                  <Image
-                    key={idx}
-                    source={{ uri: img }}
-                    style={
-                      (item.imageUris && item.imageUris.length > 1)
-                        ? styles.bubbleAttachedImageMulti
-                        : styles.bubbleAttachedImage
-                    }
-                    resizeMode="cover"
-                  />
-                ))}
-              </View>
-            )}
-
-            <Text
+            <View
               style={[
-                styles.bubbleText,
-                isUser ? styles.bubbleTextUser : styles.bubbleTextAssistant,
+                styles.bubbleInner,
+                isUser ? styles.bubbleInnerUser : styles.bubbleInnerAssistant,
+                hasCard && styles.bubbleInnerWithCard,
               ]}
             >
-              {item.text}
-            </Text>
+              {/* Ảnh hóa đơn đính kèm nếu có (chỉ hiển thị ở bubble người dùng) */}
+              {isUser && (item.imageUris || item.imageUri) && (
+                <View style={styles.bubbleImagesGrid}>
+                  {(item.imageUris || (item.imageUri ? [item.imageUri] : [])).map((img, idx) => (
+                    <Pressable
+                      key={idx}
+                      onPress={() => {
+                        hapticLight();
+                        setPreviewImageUri(img);
+                      }}
+                    >
+                      <Image
+                        source={{ uri: img }}
+                        style={
+                          (item.imageUris && item.imageUris.length > 1)
+                            ? styles.bubbleAttachedImageMulti
+                            : styles.bubbleAttachedImage
+                        }
+                        resizeMode="cover"
+                      />
+                    </Pressable>
+                  ))}
+                </View>
+              )}
 
-            {/* Thẻ Xem trước & Xác nhận Giao dịch 1 chạm */}
-            {item.copilotResponse && (() => {
-              let attachedImgs = item.imageUris || (item.imageUri ? [item.imageUri] : []);
-              if (attachedImgs.length === 0 && !isUser) {
-                const itemIndex = messages.findIndex(m => m.id === item.id);
-                // Quét ngược tìm ảnh gần nhất trong các tin nhắn gần đó (lên tới 8 tin nhắn)
-                for (let i = itemIndex - 1; i >= 0 && i >= itemIndex - 8; i--) {
-                  const prevMsg = messages[i];
-                  const prevImgs = prevMsg.imageUris || (prevMsg.imageUri ? [prevMsg.imageUri] : []);
-                  if (prevImgs.length > 0) {
-                    attachedImgs = prevImgs;
-                    break;
+              <Text
+                style={[
+                  styles.bubbleText,
+                  isUser ? styles.bubbleTextUser : styles.bubbleTextAssistant,
+                ]}
+              >
+                {item.text}
+              </Text>
+
+              {/* Thẻ Xem trước & Xác nhận Giao dịch 1 chạm */}
+              {item.copilotResponse && (() => {
+                let attachedImgs = item.imageUris || (item.imageUri ? [item.imageUri] : []);
+                if (attachedImgs.length === 0 && !isUser) {
+                  const itemIndex = messages.findIndex(m => m.id === item.id);
+                  // Quét ngược tìm ảnh gần nhất trong các tin nhắn gần đó (lên tới 8 tin nhắn)
+                  for (let i = itemIndex - 1; i >= 0 && i >= itemIndex - 8; i--) {
+                    const prevMsg = messages[i];
+                    const prevImgs = prevMsg.imageUris || (prevMsg.imageUri ? [prevMsg.imageUri] : []);
+                    if (prevImgs.length > 0) {
+                      attachedImgs = prevImgs;
+                      break;
+                    }
                   }
                 }
-              }
 
-              return (
-                <CopilotTransactionCard
-                  transaction={item.copilotResponse.transaction}
-                  transactions={item.copilotResponse.transactions}
-                  transfer={item.copilotResponse.transfer}
-                  debt={item.copilotResponse.debt}
-                  debtSettlement={item.copilotResponse.debt_settlement}
-                  plannedExpense={item.copilotResponse.planned_expense}
-                  adjustBalance={item.copilotResponse.adjust_balance}
-                  deleteTransaction={item.copilotResponse.delete_transaction}
-                  updateTransaction={item.copilotResponse.update_transaction}
-                  imageUri={attachedImgs[0] || null}
-                  imageUris={attachedImgs}
-                  isSaved={item.isSaved}
-                  onConfirm={data => handleConfirmSave(item.id, data, attachedImgs)}
-                />
-              );
-            })()}
+                return (
+                  <CopilotTransactionCard
+                    transaction={item.copilotResponse.transaction}
+                    transactions={item.copilotResponse.transactions}
+                    transfer={item.copilotResponse.transfer}
+                    debt={item.copilotResponse.debt}
+                    debtSettlement={item.copilotResponse.debt_settlement}
+                    plannedExpense={item.copilotResponse.planned_expense}
+                    adjustBalance={item.copilotResponse.adjust_balance}
+                    deleteTransaction={item.copilotResponse.delete_transaction}
+                    updateTransaction={item.copilotResponse.update_transaction}
+                    imageUri={attachedImgs[0] || null}
+                    imageUris={attachedImgs}
+                    isSaved={item.isSaved}
+                    onConfirm={data => handleConfirmSave(item.id, data, attachedImgs)}
+                  />
+                );
+              })()}
+            </View>
           </View>
+
+          {/* Thanh hành động dưới tin nhắn: Copy, Sửa, Gửi lại */}
+          {(() => {
+            const isCopied = copiedMsgId === item.id;
+            const isWelcome = item.id.startsWith('welcome_');
+            const isEditingThis = editingMsgId === item.id;
+            const canResendUser =
+              isUser &&
+              (Boolean(extractEditableText(item.text)) ||
+                Boolean(item.imageUris && item.imageUris.length > 0) ||
+                Boolean(item.imageUri));
+            const canRetryAssistant = !isUser && !isWelcome;
+
+            return (
+              <View
+                style={[
+                  styles.msgActionsRow,
+                  isUser ? styles.msgActionsRowUser : styles.msgActionsRowAssistant,
+                ]}
+              >
+                <Pressable
+                  style={[styles.msgActionChip, isCopied && styles.msgActionChipActive]}
+                  onPress={() => handleCopyMessage(item)}
+                  hitSlop={6}
+                >
+                  <Ionicons
+                    name={isCopied ? 'checkmark' : 'copy-outline'}
+                    size={12}
+                    color={isCopied ? '#15803D' : '#4B5563'}
+                  />
+                  <Text
+                    style={[
+                      styles.msgActionText,
+                      isCopied && styles.msgActionTextActive,
+                    ]}
+                  >
+                    {isCopied ? 'Đã chép' : 'Copy'}
+                  </Text>
+                </Pressable>
+
+                {isUser && (
+                  <Pressable
+                    style={[
+                      styles.msgActionChip,
+                      isEditingThis && styles.msgActionChipEditing,
+                      isGenerating && styles.msgActionChipDisabled,
+                    ]}
+                    onPress={() => handleEditMessage(item)}
+                    disabled={isGenerating}
+                    hitSlop={6}
+                  >
+                    <Ionicons
+                      name="create-outline"
+                      size={12}
+                      color={isEditingThis ? '#B45309' : '#4B5563'}
+                    />
+                    <Text
+                      style={[
+                        styles.msgActionText,
+                        isEditingThis && styles.msgActionTextEditing,
+                      ]}
+                    >
+                      Sửa
+                    </Text>
+                  </Pressable>
+                )}
+
+                {(canResendUser || canRetryAssistant) && (
+                  <Pressable
+                    style={[
+                      styles.msgActionChip,
+                      isGenerating && styles.msgActionChipDisabled,
+                    ]}
+                    onPress={() => handleResendMessage(item)}
+                    disabled={isGenerating}
+                    hitSlop={6}
+                  >
+                    <Ionicons name="refresh-outline" size={12} color="#4B5563" />
+                    <Text style={styles.msgActionText}>
+                      {isUser ? 'Gửi lại' : 'Thử lại'}
+                    </Text>
+                  </Pressable>
+                )}
+              </View>
+            );
+          })()}
         </View>
       </View>
     );
@@ -1149,6 +1356,19 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
+          {/* Banner báo đang sửa tin nhắn */}
+          {editingMsgId && (
+            <View style={styles.editingBanner}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name="create" size={14} color="#B45309" />
+                <Text style={styles.editingBannerText}>Đang chỉnh sửa tin nhắn...</Text>
+              </View>
+              <Pressable onPress={handleCancelEdit} hitSlop={8}>
+                <Text style={styles.editingBannerCancel}>Hủy</Text>
+              </Pressable>
+            </View>
+          )}
+
           {/* Ảnh được chọn xem trước (hỗ trợ nhiều ảnh) */}
           {selectedImageUris.length > 0 && (
             <View style={styles.imagePreviewBar}>
@@ -1178,7 +1398,14 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
                 contentContainerStyle={{ gap: 8, paddingVertical: 4 }}
                 renderItem={({ item: uri, index }) => (
                   <View style={styles.previewThumbWrapper}>
-                    <Image source={{ uri }} style={styles.previewThumb} resizeMode="cover" />
+                    <Pressable
+                      onPress={() => {
+                        hapticLight();
+                        setPreviewImageUri(uri);
+                      }}
+                    >
+                      <Image source={{ uri }} style={styles.previewThumb} resizeMode="cover" />
+                    </Pressable>
                     <Pressable
                       style={styles.previewRemoveBadge}
                       onPress={() => handleRemoveSelectedImage(index)}
@@ -1233,6 +1460,7 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
 
             {/* Text Input */}
             <TextInput
+              ref={inputRef}
               style={styles.textInput}
               placeholder={
                 selectedImageUris.length > 0
@@ -1279,6 +1507,36 @@ export const FinancialCopilotModal: React.FC<FinancialCopilotModalProps> = ({
         </KeyboardAvoidingView>
       </SafeAreaView>
       {AlertModalComponent}
+
+      {/* Fullscreen Image Preview Modal */}
+      <Modal
+        visible={!!previewImageUri}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setPreviewImageUri(null)}
+      >
+        <View style={styles.fullscreenModalBackdrop}>
+          <Pressable
+            style={styles.fullscreenCloseBtn}
+            onPress={() => setPreviewImageUri(null)}
+            hitSlop={10}
+          >
+            <Ionicons name="close" size={24} color="#FFFFFF" />
+          </Pressable>
+          <Pressable
+            style={styles.fullscreenImageTouchable}
+            onPress={() => setPreviewImageUri(null)}
+          >
+            {previewImageUri && (
+              <Image
+                source={{ uri: previewImageUri }}
+                style={styles.fullscreenImage}
+                resizeMode="contain"
+              />
+            )}
+          </Pressable>
+        </View>
+      </Modal>
     </Modal>
   );
 };
@@ -1399,8 +1657,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 2,
   },
-  bubbleShadow: {
+  messageContentCol: {
     maxWidth: '85%',
+  },
+  messageContentColUser: {
+    alignItems: 'flex-end',
+  },
+  messageContentColAssistant: {
+    alignItems: 'flex-start',
+  },
+  messageContentColWithCard: {
+    flex: 1,
+    maxWidth: '100%',
+  },
+  bubbleShadow: {
+    maxWidth: '100%',
     backgroundColor: '#000000',
     borderRadius: 12,
   },
@@ -1627,5 +1898,99 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F6',
     borderColor: '#D1D5DB',
     transform: [{ translateX: 0 }, { translateY: 0 }],
+  },
+  msgActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 5,
+    paddingHorizontal: 2,
+  },
+  msgActionsRowUser: {
+    justifyContent: 'flex-end',
+  },
+  msgActionsRowAssistant: {
+    justifyContent: 'flex-start',
+  },
+  msgActionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+  },
+  msgActionChipActive: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#15803D',
+  },
+  msgActionChipEditing: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#B45309',
+  },
+  msgActionChipDisabled: {
+    opacity: 0.45,
+  },
+  msgActionText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#374151',
+  },
+  msgActionTextActive: {
+    color: '#15803D',
+  },
+  msgActionTextEditing: {
+    color: '#B45309',
+  },
+  editingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FEF3C7',
+    borderTopWidth: 2,
+    borderTopColor: '#000000',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  editingBannerText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  editingBannerCancel: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#DC2626',
+  },
+  fullscreenModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullscreenCloseBtn: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 100,
+  },
+  fullscreenImageTouchable: {
+    flex: 1,
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullscreenImage: {
+    width: '94%',
+    height: '80%',
   },
 });

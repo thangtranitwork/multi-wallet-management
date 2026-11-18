@@ -523,15 +523,22 @@ function cleanAndParseJSON(raw: string): any {
     parsed.transactions = [parsed.transaction];
   }
 
-  // Cảnh báo nếu tổng items lệch so với amount của transaction
+  // Cảnh báo nếu tổng (món + phụ phí - giảm giá) lệch so với amount của transaction
   if (parsed.transaction && Array.isArray(parsed.transaction.items) && parsed.transaction.items.length > 0) {
     const itemsSum = parsed.transaction.items.reduce((s: number, it: any) => s + ((it.price || 0) * (it.quantity || 1)), 0);
+    const adjustments = Array.isArray(parsed.transaction.adjustments) ? parsed.transaction.adjustments : [];
+    const netAdjustments = adjustments.reduce((s: number, adj: any) => {
+      const amt = Math.max(0, Math.round(Number(adj?.amount) || 0));
+      return s + (adj?.type === 'discount' ? -amt : amt);
+    }, 0);
+    const expectedTotal = itemsSum + netAdjustments;
     const txAmount = Number(parsed.transaction.amount) || 0;
-    const diff = Math.abs(itemsSum - txAmount);
+    const diff = Math.abs(expectedTotal - txAmount);
 
-    if (itemsSum > 0 && txAmount > 0 && diff > 100) {
-      const reasonHint = itemsSum > txAmount ? 'do chiết khấu/giảm giá' : 'do phụ thu/thuế VAT';
-      const warningText = `\n\n⚠️ Lưu ý: Tổng tiền ${parsed.transaction.items.length} món là ${itemsSum.toLocaleString('vi-VN')} đ (lệch ${diff.toLocaleString('vi-VN')} đ so với số tiền thanh toán ${txAmount.toLocaleString('vi-VN')} đ, có thể ${reasonHint}). Bạn xem kỹ thẻ bên dưới trước khi bấm lưu nhé!`;
+    if (itemsSum > 0 && expectedTotal > 0 && txAmount > 0 && diff > 100) {
+      const warningText = adjustments.length > 0
+        ? `\n\n⚠️ Lưu ý: Tổng tiền món và phụ phí/giảm giá là ${expectedTotal.toLocaleString('vi-VN')} đ (lệch ${diff.toLocaleString('vi-VN')} đ so với số tiền thanh toán ${txAmount.toLocaleString('vi-VN')} đ). Bạn xem kỹ thẻ bên dưới trước khi bấm lưu nhé!`
+        : `\n\n⚠️ Lưu ý: Tổng tiền ${parsed.transaction.items.length} món là ${itemsSum.toLocaleString('vi-VN')} đ (lệch ${diff.toLocaleString('vi-VN')} đ so với số tiền thanh toán ${txAmount.toLocaleString('vi-VN')} đ, có thể ${itemsSum > txAmount ? 'do chiết khấu/giảm giá' : 'do phụ thu/thuế VAT'}). Bạn xem kỹ thẻ bên dưới trước khi bấm lưu nhé!`;
       if (typeof parsed.message === 'string' && !parsed.message.includes('Lưu ý: Tổng tiền')) {
         parsed.message += warningText;
       }
